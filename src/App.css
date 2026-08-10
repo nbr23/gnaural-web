@@ -9,6 +9,12 @@
   padding: 24px;
 }
 
+.elapsed {
+  font-family: monospace;
+  font-size: 24px;
+  margin: 0;
+}
+
 .transport {
   display: flex;
   gap: 12px;

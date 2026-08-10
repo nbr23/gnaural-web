@@ -2,7 +2,8 @@ import { OfflineAudioContext } from 'node-web-audio-api';
 import { describe, expect, it } from 'vitest';
 import type { Entry, Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
-import { playSchedule } from './engine';
+import { compileVoice, valueAtTime } from './compiler';
+import { CLICK_FREE_RAMP, PlaybackEngine, playSchedule } from './engine';
 
 function makeEntry(partial: Partial<Entry>): Entry {
   return { duration: 0, baseFreq: 0, beatFreq: 0, volumeLeft: 1, volumeRight: 1, preserved: {}, ...partial };
@@ -130,5 +131,104 @@ describe('playSchedule', () => {
     expect(() => playSchedule(context, schedule)).not.toThrow();
     const buffer = await context.startRendering();
     expect(peakAmplitude(buffer.getChannelData(0))).toBe(0);
+  });
+});
+
+/** A voice whose frequency ramps continuously for its whole 20s (never flat), so any offset
+ *  within it has a distinct, unambiguous expected frequency — good for verifying transport. */
+function makeRampingSchedule(): { schedule: Schedule; events: ReturnType<typeof compileVoice> } {
+  const voice = makeVoice([
+    makeEntry({ duration: 10, baseFreq: 300, beatFreq: 10 }), // left=305 @ t=0
+    makeEntry({ duration: 10, baseFreq: 400, beatFreq: 10 }), // left=405 @ t=10, wraps to 305 @ t=20
+  ]);
+  return { schedule: makeSchedule([voice]), events: compileVoice(voice) };
+}
+
+describe('PlaybackEngine transport', () => {
+  it('starts at offset 0 and pause() freezes state without throwing', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(makeRampingSchedule().schedule);
+
+    expect(engine.getCurrentOffset()).toBe(0);
+    expect(engine.isPlaying()).toBe(false);
+
+    engine.play();
+    expect(engine.isPlaying()).toBe(true);
+
+    engine.pause();
+    expect(engine.isPlaying()).toBe(false);
+  });
+
+  it('resumes from the paused offset, not from 0', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(makeRampingSchedule().schedule);
+
+    engine.play();
+    engine.seek(7.5);
+    engine.pause();
+    // Tolerance absorbs the ~CLICK_FREE_RAMP bookkeeping lag from chaining transport calls with
+    // zero simulated real time between them (an artifact of synchronous test calls, not of
+    // normal usage — see PROGRESS.md).
+    expect(engine.getCurrentOffset()).toBeGreaterThan(7.4);
+    expect(engine.getCurrentOffset()).toBeLessThanOrEqual(7.5);
+
+    engine.play();
+    expect(engine.isPlaying()).toBe(true);
+    expect(engine.getCurrentOffset()).toBeGreaterThan(7.4);
+  });
+
+  it('stop() resets to offset 0 and silences playback', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(makeRampingSchedule().schedule);
+
+    engine.play();
+    engine.seek(7.5);
+    engine.stop();
+
+    expect(engine.getCurrentOffset()).toBe(0);
+    expect(engine.isPlaying()).toBe(false);
+  });
+
+  it('seeking mid-playback reproduces the correct curve value at the target offset (§8)', async () => {
+    const { schedule, events } = makeRampingSchedule();
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE); // 1 second render
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule);
+    engine.play();
+    engine.seek(5.0); // jump to schedule-time 5s while playing
+
+    const buffer = await context.startRendering();
+    const left = buffer.getChannelData(0);
+
+    // Measure a short window safely after the anti-click fade settles.
+    const measureStart = 0.1;
+    const measureEnd = 0.3;
+    const window = left.subarray(Math.round(measureStart * SAMPLE_RATE), Math.round(measureEnd * SAMPLE_RATE));
+    const measuredFreq = estimateFrequency(window, SAMPLE_RATE);
+
+    // Context-time `CLICK_FREE_RAMP` is schedule-time 5.0 (the fade's completion point), so the
+    // window's midpoint maps to schedule-time 5.0 + midpoint - CLICK_FREE_RAMP.
+    const scheduleMidpoint = 5.0 + (measureStart + measureEnd) / 2 - CLICK_FREE_RAMP;
+    const expectedFreq = valueAtTime(events, scheduleMidpoint).leftFreq;
+
+    expect(Math.abs(measuredFreq - expectedFreq)).toBeLessThan(2);
+  });
+
+  it('pausing then playing ends with silence briefly, and audible sound resumes after the fade', async () => {
+    const { schedule } = makeRampingSchedule();
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE); // 1 second render
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule);
+    engine.play();
+    engine.pause(); // ramps gain to 0 over CLICK_FREE_RAMP, then holds silent
+
+    const buffer = await context.startRendering();
+    const left = buffer.getChannelData(0);
+    const tail = left.subarray(Math.round(0.5 * SAMPLE_RATE));
+
+    expect(peakAmplitude(tail)).toBe(0);
   });
 });

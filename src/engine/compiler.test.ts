@@ -4,7 +4,7 @@ import { loadFixture } from '../document/test-fixtures';
 import type { Entry, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import type { AutomationEvent } from './compiler';
-import { compileVoice } from './compiler';
+import { compileVoice, valueAtTime } from './compiler';
 
 function makeEntry(partial: Partial<Entry>): Entry {
   return { duration: 0, baseFreq: 0, beatFreq: 0, volumeLeft: 1, volumeRight: 1, preserved: {}, ...partial };
@@ -130,5 +130,38 @@ describe('compileVoice', () => {
     expect(last.time).toBeCloseTo(totalDuration, 10);
     expect(last.leftFreq).toBe(firstEntry.baseFreq + firstEntry.beatFreq / 2);
     expect(last.rightFreq).toBe(firstEntry.baseFreq - firstEntry.beatFreq / 2);
+  });
+});
+
+describe('valueAtTime', () => {
+  const events = compileVoice(
+    makeVoice([
+      makeEntry({ duration: 10, baseFreq: 100, beatFreq: 10 }), // left=105, right=95, t=0
+      makeEntry({ duration: 10, baseFreq: 200, beatFreq: 20 }), // left=210, right=190, t=10
+      // wrap to entry[0] (left=105, right=95) at t=20
+    ]),
+  );
+
+  it('returns the exact value at an event time', () => {
+    expect(valueAtTime(events, 0)).toEqual({ leftFreq: 105, rightFreq: 95, leftGain: 1, rightGain: 1 });
+    expect(valueAtTime(events, 10)).toEqual({ leftFreq: 210, rightFreq: 190, leftGain: 1, rightGain: 1 });
+    expect(valueAtTime(events, 20)).toEqual({ leftFreq: 105, rightFreq: 95, leftGain: 1, rightGain: 1 });
+  });
+
+  it('interpolates linearly at a segment midpoint', () => {
+    expect(valueAtTime(events, 5).leftFreq).toBeCloseTo(157.5, 10);
+    expect(valueAtTime(events, 15).leftFreq).toBeCloseTo(157.5, 10);
+  });
+
+  it('clamps to the first value before the curve starts', () => {
+    expect(valueAtTime(events, -5)).toEqual(valueAtTime(events, 0));
+  });
+
+  it('clamps to the last value after the curve ends', () => {
+    expect(valueAtTime(events, 25)).toEqual(valueAtTime(events, 20));
+  });
+
+  it('returns silence for an empty event list', () => {
+    expect(valueAtTime([], 5)).toEqual({ leftFreq: 0, rightFreq: 0, leftGain: 0, rightGain: 0 });
   });
 });

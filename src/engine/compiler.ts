@@ -43,3 +43,39 @@ export function compileVoice(voice: Voice): AutomationEvent[] {
 
   return events;
 }
+
+/**
+ * Interpolate a compiled voice's automation curve at an arbitrary offset — the same
+ * `spread * factor + start` linear interpolation `compileVoice`'s breakpoints are designed to
+ * reproduce via `linearRampToValueAtTime` (§3.5), evaluated directly instead of scheduled.
+ *
+ * Used to re-anchor `AudioParam`s at the correct value when seeking or resuming mid-curve
+ * (PLAN.md §4.3's `rescheduleFrom`). Clamps to the first event's value before it and the last
+ * event's value after it, matching how Web Audio holds a param's value outside its scheduled
+ * range.
+ */
+export function valueAtTime(events: AutomationEvent[], t: number): Omit<AutomationEvent, 'time'> {
+  if (events.length === 0) return { leftFreq: 0, rightFreq: 0, leftGain: 0, rightGain: 0 };
+  if (t <= events[0].time) return stripTime(events[0]);
+
+  for (let i = 0; i < events.length - 1; i++) {
+    const a = events[i];
+    const b = events[i + 1];
+    if (t <= b.time) {
+      const factor = b.time === a.time ? 1 : (t - a.time) / (b.time - a.time);
+      return {
+        leftFreq: a.leftFreq + (b.leftFreq - a.leftFreq) * factor,
+        rightFreq: a.rightFreq + (b.rightFreq - a.rightFreq) * factor,
+        leftGain: a.leftGain + (b.leftGain - a.leftGain) * factor,
+        rightGain: a.rightGain + (b.rightGain - a.rightGain) * factor,
+      };
+    }
+  }
+
+  return stripTime(events[events.length - 1]);
+}
+
+function stripTime(event: AutomationEvent): Omit<AutomationEvent, 'time'> {
+  const { time: _time, ...rest } = event;
+  return rest;
+}
