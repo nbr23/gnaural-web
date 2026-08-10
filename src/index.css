@@ -1,111 +1,133 @@
+/*
+ * Dark by default (PLAN.md §5.1 — "people use this in bed"), with light as the opt-out for a
+ * viewer whose OS explicitly asks for it. That inversion is deliberate: the usual
+ * `prefers-color-scheme: dark` override would leave the app light for anyone with no preference
+ * set, which is the wrong default for a program you start with the lights off.
+ *
+ * `src/viz/ScheduleChart.css` follows the same inversion so the chart tracks the app rather than
+ * the OS.
+ */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --bg: #16171d;
+  --surface: #1c1e27;
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  --border: #2e303a;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
+  --shadow: rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
+  color-scheme: dark;
+  font: 17px/1.45 var(--sans);
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
+    --bg: #ffffff;
+    --surface: #f7f7f8;
+    --text: #6b6375;
+    --text-h: #08060d;
+    --border: #e5e4e7;
+    --accent: #7c1fd4;
+    --accent-bg: rgba(124, 31, 212, 0.08);
+    --accent-border: rgba(124, 31, 212, 0.4);
     --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+      rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+    color-scheme: light;
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+* {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  min-height: 100svh;
+}
+
+#root {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
 }
 
 h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
+h2,
+h3 {
   color: var(--text-h);
+  font-weight: 600;
+  margin: 0;
 }
 
 h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+  font-size: 28px;
+  letter-spacing: -0.4px;
 }
+
 h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
+  font-size: 14px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text);
 }
+
 p {
   margin: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
+.button {
+  font: inherit;
+  font-size: 15px;
+  padding: 10px 18px;
+  border-radius: 8px;
   color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  min-height: 44px;
+
+  &:hover:not(:disabled) {
+    border-color: var(--accent-border);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.button--primary {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  min-width: 104px;
+  font-weight: 600;
+}
+
+input[type='range'] {
+  accent-color: var(--accent);
+  width: 100%;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+@media (min-width: 700px) {
+  #root {
+    padding: 32px 24px 64px;
+  }
+  h1 {
+    font-size: 34px;
+  }
 }

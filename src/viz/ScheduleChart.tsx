@@ -1,5 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { formatClock, formatHz } from '../app/format';
 import type { Schedule } from '../document/types';
 import { VoiceType } from '../document/types';
 import { EEG_BANDS } from './bands';
@@ -13,6 +14,7 @@ import {
   seriesValueAt,
   timeAtPixel,
 } from './geometry';
+import { seriesColor } from './palette';
 import { niceTicks, timeTicks } from './scales';
 import './ScheduleChart.css';
 
@@ -24,11 +26,14 @@ export interface ScheduleChartProps {
   lanes?: readonly LaneId[];
   /** Total height in px, including the time-axis band. Width is measured from the container. */
   height?: number;
+  /**
+   * Seek handler. When supplied the plot becomes draggable to scrub — transport, not document
+   * editing, so the component stays read-only in the sense Phase 1 cares about.
+   */
+  onSeek?: (time: number) => void;
   className?: string;
 }
 
-/** Categorical slots available before a voice falls back to the de-emphasis gray. */
-const SLOT_COUNT = 8;
 /** Pointer radius within which an authored breakpoint is highlighted (a >= 24px hit target). */
 const BREAKPOINT_HIT_RADIUS = 12;
 const DEFAULT_HEIGHT = 280;
@@ -43,22 +48,6 @@ const VOICE_TYPE_LABELS: Partial<Record<VoiceType, string>> = {
   [VoiceType.WaterDrops]: 'water drops',
   [VoiceType.Rain]: 'rain',
 };
-
-function seriesColor(slot: number): string {
-  return slot < SLOT_COUNT ? `var(--viz-series-${slot + 1})` : 'var(--viz-series-overflow)';
-}
-
-function formatClock(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds));
-  const minutes = Math.floor(total / 60);
-  const secondsPart = String(total % 60).padStart(2, '0');
-  if (minutes < 60) return `${minutes}:${secondsPart}`;
-  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}:${secondsPart}`;
-}
-
-function formatHz(value: number): string {
-  return value >= 100 ? value.toFixed(0) : value.toFixed(2).replace(/\.?0+$/, '');
-}
 
 /**
  * Y-axis positions for a lane. The beat lane reads against the EEG bands it is shaded with
@@ -121,6 +110,7 @@ export function ScheduleChart({
   currentTime,
   lanes = DEFAULT_LANES,
   height = DEFAULT_HEIGHT,
+  onSeek,
   className,
 }: ScheduleChartProps) {
   const [containerRef, width] = useElementWidth<HTMLDivElement>();
@@ -133,20 +123,51 @@ export function ScheduleChart({
     [model, width, height],
   );
 
-  const moveHover = useCallback(
+  const scrubbing = useRef(false);
+
+  const pointerPosition = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
       const svg = svgRef.current;
-      if (!svg || !layout) return;
+      if (!svg || !layout) return null;
 
       // Scale client coordinates into the SVG's own system, so hit-testing stays correct even if
       // CSS ever renders the element at a different size than its width attribute.
       const rect = svg.getBoundingClientRect();
-      const x = (event.clientX - rect.left) * (layout.width / rect.width);
-      const y = (event.clientY - rect.top) * (layout.height / rect.height);
-      setHover({ time: timeAtPixel(layout, x), pixelY: y });
+      return {
+        x: (event.clientX - rect.left) * (layout.width / rect.width),
+        y: (event.clientY - rect.top) * (layout.height / rect.height),
+      };
     },
     [layout],
   );
+
+  const handlePointerMove = useCallback(
+    (event: ReactPointerEvent<SVGSVGElement>) => {
+      const position = pointerPosition(event);
+      if (!position || !layout) return;
+
+      const time = timeAtPixel(layout, position.x);
+      setHover({ time, pixelY: position.y });
+      if (scrubbing.current) onSeek?.(time);
+    },
+    [layout, onSeek, pointerPosition],
+  );
+
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<SVGSVGElement>) => {
+      const position = pointerPosition(event);
+      if (!onSeek || !position || !layout) return;
+
+      scrubbing.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      onSeek(timeAtPixel(layout, position.x));
+    },
+    [layout, onSeek, pointerPosition],
+  );
+
+  const endScrub = useCallback(() => {
+    scrubbing.current = false;
+  }, []);
 
   const stepHover = useCallback(
     (event: ReactKeyboardEvent<SVGSVGElement>) => {
@@ -218,8 +239,15 @@ export function ScheduleChart({
         role="img"
         aria-label={chartLabel(schedule, model.voices.length, model.duration)}
         tabIndex={0}
-        onPointerMove={moveHover}
-        onPointerLeave={() => setHover(null)}
+        style={onSeek ? { cursor: 'pointer' } : undefined}
+        onPointerMove={handlePointerMove}
+        onPointerDown={handlePointerDown}
+        onPointerUp={endScrub}
+        onLostPointerCapture={endScrub}
+        onPointerLeave={() => {
+          endScrub();
+          setHover(null);
+        }}
         onKeyDown={stepHover}
         onBlur={() => setHover(null)}
       >

@@ -1,0 +1,75 @@
+.library__header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.library__lede {
+  max-width: 52ch;
+}
+
+.library__group {
+  margin-bottom: 28px;
+}
+
+.library__category {
+  margin-bottom: 10px;
+}
+
+.library__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 700px) {
+  .library__list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.program-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  text-align: left;
+  font: inherit;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--accent-border);
+  }
+}
+
+.program-card__title {
+  color: var(--text-h);
+  font-weight: 600;
+  font-size: 17px;
+}
+
+.program-card__meta {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.program-card__description {
+  font-size: 14px;
+  /* Descriptions run long; clamp rather than truncating mid-word with an ellipsis span. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}

@@ -77,8 +77,18 @@ function parseBool01(text: string | undefined, fallback: boolean): boolean {
 export function parseSchedule(xml: string): Schedule {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const root = doc.documentElement;
-  if (!root || root.tagName === 'parsererror') {
-    throw new Error('Malformed .gnaural XML');
+
+  // A parse failure is reported as a `parsererror` element, which is not always the root: some
+  // implementations wrap it in a document of their own. Look for it anywhere.
+  if (!root || doc.querySelector('parsererror')) {
+    throw new Error('Malformed XML — this file is not a Gnaural schedule.');
+  }
+
+  // Well-formed XML that simply isn't a schedule (an SVG, an RSS feed) would otherwise parse
+  // "successfully" into a schedule with no voices, and the app would present an empty program
+  // rather than saying the file was wrong.
+  if (root.tagName !== 'schedule') {
+    throw new Error(`Not a Gnaural schedule — the root element is <${root.tagName}>.`);
   }
 
   const preserved: Record<string, string> = {};

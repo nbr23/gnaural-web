@@ -12,24 +12,27 @@
  * steps fall below 3:1 on pure white (2.82 / 2.17 / 2.69), and the darker steps clear it. Passing
  * contrast outright is preferable to the relief rule here, which would otherwise oblige an
  * always-visible label on every series — untenable on a 77-breakpoint schedule.
+ *
+ * Dark is the default and light is the media-query opt-out, matching index.css: the chart must
+ * follow the app's own dark-by-default choice (§5.1) rather than the OS setting.
  */
 
 .schedule-chart {
-  --viz-surface: #ffffff;
-  --viz-ink: var(--text-h, #0b0b0b);
-  --viz-ink-muted: var(--text, #6b6375);
-  --viz-grid: #eceaf0;
-  --viz-axis: #d5d3da;
-  --viz-band: rgba(107, 99, 117, 0.05);
+  --viz-surface: #16171d;
+  --viz-ink: var(--text-h, #f3f4f6);
+  --viz-ink-muted: var(--text, #9ca3af);
+  --viz-grid: #252732;
+  --viz-axis: #343643;
+  --viz-band: rgba(255, 255, 255, 0.04);
 
-  --viz-series-1: #2a78d6;
-  --viz-series-2: #eb6834;
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
   --viz-series-3: #199e70;
   --viz-series-4: #c98500;
   --viz-series-5: #d55181;
   --viz-series-6: #008300;
-  --viz-series-7: #4a3aa7;
-  --viz-series-8: #e34948;
+  --viz-series-7: #9085e9;
+  --viz-series-8: #e66767;
   /* A 9th voice is never a generated hue: it falls back to de-emphasis gray and takes its
      identity from the legend and the readout instead. */
   --viz-series-overflow: #898781;
@@ -39,21 +42,21 @@
   text-align: left;
 }
 
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   .schedule-chart {
-    --viz-surface: #16171d;
-    --viz-grid: #252732;
-    --viz-axis: #343643;
-    --viz-band: rgba(255, 255, 255, 0.04);
+    --viz-surface: #ffffff;
+    --viz-grid: #eceaf0;
+    --viz-axis: #d5d3da;
+    --viz-band: rgba(107, 99, 117, 0.05);
 
-    --viz-series-1: #3987e5;
-    --viz-series-2: #d95926;
+    --viz-series-1: #2a78d6;
+    --viz-series-2: #eb6834;
     --viz-series-3: #199e70;
     --viz-series-4: #c98500;
     --viz-series-5: #d55181;
     --viz-series-6: #008300;
-    --viz-series-7: #9085e9;
-    --viz-series-8: #e66767;
+    --viz-series-7: #4a3aa7;
+    --viz-series-8: #e34948;
   }
 }
 

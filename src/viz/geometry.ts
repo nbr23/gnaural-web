@@ -8,6 +8,7 @@
  * through DOM events on individual marks.
  */
 
+import { scheduleDuration, voiceDuration } from '../document/timing';
 import type { Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import type { AutomationEvent } from '../engine/compiler';
@@ -61,9 +62,12 @@ export interface LaneModel {
 }
 
 export interface ChartModel {
-  /** Length of the longest voice — the drawn extent, so no voice's curve is cropped. */
+  /** Length of the longest drawn voice — the extent, so no plotted curve is cropped. */
   duration: number;
-  /** Length of the shortest voice: where playback actually ends and every voice resets (§3.7). */
+  /**
+   * Where playback actually ends: the shortest voice in the *whole schedule*, hidden and
+   * unrenderable voices included, since any of them can end it (§3.7).
+   */
   playbackDuration: number;
   /** True when voices differ in length by more than a rounding error, so the §3.7 case is live. */
   truncated: boolean;
@@ -113,15 +117,15 @@ export function buildChartModel(
         slot: index,
         label: voiceLabel(voice),
         type: voice.type,
-        duration: events[events.length - 1].time,
+        duration: voiceDuration(voice),
       },
       events,
     });
   });
 
-  const durations = compiled.map(({ identity }) => identity.duration);
-  const duration = durations.length > 0 ? Math.max(...durations) : 0;
-  const playbackDuration = durations.length > 0 ? Math.min(...durations) : 0;
+  const drawn = compiled.map(({ identity }) => identity.duration);
+  const duration = drawn.length > 0 ? Math.max(...drawn) : 0;
+  const playbackDuration = scheduleDuration(schedule);
 
   const lanes = laneIds.map<LaneModel>((id) => {
     const definition = LANE_DEFINITIONS[id];

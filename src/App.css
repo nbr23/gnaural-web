@@ -1,44 +1,39 @@
-#center {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-  text-align: center;
-  padding: 24px;
+.app {
+  position: relative;
+  min-height: 100svh;
 }
 
-.harness-chart {
-  align-self: stretch;
+.app--dragging {
+  outline: 2px dashed var(--accent-border);
+  outline-offset: -8px;
+  border-radius: 12px;
 }
 
-.elapsed {
-  font-family: monospace;
-  font-size: 24px;
-  margin: 0;
-}
-
-.transport {
-  display: flex;
-  gap: 12px;
-}
-
-.transport button {
-  font-size: 16px;
-  padding: 8px 20px;
-  border-radius: 5px;
-  color: var(--accent);
+.app__drop-hint {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 24px;
+  margin-inline: auto;
+  width: fit-content;
+  padding: 10px 18px;
+  border-radius: 999px;
   background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  cursor: pointer;
+  border: 1px solid var(--accent-border);
+  color: var(--text-h);
+  pointer-events: none;
+}
 
-  &:hover:not(:disabled) {
-    border-color: var(--accent-border);
-  }
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
+.app__error {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 15px;
+}
+
+.app__loading {
+  padding: 48px 0;
+  text-align: center;
 }

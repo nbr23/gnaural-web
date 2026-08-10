@@ -1,5 +1,8 @@
 import type { Entry, Voice } from '../document/types';
 
+/** The value half of an automation event — what `valueAtTime` returns, minus the timestamp. */
+export type AutomationValues = Omit<AutomationEvent, 'time'>;
+
 export interface AutomationEvent {
   time: number;       // seconds, relative to voice/schedule start
   leftFreq: number;
@@ -8,7 +11,7 @@ export interface AutomationEvent {
   rightGain: number;
 }
 
-function eventValues(entry: Entry): Omit<AutomationEvent, 'time'> {
+function eventValues(entry: Entry): AutomationValues {
   return {
     // §3.6 — voices are symmetric around basefreq; left carries the higher frequency.
     leftFreq: entry.baseFreq + entry.beatFreq / 2,
@@ -21,14 +24,15 @@ function eventValues(entry: Entry): Omit<AutomationEvent, 'time'> {
 /**
  * Recover the base (carrier) frequency from an event's per-channel pair — the exact inverse of
  * the §3.6 assignment applied in `eventValues`, kept beside it so the left-is-higher convention
- * lives in one place.
+ * lives in one place. Takes the value half alone, so a `valueAtTime` result can be fed straight
+ * in without reconstructing an event.
  */
-export function eventBaseFreq(event: AutomationEvent): number {
+export function eventBaseFreq(event: AutomationValues): number {
   return (event.leftFreq + event.rightFreq) / 2;
 }
 
 /** Recover the beat frequency from an event's per-channel pair (inverse of §3.6). */
-export function eventBeatFreq(event: AutomationEvent): number {
+export function eventBeatFreq(event: AutomationValues): number {
   return event.leftFreq - event.rightFreq;
 }
 
@@ -68,7 +72,7 @@ export function compileVoice(voice: Voice): AutomationEvent[] {
  * event's value after it, matching how Web Audio holds a param's value outside its scheduled
  * range.
  */
-export function valueAtTime(events: AutomationEvent[], t: number): Omit<AutomationEvent, 'time'> {
+export function valueAtTime(events: AutomationEvent[], t: number): AutomationValues {
   if (events.length === 0) return { leftFreq: 0, rightFreq: 0, leftGain: 0, rightGain: 0 };
   if (t <= events[0].time) return stripTime(events[0]);
 
@@ -89,7 +93,7 @@ export function valueAtTime(events: AutomationEvent[], t: number): Omit<Automati
   return stripTime(events[events.length - 1]);
 }
 
-function stripTime(event: AutomationEvent): Omit<AutomationEvent, 'time'> {
+function stripTime(event: AutomationEvent): AutomationValues {
   const { time: _time, ...rest } = event;
   return rest;
 }

@@ -1,0 +1,81 @@
+import type { ReactNode } from 'react';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, beforeEach } from 'vitest';
+
+/**
+ * Minimal React DOM test harness on happy-dom — no testing-library dependency, since everything
+ * these tests need is `createRoot` plus `act`.
+ */
+
+export interface TestRoot {
+  readonly container: HTMLDivElement;
+  render(element: ReactNode): void;
+  /** Run an interaction and flush the resulting renders. */
+  act(action: () => void): void;
+  click(element: Element | null | undefined): void;
+  text(): string;
+  query(selector: string): Element | null;
+  queryAll(selector: string): Element[];
+  /** First element whose text content matches, useful for finding a button by its label. */
+  byText(selector: string, text: string): Element | undefined;
+}
+
+export function setupRoot(): TestRoot {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  return {
+    get container() {
+      return container;
+    },
+    render: (element) => act(() => root.render(element)),
+    act: (action) => act(action),
+    click: (element) => {
+      act(() => {
+        element?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+    },
+    text: () => container.textContent ?? '',
+    query: (selector) => container.querySelector(selector),
+    queryAll: (selector) => [...container.querySelectorAll(selector)],
+    byText: (selector, text) =>
+      [...container.querySelectorAll(selector)].find((el) => el.textContent?.includes(text)),
+  };
+}
+
+/**
+ * Set a controlled input's value the way a user would.
+ *
+ * Assigning `.value` directly also updates React's internal value tracker, so React concludes
+ * nothing changed and never fires `onChange`. Going through the prototype's setter leaves the
+ * tracker stale, which is what makes the subsequent event look like real input.
+ */
+export function setInputValue(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/**
+ * Flush pending async work — a lazily imported program, a file read — and the renders it causes.
+ * A dynamic import settles on a macrotask, so a microtask drain alone is not enough.
+ */
+export async function flush(times = 4): Promise<void> {
+  for (let i = 0; i < times; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+}

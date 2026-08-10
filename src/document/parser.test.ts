@@ -80,3 +80,24 @@ describe('parseSchedule — airplanetravelaid.gnaural', () => {
     expect(first.volumeRight).toBe(0.85);
   });
 });
+
+describe('rejecting files that are not schedules', () => {
+  // The parser is deliberately forgiving about *contents* (§3.4 — never fail hard on a missing or
+  // degenerate field), but a file that is not a Gnaural schedule at all is a different matter:
+  // failing loudly is what lets the UI say so instead of presenting an empty program.
+  it('rejects text that is not XML', () => {
+    expect(() => parseSchedule('this is not a schedule')).toThrow(/not a Gnaural schedule/i);
+  });
+
+  it('rejects malformed XML', () => {
+    expect(() => parseSchedule('<schedule><voice></schedule>')).toThrow(/not a Gnaural schedule/i);
+  });
+
+  it('rejects well-formed XML with the wrong root element', () => {
+    expect(() => parseSchedule('<svg><rect /></svg>')).toThrow(/root element is <svg>/);
+  });
+
+  it('accepts a schedule with no voices at all', () => {
+    expect(parseSchedule('<schedule><title>Empty</title></schedule>').voices).toEqual([]);
+  });
+});

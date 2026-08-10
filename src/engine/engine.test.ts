@@ -232,3 +232,168 @@ describe('PlaybackEngine transport', () => {
     expect(peakAmplitude(tail)).toBe(0);
   });
 });
+
+describe('channel and voice routing', () => {
+  it('swaps the output channels after master volume is applied (§3.2)', async () => {
+    // Asymmetric master volumes make the swap observable: the left master gain must follow the
+    // audio into the *right* output, which a naive L/R swap of the sources would not do.
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const schedule = makeSchedule([makeVoice([makeEntry({ duration: 2, baseFreq: 300, beatFreq: 0 })])], {
+      masterVolume: { left: 0.5, right: 1 },
+      stereoSwap: true,
+    });
+
+    playSchedule(context, schedule);
+    const buffer = await context.startRendering();
+
+    expect(peakAmplitude(buffer.getChannelData(0))).toBeCloseTo(1, 1);
+    expect(peakAmplitude(buffer.getChannelData(1))).toBeCloseTo(0.5, 1);
+  });
+
+  it('downmixes a mono voice to (L+R)/2 before applying per-channel volume (§3.2)', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const schedule = makeSchedule([
+      makeVoice([makeEntry({ duration: 2, baseFreq: 300, beatFreq: 40, volumeLeft: 1, volumeRight: 0.5 })], {
+        mono: true,
+      }),
+    ]);
+
+    playSchedule(context, schedule);
+    const buffer = await context.startRendering();
+    const left = buffer.getChannelData(0);
+    const right = buffer.getChannelData(1);
+
+    // Both channels carry the same summed signal, scaled only by their own volume — so right is
+    // exactly half of left, sample for sample. A pan would instead leave two different pitches.
+    for (let i = 0; i < left.length; i += 997) {
+      expect(right[i]).toBeCloseTo(left[i] * 0.5, 5);
+    }
+    // The downmix of two tones 40 Hz apart beats acoustically, so it is not a constant-amplitude
+    // sine: the summed peak stays at or below the 1.0 the two halves can reach together.
+    expect(peakAmplitude(left)).toBeLessThanOrEqual(1.01);
+  });
+
+  it("honours the document's voice_mute flag when rendering offline", async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const schedule = makeSchedule([
+      makeVoice([makeEntry({ duration: 2, baseFreq: 300, beatFreq: 0 })], { muted: true }),
+    ]);
+
+    playSchedule(context, schedule);
+    const buffer = await context.startRendering();
+
+    expect(peakAmplitude(buffer.getChannelData(0))).toBe(0);
+  });
+});
+
+describe('PlaybackEngine mixing', () => {
+  function twoVoiceSchedule(): Schedule {
+    return makeSchedule([
+      makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0 })]),
+      makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0 })], { id: 1 }),
+    ]);
+  }
+
+  async function renderPeak(setup: (engine: PlaybackEngine) => void): Promise<number> {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(twoVoiceSchedule());
+    engine.play();
+    setup(engine);
+
+    const buffer = await context.startRendering();
+    // Skip the anti-click fade at the head of the render.
+    return peakAmplitude(buffer.getChannelData(0).subarray(Math.round(0.2 * SAMPLE_RATE)));
+  }
+
+  it('silences a muted voice while the other keeps playing', async () => {
+    const both = await renderPeak(() => {});
+    const one = await renderPeak((engine) => engine.setVoiceMuted(0, true));
+
+    expect(both).toBeGreaterThan(1.5);
+    expect(one).toBeGreaterThan(0.5);
+    expect(one).toBeLessThan(both * 0.75);
+  });
+
+  it('solo silences every voice that is not soloed', async () => {
+    const soloed = await renderPeak((engine) => engine.setVoiceSoloed(1, true));
+    expect(soloed).toBeGreaterThan(0.5);
+    expect(soloed).toBeLessThan(1.5);
+  });
+
+  it('seeds mute state from the document but keeps runtime changes separate from it', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    const schedule = makeSchedule([
+      makeVoice([makeEntry({ duration: 30, baseFreq: 300 })], { muted: true }),
+      makeVoice([makeEntry({ duration: 30, baseFreq: 300 })], { id: 1 }),
+    ]);
+    engine.load(schedule);
+
+    expect(engine.isVoiceMuted(0)).toBe(true);
+    expect(engine.isVoiceAudible(0)).toBe(false);
+
+    engine.setVoiceMuted(0, false);
+    expect(engine.isVoiceAudible(0)).toBe(true);
+    // Unmuting is session state; the document is untouched.
+    expect(schedule.voices[0].muted).toBe(true);
+  });
+
+  it('makes a soloed voice audible and everything else silent, mute aside', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    engine.load(twoVoiceSchedule());
+
+    engine.setVoiceSoloed(1, true);
+    expect(engine.isVoiceAudible(0)).toBe(false);
+    expect(engine.isVoiceAudible(1)).toBe(true);
+
+    // A voice that is both soloed and muted stays silent.
+    engine.setVoiceMuted(1, true);
+    expect(engine.isVoiceAudible(1)).toBe(false);
+
+    engine.setVoiceSoloed(1, false);
+    expect(engine.isVoiceAudible(0)).toBe(true);
+  });
+
+  it('scales output by the app master gain, independently of the file volumes', async () => {
+    const full = await renderPeak(() => {});
+    const half = await renderPeak((engine) => engine.setMasterGain(0.5));
+
+    expect(half).toBeCloseTo(full * 0.5, 1);
+  });
+});
+
+describe('end of schedule (§3.7)', () => {
+  it('reports the shortest voice as the duration, counting voices it cannot render', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    engine.load(
+      makeSchedule([
+        makeVoice([makeEntry({ duration: 30, baseFreq: 300 })]),
+        makeVoice([makeEntry({ duration: 12, baseFreq: 300 })], { id: 1, type: VoiceType.PinkNoise }),
+      ]),
+    );
+
+    expect(engine.getDuration()).toBe(12);
+  });
+
+  it('goes silent at the end instead of holding the last value forever', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    // Ends a third of the way into a one-second render.
+    engine.load(makeSchedule([makeVoice([makeEntry({ duration: 0.33, baseFreq: 300, beatFreq: 0 })])]));
+    engine.play();
+
+    const buffer = await context.startRendering();
+    const left = buffer.getChannelData(0);
+
+    expect(peakAmplitude(left.subarray(Math.round(0.1 * SAMPLE_RATE), Math.round(0.3 * SAMPLE_RATE)))).toBeGreaterThan(0.5);
+    expect(peakAmplitude(left.subarray(Math.round(0.6 * SAMPLE_RATE)))).toBe(0);
+  });
+
+  it('clamps the reported offset and refuses to seek past the end', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    engine.load(makeRampingSchedule().schedule);
+
+    engine.seek(999);
+    expect(engine.getCurrentOffset()).toBe(20);
+  });
+});
