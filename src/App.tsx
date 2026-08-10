@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import powernapXml from '../fixtures/powernap.gnaural?raw';
 import { parseSchedule } from './document/parser';
 import { PlaybackEngine } from './engine/engine';
+import { ScheduleChart } from './viz/ScheduleChart';
 import './App.css';
 
 // Manual-test harness for the engine (steps 3-4): a hardcoded fixture wired to transport
@@ -87,6 +88,7 @@ function App() {
           Stop
         </button>
       </div>
+      <ScheduleChart schedule={schedule} currentTime={elapsed} className="harness-chart" />
     </section>
   );
 }

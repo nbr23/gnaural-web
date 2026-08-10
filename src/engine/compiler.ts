@@ -19,6 +19,20 @@ function eventValues(entry: Entry): Omit<AutomationEvent, 'time'> {
 }
 
 /**
+ * Recover the base (carrier) frequency from an event's per-channel pair — the exact inverse of
+ * the §3.6 assignment applied in `eventValues`, kept beside it so the left-is-higher convention
+ * lives in one place.
+ */
+export function eventBaseFreq(event: AutomationEvent): number {
+  return (event.leftFreq + event.rightFreq) / 2;
+}
+
+/** Recover the beat frequency from an event's per-channel pair (inverse of §3.6). */
+export function eventBeatFreq(event: AutomationEvent): number {
+  return event.leftFreq - event.rightFreq;
+}
+
+/**
  * Compile a voice's entries into a breakpoint automation curve.
  *
  * Pure function — no audio, no DOM. One event per entry at its absolute start time, plus a
