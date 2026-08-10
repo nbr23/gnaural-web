@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+<!-- See http://gnaural.sourceforge.net -->
+<schedule>
+<gnauralfile_version>1.20101006</gnauralfile_version>
+<gnaural_version>1.0.20110606</gnaural_version>
+<title>Smr</title>
+<schedule_description>Insomnia relief through stimulating Sensory Motor Rythm. Don't use it at bedtime, use it only during your insomnia, for example if you wake up in the middle of the night and can't go back to sleep 38 mn of crossing frequencies from 8 to 12 Hz</schedule_description>
+<author></author>
+<totaltime>2331.0070</totaltime>
+<voicecount>2</voicecount>
+<totalentrycount>28</totalentrycount>
+<loops>1</loops>
+<overallvolume_left>1</overallvolume_left>
+<overallvolume_right>1</overallvolume_right>
+<stereoswap>0</stereoswap>
+<graphview>1</graphview>
+<voice>
+<description>Voice 1</description>
+<id>0</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>14</entrycount>
+<entries>
+<entry parent="0" duration="333" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="333" volume_left="0.5" volume_right="0.5" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.5" volume_right="0.5" beatfreq="10" basefreq="437" state="0"/>
+<entry parent="0" duration="333" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="437" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="333" volume_left="0.5" volume_right="0.5" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.5" volume_right="0.5" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="333" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="437" state="0"/>
+<entry parent="0" duration="333" volume_left="0.5" volume_right="0.5" beatfreq="10" basefreq="437" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.5" volume_right="0.5" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="333" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="437" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 2</description>
+<id>1</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>14</entrycount>
+<entries>
+<entry parent="1" duration="333" volume_left="0.5" volume_right="0.5" beatfreq="12" basefreq="519.7374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.5" volume_right="0.5" beatfreq="12" basefreq="519.7374737" state="0"/>
+<entry parent="1" duration="333" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="519.7374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="518.7374737" state="0"/>
+<entry parent="1" duration="333" volume_left="0.5" volume_right="0.5" beatfreq="10" basefreq="518.7374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.5" volume_right="0.5" beatfreq="8" basefreq="517.7374737" state="0"/>
+<entry parent="1" duration="333" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="517.7374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="517.7374737" state="0"/>
+<entry parent="1" duration="333" volume_left="0.5" volume_right="0.5" beatfreq="8" basefreq="517.7374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.5" volume_right="0.5" beatfreq="10" basefreq="518.7374737" state="0"/>
+<entry parent="1" duration="333" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="518.7374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="519.7374737" state="0"/>
+<entry parent="1" duration="333" volume_left="0.5" volume_right="0.5" beatfreq="12" basefreq="519.7374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.5" volume_right="0.5" beatfreq="10" basefreq="518.7374737" state="0"/>
+</entries>
+</voice>
+</schedule>

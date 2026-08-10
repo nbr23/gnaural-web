@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+<!-- See http://gnaural.sourceforge.net -->
+<schedule>
+<gnauralfile_version>1.20101006</gnauralfile_version>
+<gnaural_version>1.0.20110606</gnaural_version>
+<title>Learning</title>
+<schedule_description>A 2h preset that enhances learning, increases ability to concentrate and think clearly, reduces unwillingness to work.  Students can't get enough of this program! This one is to be listened while studying. </schedule_description>
+<author>@GiorgioRegni</author>
+<totaltime>7200.0010</totaltime>
+<voicecount>4</voicecount>
+<totalentrycount>12</totalentrycount>
+<loops>1</loops>
+<overallvolume_left>1</overallvolume_left>
+<overallvolume_right>1</overallvolume_right>
+<stereoswap>0</stereoswap>
+<graphview>1</graphview>
+<voice>
+<description>Voice 1</description>
+<id>0</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>3</entrycount>
+<entries>
+<entry parent="0" duration="120" volume_left="0.6" volume_right="0.6" beatfreq="60" basefreq="462" state="0"/>
+<entry parent="0" duration="7080" volume_left="0.6" volume_right="0.6" beatfreq="14" basefreq="439" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="14" basefreq="439" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 2</description>
+<id>1</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>3</entrycount>
+<entries>
+<entry parent="1" duration="120" volume_left="0.5" volume_right="0.5" beatfreq="70" basefreq="548.7374737" state="0"/>
+<entry parent="1" duration="7080" volume_left="0.5" volume_right="0.5" beatfreq="22" basefreq="524.7374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.5" volume_right="0.5" beatfreq="22" basefreq="524.7374737" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 3</description>
+<id>2</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>3</entrycount>
+<entries>
+<entry parent="2" duration="120" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="7080" volume_left="0.4" volume_right="0.4" beatfreq="12" basefreq="653.2686572" state="0"/>
+<entry parent="2" duration="0.001" volume_left="0.4" volume_right="0.4" beatfreq="12" basefreq="653.2686572" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 4</description>
+<id>3</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>3</entrycount>
+<entries>
+<entry parent="3" duration="120" volume_left="0" volume_right="0" beatfreq="0" basefreq="769.7364925" state="0"/>
+<entry parent="3" duration="7080" volume_left="0.4" volume_right="0.4" beatfreq="6" basefreq="772.7364925" state="0"/>
+<entry parent="3" duration="0.001" volume_left="0.4" volume_right="0.4" beatfreq="6" basefreq="772.7364925" state="0"/>
+</entries>
+</voice>
+</schedule>

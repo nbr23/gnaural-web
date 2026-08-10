@@ -1,0 +1,130 @@
+<?xml version="1.0"?>
+<!-- See http://gnaural.sourceforge.net -->
+<schedule>
+<gnauralfile_version>1.20101006</gnauralfile_version>
+<gnaural_version>1.0.20110606</gnaural_version>
+<title>Lucid Dreams 2</title>
+<schedule_description>Sleep Induction and Lucid Dreams 2Sleep Induction into a longer lucid dreaming program</schedule_description>
+<author>@thegreenman</author>
+<totaltime>10520.0030</totaltime>
+<voicecount>3</voicecount>
+<totalentrycount>77</totalentrycount>
+<loops>1</loops>
+<overallvolume_left>1</overallvolume_left>
+<overallvolume_right>1</overallvolume_right>
+<stereoswap>0</stereoswap>
+<graphview>1</graphview>
+<voice>
+<description>Voice 1</description>
+<id>0</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>27</entrycount>
+<entries>
+<entry parent="0" duration="600" volume_left="0.6" volume_right="0.6" beatfreq="9.7" basefreq="436.85" state="0"/>
+<entry parent="0" duration="5400" volume_left="0.6" volume_right="0.6" beatfreq="3.4" basefreq="433.7" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="2.4" basefreq="433.2" state="0"/>
+<entry parent="0" duration="120" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="437" state="0"/>
+<entry parent="0" duration="120" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="120" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="240" volume_left="0.6" volume_right="0.6" beatfreq="6" basefreq="435" state="0"/>
+<entry parent="0" duration="240" volume_left="0.6" volume_right="0.6" beatfreq="6" basefreq="435" state="0"/>
+<entry parent="0" duration="420" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="360" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="180" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="900" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="900" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="20" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="360" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="360" volume_left="0.7" volume_right="0.7" beatfreq="5" basefreq="434.5" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.7" volume_right="0.7" beatfreq="12" basefreq="438" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 2</description>
+<id>1</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>25</entrycount>
+<entries>
+<entry parent="1" duration="600" volume_left="0.55" volume_right="0.55" beatfreq="9.5" basefreq="518.4874737" state="0"/>
+<entry parent="1" duration="5400" volume_left="0.55" volume_right="0.55" beatfreq="3" basefreq="515.2374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.55" volume_right="0.55" beatfreq="3" basefreq="515.2374737" state="0"/>
+<entry parent="1" duration="120" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="120" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="120" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="240" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="240" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="420" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="360" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="180" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="900" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="900" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="360" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+<entry parent="1" duration="360.002" volume_left="0" volume_right="0" beatfreq="0" basefreq="513.7374737" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 3</description>
+<id>2</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>25</entrycount>
+<entries>
+<entry parent="2" duration="600" volume_left="0.5" volume_right="0.5" beatfreq="9.3" basefreq="651.9186572" state="0"/>
+<entry parent="2" duration="5400" volume_left="0.5" volume_right="0.5" beatfreq="2.4" basefreq="648.4686572" state="0"/>
+<entry parent="2" duration="0.001" volume_left="0.5" volume_right="0.5" beatfreq="3.4" basefreq="648.9686572" state="0"/>
+<entry parent="2" duration="120" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="120" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="120" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="240" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="240" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="420" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="360" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="180" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="900" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="900" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="20" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="360" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+<entry parent="2" duration="360.002" volume_left="0" volume_right="0" beatfreq="0" basefreq="647.2686572" state="0"/>
+</entries>
+</voice>
+</schedule>

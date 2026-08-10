@@ -1,0 +1,94 @@
+<?xml version="1.0"?>
+<!-- See http://gnaural.sourceforge.net -->
+<schedule>
+<gnauralfile_version>1.20101006</gnauralfile_version>
+<gnaural_version>1.0.20110606</gnaural_version>
+<title>Astral 01 Relax</title>
+<schedule_description>From the book Mastering Astral Projection, Week 1: Relaxation. Use a low to medium sound level, sit in a quiet place, and listen to the preset with eyes closed. A hard-backed chair without neck support is recommended to prevent falling asleep.</schedule_description>
+<author>@GiorgioRegni</author>
+<totaltime>5400.0020</totaltime>
+<voicecount>5</voicecount>
+<totalentrycount>17</totalentrycount>
+<loops>1</loops>
+<overallvolume_left>1</overallvolume_left>
+<overallvolume_right>1</overallvolume_right>
+<stereoswap>0</stereoswap>
+<graphview>1</graphview>
+<voice>
+<description>Voice 1</description>
+<id>0</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>4</entrycount>
+<entries>
+<entry parent="0" duration="600" volume_left="0.65" volume_right="0.65" beatfreq="15" basefreq="439.5" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.65" volume_right="0.65" beatfreq="10" basefreq="437" state="0"/>
+<entry parent="0" duration="4800" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="437" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="437" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 2</description>
+<id>1</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>4</entrycount>
+<entries>
+<entry parent="1" duration="600" volume_left="0.65" volume_right="0.65" beatfreq="15" basefreq="521.2374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.65" volume_right="0.65" beatfreq="10" basefreq="518.7374737" state="0"/>
+<entry parent="1" duration="4800" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="518.7374737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="518.7374737" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 3</description>
+<id>2</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>4</entrycount>
+<entries>
+<entry parent="2" duration="600" volume_left="0.65" volume_right="0.65" beatfreq="15" basefreq="654.7686572" state="0"/>
+<entry parent="2" duration="0.001" volume_left="0.65" volume_right="0.65" beatfreq="10" basefreq="652.2686572" state="0"/>
+<entry parent="2" duration="4800" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="652.2686572" state="0"/>
+<entry parent="2" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="652.2686572" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 4</description>
+<id>3</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>3</entrycount>
+<entries>
+<entry parent="3" duration="600" volume_left="0" volume_right="0" beatfreq="0" basefreq="769.7364925" state="0"/>
+<entry parent="3" duration="4800" volume_left="0.6" volume_right="0.6" beatfreq="4.5" basefreq="771.9864925" state="0"/>
+<entry parent="3" duration="0.002" volume_left="0.6" volume_right="0.6" beatfreq="2.5" basefreq="770.9864925" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Background noise</description>
+<id>4</id>
+<type>1</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>2</entrycount>
+<entries>
+<entry parent="4" duration="600" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="4" duration="4800.002" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+</entries>
+</voice>
+</schedule>

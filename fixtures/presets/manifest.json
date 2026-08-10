@@ -1,0 +1,224 @@
+[
+  {
+    "file": "healing-morphine.gnaural",
+    "title": "Morphine",
+    "category": "Healing",
+    "author": "@GiorgioRegni",
+    "description": "A relaxing, southing mix of beats that slowly but surely appease any pain point. The brain runs the body as you will discover with this preset.",
+    "durationSeconds": 3600.0,
+    "voiceCount": 5,
+    "sourceMethod": "HEALING_MORPHINE",
+    "backgrounds": [
+      "UNITY"
+    ]
+  },
+  {
+    "file": "hypnosis-self-hypnosis.gnaural",
+    "title": "Self Hypnosis",
+    "category": "Hypnosis",
+    "author": "@GiorgioRegni",
+    "description": "Short meditation preset to unite your conscious and subconscious mind. It lasts 20mn : Glide down to theta waves, plateau for 10mn then then slowly come back up to awake state",
+    "durationSeconds": 1200.0,
+    "voiceCount": 1,
+    "sourceMethod": "HYPNOSIS_SELF_HYPNOSIS",
+    "backgrounds": [
+      "WHITE_NOISE"
+    ]
+  },
+  {
+    "file": "learning-learning.gnaural",
+    "title": "Learning",
+    "category": "Learning",
+    "author": "@GiorgioRegni",
+    "description": "A 2h preset that enhances learning, increases ability to concentrate and think clearly, reduces unwillingness to work.  Students can't get enough of this program! This one is to be listened while studying. ",
+    "durationSeconds": 7200.0,
+    "voiceCount": 4,
+    "sourceMethod": "LEARNING_LEARNING",
+    "backgrounds": [
+      "NONE"
+    ]
+  },
+  {
+    "file": "meditation-schumann-resonance.gnaural",
+    "title": "Schumann Resonance",
+    "category": "Meditation",
+    "author": "@thegreenman",
+    "description": "A meditation to put your mind in balance with the Earth. Glide down to Schumann Resonance, low frequency portion of the Earth's electromagnetic field, resonate for 10 minutes then slowly come back up to awake state.",
+    "durationSeconds": 1200.0,
+    "voiceCount": 1,
+    "sourceMethod": "MEDITATION_SCHUMANN_RESONANCE",
+    "backgrounds": [
+      "WHITE_NOISE"
+    ]
+  },
+  {
+    "file": "meditation-shamanic-rhythm.gnaural",
+    "title": "Shamanic Rhythm",
+    "category": "Meditation",
+    "author": "@thegreenman",
+    "description": "Shamanic Drum RhythmBegin at 9hz then glide down to 4.5hz for 50 minutes and back up at the end.",
+    "durationSeconds": 3600.0,
+    "voiceCount": 1,
+    "sourceMethod": "MEDITATION_SHAMANIC_RHYTHM",
+    "backgrounds": [
+      "WHITE_NOISE"
+    ]
+  },
+  {
+    "file": "meditation-unity.gnaural",
+    "title": "Unity",
+    "category": "Meditation",
+    "author": "@GiorgioRegni",
+    "description": "Wander in deep relaxing delta waves and let your mind explore freely and without bounds. May induce dreamless sleep and loss of body awareness.",
+    "durationSeconds": 3600.0,
+    "voiceCount": 3,
+    "sourceMethod": "MEDITATION_UNITY",
+    "backgrounds": [
+      "UNITY"
+    ]
+  },
+  {
+    "file": "meditation-wakefulrelax.gnaural",
+    "title": "Wakefulrelax",
+    "category": "Meditation",
+    "author": "@GiorgioRegni",
+    "description": "This presets stimulates a wakeful relaxation state with closed eyes. Zen-trained meditation masters produce noticeably more alpha waves during meditation.To be used in short 10 to 15 minutes doses to calm down and concentrate when needed.",
+    "durationSeconds": 900.0,
+    "voiceCount": 3,
+    "sourceMethod": "MEDITATION_WAKEFULRELAX",
+    "backgrounds": [
+      "WHITE_NOISE"
+    ]
+  },
+  {
+    "file": "oobe-astral-01-relax.gnaural",
+    "title": "Astral 01 Relax",
+    "category": "Oobe",
+    "author": "@GiorgioRegni",
+    "description": "From the book Mastering Astral Projection, Week 1: Relaxation. Use a low to medium sound level, sit in a quiet place, and listen to the preset with eyes closed. A hard-backed chair without neck support is recommended to prevent falling asleep.",
+    "durationSeconds": 5400.0,
+    "voiceCount": 4,
+    "sourceMethod": "OOBE_ASTRAL_01_RELAX",
+    "backgrounds": [
+      "WHITE_NOISE"
+    ]
+  },
+  {
+    "file": "oobe-lucid-dreams.gnaural",
+    "title": "Lucid Dreams",
+    "category": "Oobe",
+    "author": "@thegreenman",
+    "description": "This preset stimulates lucid dreaming. It has to be played while sleeping, it is recommend during a nap, while seated in a chair or sofa to prevent falling fully asleep. 5hz base frequency with 8 hz spikes",
+    "durationSeconds": 2650.0,
+    "voiceCount": 1,
+    "sourceMethod": "OOBE_LUCID_DREAMS",
+    "backgrounds": [
+      "NONE"
+    ]
+  },
+  {
+    "file": "oobe-lucid-dreams-2.gnaural",
+    "title": "Lucid Dreams 2",
+    "category": "Oobe",
+    "author": "@thegreenman",
+    "description": "Sleep Induction and Lucid Dreams 2Sleep Induction into a longer lucid dreaming program",
+    "durationSeconds": 10520.0,
+    "voiceCount": 3,
+    "sourceMethod": "OOBE_LUCID_DREAMS_2",
+    "backgrounds": [
+      "NONE",
+      "UNITY"
+    ]
+  },
+  {
+    "file": "sleep-sleep-induction.gnaural",
+    "title": "Sleep Induction",
+    "category": "Sleep",
+    "author": "@thegreenman",
+    "description": "Sleep induction for use about 15 mn before bedtime to help you fall asleep. It's a one hour programm, with 6mn drop into delta waves followed by 54 mn of relaxing delta plateau",
+    "durationSeconds": 3600.0,
+    "voiceCount": 1,
+    "sourceMethod": "SLEEP_SLEEP_INDUCTION",
+    "backgrounds": [
+      "UNITY"
+    ]
+  },
+  {
+    "file": "sleep-smr.gnaural",
+    "title": "Smr",
+    "category": "Sleep",
+    "author": "",
+    "description": "Insomnia relief through stimulating Sensory Motor Rythm. Don't use it at bedtime, use it only during your insomnia, for example if you wake up in the middle of the night and can't go back to sleep 38 mn of crossing frequencies from 8 to 12 Hz",
+    "durationSeconds": 2331.0,
+    "voiceCount": 2,
+    "sourceMethod": "SLEEP_SMR",
+    "backgrounds": [
+      "NONE"
+    ]
+  },
+  {
+    "file": "stimulation-adhd.gnaural",
+    "title": "Adhd",
+    "category": "Stimulation",
+    "author": "@thegreenman",
+    "description": "This preset is an aid for Attention Deficit Hyperactivity Disorder. It lasts 30mn and alternates between 12 and 20 hz. It can be used whenever needed",
+    "durationSeconds": 1800.0,
+    "voiceCount": 1,
+    "sourceMethod": "STIMULATION_ADHD",
+    "backgrounds": [
+      "WHITE_NOISE"
+    ]
+  },
+  {
+    "file": "stimulation-creativity.gnaural",
+    "title": "Creativity",
+    "category": "Stimulation",
+    "author": "@thegreenman",
+    "description": "It's a 20mn meditation preset to assist in Creative Thinking It begins at 10hz then varying from 8 to 6 hz with a glide back to 8hz at the end",
+    "durationSeconds": 1230.0,
+    "voiceCount": 1,
+    "sourceMethod": "STIMULATION_CREATIVITY",
+    "backgrounds": [
+      "WHITE_NOISE"
+    ]
+  },
+  {
+    "file": "stimulation-hallucination.gnaural",
+    "title": "Hallucination",
+    "category": "Stimulation",
+    "author": "@GiorgioRegni",
+    "description": "A fun preset that simulates psychedelic hallucinations.",
+    "durationSeconds": 600.0,
+    "voiceCount": 3,
+    "sourceMethod": "STIMULATION_HALLUCINATION",
+    "backgrounds": [
+      "WHITE_NOISE"
+    ]
+  },
+  {
+    "file": "stimulation-highest-mental-activity.gnaural",
+    "title": "Highest Mental Activity",
+    "category": "Stimulation",
+    "author": "@GiorgioRegni",
+    "description": "A quick cafeine boost ! This preset shortly reaches Gamma waves, provides higher mental activity, including perception, problem solving, and consciousness. It can be used whenever needed",
+    "durationSeconds": 840.0,
+    "voiceCount": 1,
+    "sourceMethod": "STIMULATION_HIGHEST_MENTAL_ACTIVITY",
+    "backgrounds": [
+      "WHITE_NOISE"
+    ]
+  },
+  {
+    "file": "stimulation-hiit.gnaural",
+    "title": "Hiit",
+    "category": "Stimulation",
+    "author": "@GiorgioRegni",
+    "description": "This preset is based on a Tabata HIIT protocol, it helps you give your maximum during work periods and recover quicker during rest periods. Starts with 2 minutes warm up then 8 times 20 secs work, 10 secs rest followed by 2 minutes  of cool down. As always use headphones.",
+    "durationSeconds": 270.0,
+    "voiceCount": 5,
+    "sourceMethod": "STIMULATION_HIIT",
+    "backgrounds": [
+      "NONE"
+    ]
+  }
+]

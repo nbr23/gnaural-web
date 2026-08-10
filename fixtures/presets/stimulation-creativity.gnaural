@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!-- See http://gnaural.sourceforge.net -->
+<schedule>
+<gnauralfile_version>1.20101006</gnauralfile_version>
+<gnaural_version>1.0.20110606</gnaural_version>
+<title>Creativity</title>
+<schedule_description>It's a 20mn meditation preset to assist in Creative Thinking It begins at 10hz then varying from 8 to 6 hz with a glide back to 8hz at the end</schedule_description>
+<author>@thegreenman</author>
+<totaltime>1230.0010</totaltime>
+<voicecount>2</voicecount>
+<totalentrycount>21</totalentrycount>
+<loops>1</loops>
+<overallvolume_left>1</overallvolume_left>
+<overallvolume_right>1</overallvolume_right>
+<stereoswap>0</stereoswap>
+<graphview>1</graphview>
+<voice>
+<description>Voice 1</description>
+<id>0</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>11</entrycount>
+<entries>
+<entry parent="0" duration="15" volume_left="0.6" volume_right="0.6" beatfreq="10" basefreq="437" state="0"/>
+<entry parent="0" duration="240" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="15" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="240" volume_left="0.6" volume_right="0.6" beatfreq="6" basefreq="435" state="0"/>
+<entry parent="0" duration="15" volume_left="0.6" volume_right="0.6" beatfreq="6" basefreq="435" state="0"/>
+<entry parent="0" duration="555" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="15" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="75" volume_left="0.6" volume_right="0.6" beatfreq="6" basefreq="435" state="0"/>
+<entry parent="0" duration="15" volume_left="0.6" volume_right="0.6" beatfreq="6" basefreq="435" state="0"/>
+<entry parent="0" duration="45" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="8" basefreq="436" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Background noise</description>
+<id>1</id>
+<type>1</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>10</entrycount>
+<entries>
+<entry parent="1" duration="15" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="240" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="15" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="240" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="15" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="555" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="15" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="75" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="15" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="45.001" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+</entries>
+</voice>
+</schedule>

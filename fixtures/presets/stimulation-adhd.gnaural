@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<!-- See http://gnaural.sourceforge.net -->
+<schedule>
+<gnauralfile_version>1.20101006</gnauralfile_version>
+<gnaural_version>1.0.20110606</gnaural_version>
+<title>Adhd</title>
+<schedule_description>This preset is an aid for Attention Deficit Hyperactivity Disorder. It lasts 30mn and alternates between 12 and 20 hz. It can be used whenever needed</schedule_description>
+<author>@thegreenman</author>
+<totaltime>1800.0060</totaltime>
+<voicecount>2</voicecount>
+<totalentrycount>18</totalentrycount>
+<loops>1</loops>
+<overallvolume_left>1</overallvolume_left>
+<overallvolume_right>1</overallvolume_right>
+<stereoswap>0</stereoswap>
+<graphview>1</graphview>
+<voice>
+<description>Voice 1</description>
+<id>0</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>12</entrycount>
+<entries>
+<entry parent="0" duration="300" volume_left="0.6" volume_right="0.6" beatfreq="60" basefreq="462" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="300" volume_left="0.6" volume_right="0.6" beatfreq="20" basefreq="442" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="20" basefreq="442" state="0"/>
+<entry parent="0" duration="300" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="300" volume_left="0.6" volume_right="0.6" beatfreq="20" basefreq="442" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="20" basefreq="442" state="0"/>
+<entry parent="0" duration="300" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="300" volume_left="0.6" volume_right="0.6" beatfreq="20" basefreq="442" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="20" basefreq="442" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Background noise</description>
+<id>1</id>
+<type>1</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>6</entrycount>
+<entries>
+<entry parent="1" duration="300" volume_left="0.7" volume_right="0.7" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="300" volume_left="0.7" volume_right="0.7" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="300" volume_left="0.7" volume_right="0.7" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="300" volume_left="0.7" volume_right="0.7" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="300" volume_left="0.7" volume_right="0.7" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="1" duration="300.006" volume_left="0.7" volume_right="0.7" beatfreq="0" basefreq="100" state="0"/>
+</entries>
+</voice>
+</schedule>

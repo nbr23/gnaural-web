@@ -1,0 +1,76 @@
+<?xml version="1.0"?>
+<!-- See http://gnaural.sourceforge.net -->
+<schedule>
+<gnauralfile_version>1.20101006</gnauralfile_version>
+<gnaural_version>1.0.20110606</gnaural_version>
+<title>Wakefulrelax</title>
+<schedule_description>This presets stimulates a wakeful relaxation state with closed eyes. Zen-trained meditation masters produce noticeably more alpha waves during meditation.To be used in short 10 to 15 minutes doses to calm down and concentrate when needed.</schedule_description>
+<author>@GiorgioRegni</author>
+<totaltime>900.0010</totaltime>
+<voicecount>4</voicecount>
+<totalentrycount>11</totalentrycount>
+<loops>1</loops>
+<overallvolume_left>1</overallvolume_left>
+<overallvolume_right>1</overallvolume_right>
+<stereoswap>0</stereoswap>
+<graphview>1</graphview>
+<voice>
+<description>Voice 1</description>
+<id>0</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>3</entrycount>
+<entries>
+<entry parent="0" duration="120" volume_left="0.6" volume_right="0.6" beatfreq="12" basefreq="438" state="0"/>
+<entry parent="0" duration="780" volume_left="0.6" volume_right="0.6" beatfreq="7.83" basefreq="435.915" state="0"/>
+<entry parent="0" duration="0.001" volume_left="0.6" volume_right="0.6" beatfreq="7.83" basefreq="435.915" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 2</description>
+<id>1</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>3</entrycount>
+<entries>
+<entry parent="1" duration="120" volume_left="0.4" volume_right="0.4" beatfreq="12" basefreq="519.7374737" state="0"/>
+<entry parent="1" duration="780" volume_left="0.4" volume_right="0.4" beatfreq="7.83" basefreq="517.6524737" state="0"/>
+<entry parent="1" duration="0.001" volume_left="0.4" volume_right="0.4" beatfreq="7.83" basefreq="517.6524737" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Voice 3</description>
+<id>2</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>3</entrycount>
+<entries>
+<entry parent="2" duration="120" volume_left="0.4" volume_right="0.4" beatfreq="12" basefreq="653.2686572" state="0"/>
+<entry parent="2" duration="780" volume_left="0.4" volume_right="0.4" beatfreq="10" basefreq="652.2686572" state="0"/>
+<entry parent="2" duration="0.001" volume_left="0.4" volume_right="0.4" beatfreq="10" basefreq="652.2686572" state="0"/>
+</entries>
+</voice>
+<voice>
+<description>Background noise</description>
+<id>3</id>
+<type>1</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>2</entrycount>
+<entries>
+<entry parent="3" duration="120" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+<entry parent="3" duration="780.001" volume_left="0.4" volume_right="0.4" beatfreq="0" basefreq="100" state="0"/>
+</entries>
+</voice>
+</schedule>
