@@ -16,11 +16,14 @@ export interface VoiceListProps {
  *
  * Each row is keyed with the same colour the chart draws that voice in, so identity carries
  * across the two views. Voice types this app cannot render are labelled as silent rather than
- * hidden: §3.3 is explicit that a voice must never be silently dropped. The full warning surface
- * is step 9.
+ * hidden, and have their controls disabled: §3.3 is explicit that a voice must never be silently
+ * dropped. The full warning surface is step 9.
  */
+const TYPE_LABELS: Partial<Record<VoiceType, string>> = {
+  [VoiceType.PinkNoise]: 'noise',
+};
+
 const UNRENDERED_LABELS: Partial<Record<VoiceType, string>> = {
-  [VoiceType.PinkNoise]: 'noise — not yet rendered',
   [VoiceType.Pcm]: 'external audio — cannot be rendered',
   [VoiceType.IsoPulse]: 'isochronic — not yet rendered',
   [VoiceType.IsoPulseAlt]: 'isochronic — not yet rendered',
@@ -34,6 +37,7 @@ export function VoiceList({ schedule, gates, onToggleMute, onToggleSolo }: Voice
       {schedule.voices.map((voice, index) => {
         const gate = gates[index];
         const unrendered = UNRENDERED_LABELS[voice.type];
+        const badge = unrendered ?? TYPE_LABELS[voice.type];
 
         return (
           <li
@@ -43,7 +47,7 @@ export function VoiceList({ schedule, gates, onToggleMute, onToggleSolo }: Voice
             <span className="voice-list__key" style={{ color: seriesColor(index) }} />
             <span className="voice-list__name">
               {voice.description.trim() || `Voice ${voice.id}`}
-              {unrendered && <span className="voice-list__badge">{unrendered}</span>}
+              {badge && <span className="voice-list__badge">{badge}</span>}
             </span>
             <button
               type="button"

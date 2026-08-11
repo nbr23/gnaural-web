@@ -1,8 +1,9 @@
 import { scheduleDuration } from '../document/timing';
 import type { Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
-import type { AutomationEvent } from './compiler';
+import type { AutomationEvent, AutomationValues } from './compiler';
 import { compileVoice, valueAtTime } from './compiler';
+import { createNoiseBuffer, noiseSeeds } from './noise';
 
 /** Anti-click gain ramp duration (PLAN.md §4.4 — ~20ms, applied on every transport transition). */
 export const CLICK_FREE_RAMP = 0.02;
@@ -39,9 +40,26 @@ function buildOutputChain(context: BaseAudioContext, schedule: Schedule): Output
   return { left, right, masterGain };
 }
 
+/**
+ * What actually makes a voice's sound, by voice type (§3.3).
+ *
+ * A binaural voice's oscillator pair lives for the whole session (§4.4 — an `OscillatorNode`
+ * cannot be restarted after `stop()`), so `started` records whether it is running yet. A noise
+ * voice's `AudioBufferSourceNode`s are single-use by spec and so are recreated on every
+ * transport transition; the buffers behind them are generated once.
+ */
+type VoiceSource =
+  | { kind: 'binaural'; oscL: OscillatorNode; oscR: OscillatorNode; started: boolean }
+  | {
+      kind: 'noise';
+      buffers: [AudioBuffer, AudioBuffer];
+      /** Where each channel's source connects — the per-channel gains, or the mono downmix. */
+      inputs: [AudioNode, AudioNode];
+      nodes: AudioBufferSourceNode[];
+    };
+
 interface VoiceNodes {
-  oscL: OscillatorNode;
-  oscR: OscillatorNode;
+  source: VoiceSource;
   gainL: GainNode;
   gainR: GainNode;
   /**
@@ -54,36 +72,136 @@ interface VoiceNodes {
 }
 
 /**
- * One oscillator pair per voice, each through its own gain and mute gate, into the output chain.
+ * One source pair per voice, each channel through its own gain and mute gate, into the output
+ * chain. Only the source differs by voice type — the volume envelope, mono downmix, mute gate,
+ * master volume and stereo swap downstream of it are shared, matching the reference, which
+ * applies all of them after its voice-type switch (`BinauralBeat.c:834`).
  *
- * `voice_mono` (§3.2) routes both oscillators through a single 0.5 gain first, so each channel
- * carries `(L+R)/2` before `volume_left`/`volume_right` are applied to it independently. It is a
+ * `voice_mono` (§3.2) routes both channels through a single 0.5 gain first, so each carries
+ * `(L+R)/2` before `volume_left`/`volume_right` are applied to it independently. It is a
  * downmix of the voice's own content, not a pan — the per-channel volumes still apply afterwards.
  */
-function buildVoiceNodes(context: BaseAudioContext, voice: Voice, output: OutputChain): VoiceNodes {
-  const oscL = context.createOscillator();
-  const oscR = context.createOscillator();
+function buildVoiceNodes(
+  context: BaseAudioContext,
+  voice: Voice,
+  index: number,
+  output: OutputChain,
+): VoiceNodes {
   const gainL = context.createGain();
   const gainR = context.createGain();
   const muteL = context.createGain();
   const muteR = context.createGain();
 
+  let inputs: [AudioNode, AudioNode] = [gainL, gainR];
   if (voice.mono) {
     const downmix = context.createGain();
     downmix.gain.value = 0.5;
-    oscL.connect(downmix);
-    oscR.connect(downmix);
     downmix.connect(gainL);
     downmix.connect(gainR);
-  } else {
-    oscL.connect(gainL);
-    oscR.connect(gainR);
+    inputs = [downmix, downmix];
   }
 
   gainL.connect(muteL).connect(output.left);
   gainR.connect(muteR).connect(output.right);
 
-  return { oscL, oscR, gainL, gainR, muteL, muteR };
+  return { source: buildVoiceSource(context, voice, index, inputs), gainL, gainR, muteL, muteR };
+}
+
+function buildVoiceSource(
+  context: BaseAudioContext,
+  voice: Voice,
+  index: number,
+  inputs: [AudioNode, AudioNode],
+): VoiceSource {
+  if (voice.type === VoiceType.PinkNoise) {
+    const [seedL, seedR] = noiseSeeds(index);
+    return {
+      kind: 'noise',
+      buffers: [createNoiseBuffer(context, seedL), createNoiseBuffer(context, seedR)],
+      inputs,
+      nodes: [],
+    };
+  }
+
+  const oscL = context.createOscillator();
+  const oscR = context.createOscillator();
+  oscL.connect(inputs[0]);
+  oscR.connect(inputs[1]);
+  return { kind: 'binaural', oscL, oscR, started: false };
+}
+
+/**
+ * Start (or restart) a voice's sound, where context time `t0` carries schedule-time zero and the
+ * voice is to be heard from schedule-time `offset`.
+ *
+ * Oscillators start once and run for the session (§4.4), at `t0` so that their phase is anchored
+ * to schedule-time zero — which is what lets an offline export be compared sample-for-sample
+ * against live playback (§5.3). Noise sources are single-use, so each call replaces them, seeking
+ * the looping buffer to `offset`: a voice's noise is therefore a function of schedule time, and a
+ * seek hears the same noise as playing straight through to that point.
+ */
+function startSource(context: BaseAudioContext, source: VoiceSource, t0: number, offset: number): void {
+  const now = context.currentTime;
+
+  if (source.kind === 'binaural') {
+    if (source.started) return;
+    // Clamped because seeking into a schedule puts schedule-time zero in the past; only the
+    // play-from-the-start case can align phase exactly, and only that case needs to.
+    const at = Math.max(now, t0);
+    source.oscL.start(at);
+    source.oscR.start(at);
+    source.started = true;
+    return;
+  }
+
+  const at = t0 + offset;
+  stopNoise(source, at);
+  source.nodes = source.buffers.map((buffer, channel) => {
+    const node = context.createBufferSource();
+    node.buffer = buffer;
+    node.loop = true;
+    node.connect(source.inputs[channel]);
+    node.start(at, offset % buffer.duration);
+    return node;
+  });
+}
+
+/** Stop a noise voice's buffer sources; a no-op for oscillators, which outlive every transition. */
+function stopNoise(source: VoiceSource, when: number): void {
+  if (source.kind !== 'noise') return;
+  for (const node of source.nodes) node.stop(when);
+  source.nodes = [];
+}
+
+function disposeSource(source: VoiceSource, when: number): void {
+  if (source.kind === 'noise') {
+    stopNoise(source, when);
+    return;
+  }
+  if (!source.started) return;
+  source.oscL.stop(when);
+  source.oscR.stop(when);
+  source.started = false;
+}
+
+/** Anchor a binaural voice's frequencies; noise ignores beat and base entirely
+ *  (`BinauralBeat.c:553`). */
+function anchorFrequency(source: VoiceSource, values: AutomationValues, at: number): void {
+  if (source.kind !== 'binaural') return;
+  source.oscL.frequency.setValueAtTime(values.leftFreq, at);
+  source.oscR.frequency.setValueAtTime(values.rightFreq, at);
+}
+
+function rampFrequency(source: VoiceSource, values: AutomationValues, at: number): void {
+  if (source.kind !== 'binaural') return;
+  source.oscL.frequency.linearRampToValueAtTime(values.leftFreq, at);
+  source.oscR.frequency.linearRampToValueAtTime(values.rightFreq, at);
+}
+
+function cancelFrequency(source: VoiceSource, from: number): void {
+  if (source.kind !== 'binaural') return;
+  source.oscL.frequency.cancelScheduledValues(from);
+  source.oscR.frequency.cancelScheduledValues(from);
 }
 
 function setGate(nodes: VoiceNodes, gate: number): void {
@@ -100,15 +218,13 @@ function scheduleVoice(events: AutomationEvent[], t0: number, endOffset: number,
   if (events.length === 0) return;
 
   const [first, ...rest] = events;
-  nodes.oscL.frequency.setValueAtTime(first.leftFreq, t0);
-  nodes.oscR.frequency.setValueAtTime(first.rightFreq, t0);
+  anchorFrequency(nodes.source, first, t0);
   nodes.gainL.gain.setValueAtTime(first.leftGain, t0);
   nodes.gainR.gain.setValueAtTime(first.rightGain, t0);
 
   for (const event of rest) {
     if (event.time > endOffset) break;
-    nodes.oscL.frequency.linearRampToValueAtTime(event.leftFreq, t0 + event.time);
-    nodes.oscR.frequency.linearRampToValueAtTime(event.rightFreq, t0 + event.time);
+    rampFrequency(nodes.source, event, t0 + event.time);
     nodes.gainL.gain.linearRampToValueAtTime(event.leftGain, t0 + event.time);
     nodes.gainR.gain.linearRampToValueAtTime(event.rightGain, t0 + event.time);
   }
@@ -142,39 +258,38 @@ function scheduleEnding(events: AutomationEvent[], t0: number, endOffset: number
 
 /** Voices this app can render. Other types are parsed and preserved, but silent (§3.3). */
 function isRenderable(voice: Voice): boolean {
-  return voice.type === VoiceType.Binaural;
+  return voice.type === VoiceType.Binaural || voice.type === VoiceType.PinkNoise;
 }
 
 /**
  * Build the full audio graph for a schedule and start playback immediately at
- * `context.currentTime`: one persistent oscillator pair per binaural voice (§4.4 — oscillators
- * are reused for the whole session, never stopped/restarted per segment), summed through
- * per-channel master gain into `context.destination`.
+ * `context.currentTime`: one persistent source pair per renderable voice (§4.4 — oscillators are
+ * reused for the whole session, never stopped/restarted per segment), summed through per-channel
+ * master gain into `context.destination`.
  *
  * Works with any `BaseAudioContext` — a real `AudioContext` for playback, or an
- * `OfflineAudioContext` for deterministic sample-level testing and for step 7's WAV export,
- * which is why this shares `buildOutputChain`/`buildVoiceNodes` with `PlaybackEngine` instead of
- * building a graph of its own.
+ * `OfflineAudioContext` for deterministic sample-level testing and for WAV export
+ * (`renderSchedule`), which is why this shares `buildOutputChain`/`buildVoiceNodes` with
+ * `PlaybackEngine` instead of building a graph of its own.
  *
- * Only voice type 0 (binaural) is rendered. Other types are parsed and preserved by the document
- * layer but silent here; surfacing a user-visible warning for them (§3.3) is a later step.
- * `loops` (§3.7) is not yet applied — see PROGRESS.md.
+ * Voice types 0 (binaural) and 1 (noise) are rendered. Types 2–6 are parsed and preserved by the
+ * document layer but silent here; surfacing a user-visible warning for them (§3.3) is a later
+ * step. `loops` (§3.7) is not yet applied — see PROGRESS.md.
  */
 export function playSchedule(context: BaseAudioContext, schedule: Schedule): void {
   const output = buildOutputChain(context, schedule);
   const t0 = context.currentTime;
   const endOffset = scheduleDuration(schedule);
 
-  for (const voice of schedule.voices) {
-    if (!isRenderable(voice)) continue;
+  schedule.voices.forEach((voice, index) => {
+    if (!isRenderable(voice)) return;
 
-    const nodes = buildVoiceNodes(context, voice, output);
+    const nodes = buildVoiceNodes(context, voice, index, output);
     // The document's own mute flag applies here, so an offline export matches live playback.
     setGate(nodes, voice.muted ? 0 : 1);
     scheduleVoice(compileVoice(voice), t0, endOffset, nodes);
-    nodes.oscL.start(t0);
-    nodes.oscR.start(t0);
-  }
+    startSource(context, nodes.source, t0, 0);
+  });
 }
 
 interface VoiceState {
@@ -194,7 +309,9 @@ interface VoiceState {
  * `AudioContext` is created lazily on the first `play()`, which must happen inside a
  * user-gesture handler (§4.4), then reused for the session's lifetime. Oscillators are created
  * once per loaded schedule and never stopped/restarted between transport actions (§4.4) —
- * audibility is controlled entirely by gain automation.
+ * audibility is controlled entirely by gain automation. A noise voice is the one exception the
+ * API forces: `AudioBufferSourceNode`s are single-use, so they are rebuilt on each transition and
+ * positioned by schedule time (see `startSource`).
  *
  * Every transition (play, pause, seek, stop) ramps gain over `CLICK_FREE_RAMP` (~20ms) rather
  * than jumping to the new value instantly — required for stop (§4.4: "cutting a sine mid-cycle
@@ -335,21 +452,19 @@ export class PlaybackEngine {
     schedule.voices.forEach((voice, index) => {
       if (!isRenderable(voice)) return;
 
-      const nodes = buildVoiceNodes(context, voice, output);
+      const nodes = buildVoiceNodes(context, voice, index, output);
       nodes.gainL.gain.value = 0; // silent until the first rescheduleFrom fades it in
       nodes.gainR.gain.value = 0;
       setGate(nodes, this.isVoiceAudible(index) ? 1 : 0);
-      nodes.oscL.start();
-      nodes.oscR.start();
+      // Sources are started by the first rescheduleFrom, not here, so that schedule-time zero is
+      // the instant an oscillator's phase starts from zero.
       this.voiceStates.push({ index, events: compileVoice(voice), nodes });
     });
   }
 
   private teardownGraph(): void {
-    for (const { nodes } of this.voiceStates) {
-      nodes.oscL.stop();
-      nodes.oscR.stop();
-    }
+    const now = this.context?.currentTime ?? 0;
+    for (const { nodes } of this.voiceStates) disposeSource(nodes.source, now);
     this.voiceStates = [];
     this.output = null;
   }
@@ -380,16 +495,14 @@ export class PlaybackEngine {
     const audible = playing && offset < this.duration;
 
     for (const { events, nodes } of this.voiceStates) {
-      nodes.oscL.frequency.cancelScheduledValues(now);
-      nodes.oscR.frequency.cancelScheduledValues(now);
+      cancelFrequency(nodes.source, now);
       nodes.gainL.gain.cancelScheduledValues(now);
       nodes.gainR.gain.cancelScheduledValues(now);
 
       const target = valueAtTime(events, offset);
 
       // Frequency: no click risk from an instant jump — reanchor directly at the new offset.
-      nodes.oscL.frequency.setValueAtTime(target.leftFreq, now);
-      nodes.oscR.frequency.setValueAtTime(target.rightFreq, now);
+      anchorFrequency(nodes.source, target, now);
 
       // Gain: glide from whatever it currently holds to the new target (0 if pausing/stopping),
       // so every transition — including a large seek jump — is click-free.
@@ -402,12 +515,16 @@ export class PlaybackEngine {
         for (const event of events) {
           if (event.time <= offset) continue;
           if (event.time > this.duration) break;
-          nodes.oscL.frequency.linearRampToValueAtTime(event.leftFreq, t0 + event.time);
-          nodes.oscR.frequency.linearRampToValueAtTime(event.rightFreq, t0 + event.time);
+          rampFrequency(nodes.source, event, t0 + event.time);
           nodes.gainL.gain.linearRampToValueAtTime(event.leftGain, t0 + event.time);
           nodes.gainR.gain.linearRampToValueAtTime(event.rightGain, t0 + event.time);
         }
         scheduleEnding(events, t0, this.duration, nodes);
+        startSource(context, nodes.source, t0, offset);
+      } else {
+        // Pausing or stopping: buffer sources can't be gated back on, so they are released once
+        // the anti-click fade has finished and rebuilt by the next play.
+        stopNoise(nodes.source, now + CLICK_FREE_RAMP);
       }
     }
 

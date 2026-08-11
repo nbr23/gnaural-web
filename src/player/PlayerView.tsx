@@ -1,6 +1,7 @@
 import { LIBRARY, navigate } from '../app/routing';
 import type { Schedule } from '../document/types';
 import { ScheduleChart } from '../viz/ScheduleChart';
+import { ExportPanel } from './ExportPanel';
 import { Readout } from './Readout';
 import { Timeline } from './Timeline';
 import { VoiceList } from './VoiceList';
@@ -92,6 +93,8 @@ export function PlayerView({ schedule, subtitle, player }: PlayerViewProps) {
           onToggleSolo={player.toggleSolo}
         />
       )}
+
+      <ExportPanel schedule={schedule} />
 
       <p className="player__note">Headphones required — the beat only exists between two ears.</p>
     </div>

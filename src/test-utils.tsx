@@ -68,6 +68,13 @@ export function setInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+/** The `setInputValue` trick, for a `<select>`. */
+export function setSelectValue(select: HTMLSelectElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+  setter?.call(select, value);
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 /**
  * Flush pending async work — a lazily imported program, a file read — and the renders it causes.
  * A dynamic import settles on a macrotask, so a microtask drain alone is not enough.

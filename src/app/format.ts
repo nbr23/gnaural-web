@@ -17,6 +17,14 @@ export function formatDuration(seconds: number): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
+/** File size at the coarse precision an estimate deserves — MB is the useful unit here, since
+ *  even a short program exports tens of megabytes. */
+export function formatBytes(bytes: number): string {
+  const megabytes = bytes / 1024 ** 2;
+  if (megabytes < 1000) return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`;
+  return `${(megabytes / 1024).toFixed(1)} GB`;
+}
+
 export function formatHz(value: number): string {
   return value >= 100 ? value.toFixed(0) : value.toFixed(2).replace(/\.?0+$/, '');
 }

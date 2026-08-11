@@ -122,15 +122,99 @@ describe('playSchedule', () => {
     expect(peakAmplitude(buffer.getChannelData(0))).toBeGreaterThan(1.5);
   });
 
-  it('skips non-binaural voice types without throwing', async () => {
+  it('skips voice types it cannot render, without throwing (§3.3)', async () => {
     const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
     const schedule = makeSchedule([
-      makeVoice([makeEntry({ duration: 1, baseFreq: 300 })], { type: VoiceType.PinkNoise }),
+      makeVoice([makeEntry({ duration: 1, baseFreq: 300 })], { type: VoiceType.Pcm }),
     ]);
 
     expect(() => playSchedule(context, schedule)).not.toThrow();
     const buffer = await context.startRendering();
     expect(peakAmplitude(buffer.getChannelData(0))).toBe(0);
+  });
+});
+
+describe('noise voices (type 1, §4.5a)', () => {
+  it('renders audible decorrelated noise on both channels', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const schedule = makeSchedule([
+      makeVoice([makeEntry({ duration: 2, baseFreq: 300, beatFreq: 10 })], { type: VoiceType.PinkNoise }),
+    ]);
+
+    playSchedule(context, schedule);
+    const buffer = await context.startRendering();
+    const left = buffer.getChannelData(0);
+    const right = buffer.getChannelData(1);
+
+    expect(peakAmplitude(left)).toBeGreaterThan(0.5);
+    // Independent streams per channel: a binaural voice's two channels are near-identical sines,
+    // noise's are unrelated sample for sample.
+    expect(left.slice(0, 100)).not.toEqual(right.slice(0, 100));
+  });
+
+  it('follows its volume envelope like any other voice', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const schedule = makeSchedule([
+      makeVoice(
+        [
+          makeEntry({ duration: 1, volumeLeft: 1, volumeRight: 1 }),
+          makeEntry({ duration: 1, volumeLeft: 0, volumeRight: 0 }),
+        ],
+        { type: VoiceType.PinkNoise },
+      ),
+    ]);
+
+    playSchedule(context, schedule);
+    const buffer = await context.startRendering();
+    const left = buffer.getChannelData(0);
+
+    const head = peakAmplitude(left.subarray(0, Math.round(0.1 * SAMPLE_RATE)));
+    const tail = peakAmplitude(left.subarray(Math.round(0.9 * SAMPLE_RATE)));
+    expect(tail).toBeLessThan(head * 0.3);
+  });
+
+  it('keeps sounding across transport transitions, though buffer sources are single-use', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(
+      makeSchedule([makeVoice([makeEntry({ duration: 30 })], { type: VoiceType.PinkNoise })]),
+    );
+
+    engine.play();
+    engine.pause();
+    engine.play();
+    engine.seek(12);
+
+    const buffer = await context.startRendering();
+    // An `AudioBufferSourceNode` cannot be restarted, so a voice that was not rebuilt on each
+    // transition would be silent from the pause onwards.
+    expect(peakAmplitude(buffer.getChannelData(0).subarray(Math.round(0.2 * SAMPLE_RATE)))).toBeGreaterThan(0.3);
+  });
+
+  it('honours mute and the mono downmix', async () => {
+    const muted = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    playSchedule(
+      muted,
+      makeSchedule([makeVoice([makeEntry({ duration: 2 })], { type: VoiceType.PinkNoise, muted: true })]),
+    );
+    expect(peakAmplitude((await muted.startRendering()).getChannelData(0))).toBe(0);
+
+    const mono = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    playSchedule(
+      mono,
+      makeSchedule([
+        makeVoice([makeEntry({ duration: 2, volumeLeft: 1, volumeRight: 0.5 })], {
+          type: VoiceType.PinkNoise,
+          mono: true,
+        }),
+      ]),
+    );
+    const downmixed = await mono.startRendering();
+
+    // Both channels carry the same (L+R)/2 stream, scaled only by their own volume (§3.2).
+    for (let i = 0; i < downmixed.length; i += 997) {
+      expect(downmixed.getChannelData(1)[i]).toBeCloseTo(downmixed.getChannelData(0)[i] * 0.5, 5);
+    }
   });
 });
 

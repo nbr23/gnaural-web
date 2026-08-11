@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import App from '../App';
 import { loadFixture } from '../document/test-fixtures';
 import { PROGRAMS } from '../library/programs';
-import { flush, setInputValue, setupRoot } from '../test-utils';
+import { flush, setInputValue, setSelectValue, setupRoot } from '../test-utils';
 
 const root = setupRoot();
 
@@ -83,9 +83,9 @@ describe('player view', () => {
     expect(root.text()).toContain('Beat');
     expect(root.text()).toContain('Band');
     expect(root.query('.timeline__range')).not.toBeNull();
-    // Two voices: one binaural, one noise the engine cannot render yet — listed, never dropped.
+    // Two voices — one binaural, one noise — each listed and labelled by type (§3.3).
     expect(root.queryAll('.voice-list__row')).toHaveLength(2);
-    expect(root.text()).toContain('not yet rendered');
+    expect(root.text()).toContain('noise');
   });
 
   it('omits the voice list for a single-voice program', async () => {
@@ -105,6 +105,30 @@ describe('player view', () => {
     root.act(() => setInputValue(range, '600'));
 
     expect(root.query('.timeline__times')?.textContent).toContain('10:00');
+  });
+});
+
+describe('export', () => {
+  it('offers WAV and .gnaural export, with the size a WAV would take', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    expect(root.byText('.button', 'Export WAV')).toBeDefined();
+    expect(root.byText('.button', 'Export .gnaural')).toBeDefined();
+    // 20 minutes of 44.1 kHz stereo — large enough that the estimate is the point of showing it.
+    expect(root.query('.export__estimate')?.textContent).toBe('≈ 202 MB');
+  });
+
+  it('halves the estimate at the lower sample rate', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    const select = root.query('.export__rate select') as HTMLSelectElement;
+    root.act(() => setSelectValue(select, '22050'));
+
+    expect(root.query('.export__estimate')?.textContent).toBe('≈ 101 MB');
   });
 });
 
