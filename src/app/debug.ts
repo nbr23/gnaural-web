@@ -6,11 +6,14 @@
  * survive the hash router, and gathered in one module so that deleting the investigation is
  * deleting one file and its callers.
  *
- * | Parameter        | Effect                                                              |
- * |------------------|---------------------------------------------------------------------|
- * | `?debug=1`       | Show the audio diagnostics readout in the player.                    |
- * | `?keepalive=0`   | Do not create the silent media element (`keepalive.ts`).             |
- * | `?lookahead=120` | Override the transport scheduling lookahead, in **milliseconds**.    |
+ * | Parameter      | Effect                                                                |
+ * |----------------|-----------------------------------------------------------------------|
+ * | `?debug=1`     | Show the audio diagnostics readout in the player.                      |
+ * | `?keepalive=0` | Do not create the silent media element (`keepalive.ts`).               |
+ *
+ * `?lookahead=<ms>` has been removed: it did its job, disproving the theory that the scheduling
+ * lookahead was behind the Android crackling. What is left is here only until a phone confirms
+ * §5.3's lock-screen controls, which is also what decides whether `keepalive.ts` survives.
  */
 
 function params(): URLSearchParams {
@@ -23,15 +26,6 @@ export function debugEnabled(): boolean {
 
 export function keepaliveDisabled(): boolean {
   return params().get('keepalive') === '0';
-}
-
-/** Seconds, or null to leave `scheduleLookahead` to work it out from the device. */
-export function lookaheadOverride(): number | null {
-  const raw = params().get('lookahead');
-  if (raw === null) return null;
-
-  const milliseconds = Number(raw);
-  return Number.isFinite(milliseconds) && milliseconds >= 0 ? milliseconds / 1000 : null;
 }
 
 /** Stamped in at build time, so it is possible to tell which build a phone is actually running. */

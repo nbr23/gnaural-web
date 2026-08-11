@@ -42,20 +42,9 @@ const MIN_LOOKAHEAD = 0.05;
 function scheduleLookahead(context: BaseAudioContext): number {
   const buffered = (context as AudioContext).baseLatency;
   if (typeof buffered !== 'number') return 0;
-  return lookaheadOverride ?? Math.max(MIN_LOOKAHEAD, buffered * 3);
-}
-
-/**
- * Force the lookahead, in seconds. **Diagnostic only** — see `src/app/debug.ts`.
- *
- * A module-level knob rather than a constructor argument because it is a temporary way to bisect
- * a device's buffering from the URL, not part of the engine's design. Ignored offline, where the
- * lookahead is always zero.
- */
-let lookaheadOverride: number | null = null;
-
-export function setLookaheadOverride(seconds: number | null): void {
-  lookaheadOverride = seconds;
+  // Chrome on Android reports 0 here, so in practice the floor is what applies on the target
+  // platform and the scaling term only ever helps a desktop that reports honestly.
+  return Math.max(MIN_LOOKAHEAD, buffered * 3);
 }
 
 /** What the device reports about its output path. **Diagnostic only** — see `src/app/debug.ts`. */
