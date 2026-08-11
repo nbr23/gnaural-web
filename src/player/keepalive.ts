@@ -1,3 +1,4 @@
+import { keepaliveDisabled } from '../app/debug';
 import { encodeWav } from '../engine/wav';
 
 /**
@@ -10,18 +11,23 @@ import { encodeWav } from '../engine/wav';
  * round it, and it has a second benefit on the target platform: it keeps the page foregrounded
  * with the screen off, which is exactly the risk §9's table names.
  *
- * **No audio asset ships for this.** The WAV is a second of zeroes encoded at runtime by the same
- * `encodeWav` the export path uses, so §4.6's "the app synthesises everything" still holds
- * literally — there is nothing to license, cache, or lazy-load.
+ * **No audio asset ships for this.** The WAV is zeroes encoded at runtime by the same `encodeWav`
+ * the export path uses, so §4.6's "the app synthesises everything" still holds literally — there
+ * is nothing to license, cache, or lazy-load.
  *
  * A plain class rather than a hook, owned by `usePlayer` through a ref: the same ownership shape
  * as `PlaybackEngine`, and for the same reason (§4 — no component lifecycle hook may create or
  * destroy audio resources).
  */
 
-/** Long enough that the loop point is not a stream of tiny requests, short enough to be trivial:
- *  one second of stereo zeroes at 8 kHz is 32 KB, and its content is silence either way. */
-const SAMPLE_RATE = 8000;
+/** Android's output is 48 kHz essentially everywhere; only used if the engine has no context. */
+const FALLBACK_SAMPLE_RATE = 48000;
+
+/** Long enough that the element is not re-seeking every few seconds, short enough to stay small. */
+const LOOP_SECONDS = 10;
+
+/** Mono: it is silence, so a second channel is pure cost in a mixer already under pressure. */
+const CHANNELS = 1;
 
 export class SilentKeepalive {
   private element: HTMLAudioElement | null = null;
@@ -31,19 +37,37 @@ export class SilentKeepalive {
    * Must be called from inside a user gesture, like the `AudioContext` it accompanies (§4.4).
    * Resolves nothing and rejects nothing: a browser that refuses playback costs us the
    * notification, not the audio.
+   *
+   * `sampleRate` should be the graph's own. A mismatch puts a resampler in the output path and,
+   * on Android, can make the shared output stream reconfigure underneath the audio that matters.
    */
-  start(): void {
+  start(sampleRate: number | null): void {
+    // `?keepalive=0`, until a phone has said whether this module is needed at all.
+    if (keepaliveDisabled()) return;
+
     if (!this.element) {
+      const rate = sampleRate ?? FALLBACK_SAMPLE_RATE;
       // `AudioBuffer` is directly constructible, so this needs no context of its own — and must
-      // not borrow the engine's, which may not exist yet.
+      // not borrow the engine's, whose lifetime it does not share.
       this.url = URL.createObjectURL(
-        encodeWav(new AudioBuffer({ numberOfChannels: 2, length: SAMPLE_RATE, sampleRate: SAMPLE_RATE })),
+        encodeWav(
+          new AudioBuffer({
+            numberOfChannels: CHANNELS,
+            length: Math.round(rate * LOOP_SECONDS),
+            sampleRate: rate,
+          }),
+        ),
       );
 
       const element = new Audio(this.url);
       element.loop = true;
       // Deliberately not muted: a muted element raises no media session, which is the whole point.
       element.volume = 1;
+      element.setAttribute('aria-hidden', 'true');
+      element.style.display = 'none';
+      // Attached, not left floating: Chrome is markedly more consistent about raising a media
+      // notification for an element that is in the document.
+      document.body.append(element);
       this.element = element;
     }
 
@@ -56,6 +80,7 @@ export class SilentKeepalive {
 
   dispose(): void {
     this.element?.pause();
+    this.element?.remove();
     this.element = null;
     if (this.url) URL.revokeObjectURL(this.url);
     this.url = null;

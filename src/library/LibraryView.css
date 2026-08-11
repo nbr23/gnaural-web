@@ -37,6 +37,11 @@
   }
 }
 
+.library__build {
+  font: 12px var(--mono);
+  opacity: 0.6;
+}
+
 /* The remove control overlays the card's top-right corner rather than sitting beside it, so an
    imported row is the same width and shape as a bundled one. */
 .library__imported {

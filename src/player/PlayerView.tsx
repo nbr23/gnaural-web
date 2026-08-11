@@ -1,6 +1,8 @@
+import { debugEnabled } from '../app/debug';
 import { LIBRARY, navigate } from '../app/routing';
 import type { Schedule } from '../document/types';
 import { ScheduleChart } from '../viz/ScheduleChart';
+import { Diagnostics } from './Diagnostics';
 import { ExportPanel } from './ExportPanel';
 import { Readout } from './Readout';
 import { Timeline } from './Timeline';
@@ -135,6 +137,8 @@ export function PlayerView({
         sampleRate={exportSampleRate}
         onSampleRateChange={onExportSampleRateChange}
       />
+
+      {debugEnabled() && <Diagnostics player={player} />}
 
       <p className="player__note">Headphones required — the beat only exists between two ears.</p>
     </div>

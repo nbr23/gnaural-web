@@ -446,6 +446,68 @@ describe('PlaybackEngine mixing', () => {
   });
 });
 
+/**
+ * A context that claims a real device's render-ahead buffer.
+ *
+ * `OfflineAudioContext` reports no `baseLatency`, which is how the engine knows there is nothing
+ * in flight ahead of `currentTime`. Declaring one turns on the same scheduling lookahead a browser
+ * gets, so it can be asserted on without a browser.
+ */
+function withBaseLatency(context: OfflineAudioContext, baseLatency: number): OfflineAudioContext {
+  Object.defineProperty(context, 'baseLatency', { value: baseLatency, configurable: true });
+  return context;
+}
+
+/** Where the rendered signal first becomes audible, in seconds. */
+function onsetTime(samples: Float32Array, sampleRate: number, threshold = 0.02): number {
+  for (let i = 0; i < samples.length; i++) {
+    if (Math.abs(samples[i]) > threshold) return i / sampleRate;
+  }
+  return Infinity;
+}
+
+describe('scheduling lookahead on a real-time context', () => {
+  async function renderStart(baseLatency: number): Promise<Float32Array> {
+    const context = withBaseLatency(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE), baseLatency);
+    const engine = new PlaybackEngine(context);
+    engine.load(makeSchedule([makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0 })])]));
+    engine.play();
+
+    return (await context.startRendering()).getChannelData(0);
+  }
+
+  it('holds the fade until the audio thread can still see it, rather than ramping into the past', async () => {
+    // Roughly desktop Chrome: tiny buffer, so the 50 ms floor is what applies.
+    const left = await renderStart(0.0026);
+
+    // Silent across the lookahead window, then a ramp — not an instant step, which is the click.
+    expect(peakAmplitude(left.subarray(0, Math.round(0.045 * SAMPLE_RATE)))).toBe(0);
+    expect(onsetTime(left, SAMPLE_RATE)).toBeGreaterThan(0.045);
+    expect(onsetTime(left, SAMPLE_RATE)).toBeLessThan(0.075);
+    expect(peakAmplitude(left.subarray(Math.round(0.08 * SAMPLE_RATE)))).toBeGreaterThan(0.9);
+  });
+
+  it('scales past the floor for a device that buffers as much as Android does', async () => {
+    // 40 ms of buffering: the floor is not enough, so the lookahead has to grow with it.
+    const left = await renderStart(0.04);
+
+    expect(peakAmplitude(left.subarray(0, Math.round(0.11 * SAMPLE_RATE)))).toBe(0);
+    expect(onsetTime(left, SAMPLE_RATE)).toBeGreaterThan(0.11);
+  });
+
+  it('adds no lookahead offline, so an export is not padded with silence', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(makeSchedule([makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0 })])]));
+    engine.play();
+
+    const left = (await context.startRendering()).getChannelData(0);
+    // Audible as soon as the fade itself is done — nowhere near the 50 ms floor a real-time
+    // context would have inserted first.
+    expect(onsetTime(left, SAMPLE_RATE)).toBeLessThan(CLICK_FREE_RAMP * 1.5);
+  });
+});
+
 describe('end of schedule (§3.7)', () => {
   it('reports the shortest voice as the duration, counting voices it cannot render', () => {
     const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));

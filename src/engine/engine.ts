@@ -8,6 +8,65 @@ import { createNoiseBuffer, noiseSeeds } from './noise';
 /** Anti-click gain ramp duration (PLAN.md §4.4 — ~20ms, applied on every transport transition). */
 export const CLICK_FREE_RAMP = 0.02;
 
+/**
+ * `latencyHint` for the playback context.
+ *
+ * The default, `'interactive'`, asks for the **smallest** buffer the device can manage — the right
+ * choice for a synthesiser you play with your hands, and the wrong one for this. Nothing here
+ * responds to input in real time, and a small buffer underruns the moment the phone is busy:
+ * scrolling, waking, or dropping the CPU clock with the screen off. Every underrun is a crackle.
+ *
+ * `'playback'` asks for a large one, trading response latency nobody can perceive here for a
+ * buffer deep enough to ride out a stall. `scheduleLookahead` reads `baseLatency`, so it grows to
+ * match automatically.
+ */
+const PLAYBACK_LATENCY_HINT: AudioContextLatencyCategory = 'playback';
+
+/** Floor for `scheduleLookahead`, comfortably past any real device's render-ahead buffer. */
+const MIN_LOOKAHEAD = 0.05;
+
+/**
+ * How far ahead of `currentTime` a transport transition is scheduled.
+ *
+ * **Without this the anti-click ramp is not a ramp.** `currentTime` is where the audio thread has
+ * rendered to, and it renders a whole buffer ahead; a param event scheduled inside that buffer is
+ * in the past by the time it is seen, and the spec says such an event takes effect immediately.
+ * The 20 ms ramp then collapses into a step, which on a live sine is precisely the click §4.4
+ * exists to prevent. Desktop Chrome buffers ~3 ms and got away with it. Android buffers ten times
+ * that, which is why play, pause and seek all clicked there and nowhere else.
+ *
+ * Zero for an `OfflineAudioContext`: rendering is on demand, `currentTime` is exactly where it has
+ * reached, nothing is in flight, and a lookahead would only push silence into an export. That is
+ * also what keeps the §5.3 null test comparing like with like.
+ */
+function scheduleLookahead(context: BaseAudioContext): number {
+  const buffered = (context as AudioContext).baseLatency;
+  if (typeof buffered !== 'number') return 0;
+  return lookaheadOverride ?? Math.max(MIN_LOOKAHEAD, buffered * 3);
+}
+
+/**
+ * Force the lookahead, in seconds. **Diagnostic only** — see `src/app/debug.ts`.
+ *
+ * A module-level knob rather than a constructor argument because it is a temporary way to bisect
+ * a device's buffering from the URL, not part of the engine's design. Ignored offline, where the
+ * lookahead is always zero.
+ */
+let lookaheadOverride: number | null = null;
+
+export function setLookaheadOverride(seconds: number | null): void {
+  lookaheadOverride = seconds;
+}
+
+/** What the device reports about its output path. **Diagnostic only** — see `src/app/debug.ts`. */
+export interface EngineDiagnostics {
+  sampleRate: number | null;
+  baseLatency: number | null;
+  outputLatency: number | null;
+  state: string | null;
+  lookahead: number | null;
+}
+
 interface OutputChain {
   /** Bus a voice's left-channel signal feeds. Already accounts for `stereoSwap`. */
   left: AudioNode;
@@ -391,6 +450,25 @@ export class PlaybackEngine {
     return this.duration;
   }
 
+  /** The output rate, once a context exists — what anything sharing the output must match. */
+  getSampleRate(): number | null {
+    return this.context?.sampleRate ?? null;
+  }
+
+  /** What the device actually reports about its output. **Diagnostic only** — see `debug.ts`. */
+  getDiagnostics(): EngineDiagnostics {
+    const context = this.context as AudioContext | null;
+    if (!context) return { sampleRate: null, baseLatency: null, outputLatency: null, state: null, lookahead: null };
+
+    return {
+      sampleRate: context.sampleRate,
+      baseLatency: context.baseLatency ?? null,
+      outputLatency: context.outputLatency ?? null,
+      state: context.state ?? null,
+      lookahead: scheduleLookahead(context),
+    };
+  }
+
   isPlaying(): boolean {
     return this.playing;
   }
@@ -440,7 +518,7 @@ export class PlaybackEngine {
   /** Lazily create the `AudioContext` (§4.4 — must happen inside a user gesture) and build the
    *  persistent voice graph, the first time either is needed. */
   private ensureGraph(): void {
-    if (!this.context) this.context = new AudioContext();
+    this.context ??= new AudioContext({ latencyHint: PLAYBACK_LATENCY_HINT });
     if (!this.output && this.schedule) this.buildGraph(this.context, this.schedule);
   }
 
@@ -489,12 +567,20 @@ export class PlaybackEngine {
     if (!context) return;
 
     const now = context.currentTime;
-    const t0 = now + CLICK_FREE_RAMP - offset;
+    // The instant the transition happens: far enough ahead that the whole ramp below is still in
+    // the future when the audio thread reaches it. See `scheduleLookahead`.
+    const at = now + scheduleLookahead(context);
+    const t0 = at + CLICK_FREE_RAMP - offset;
     // Seeking to the very end leaves nothing to play; treat it as silent rather than holding the
     // final value.
     const audible = playing && offset < this.duration;
 
     for (const { events, nodes } of this.voiceStates) {
+      // Read before cancelling: `cancelScheduledValues` drops a ramp in progress and leaves the
+      // param holding that ramp's *start* value, not the value it had actually reached.
+      const heldL = nodes.gainL.gain.value;
+      const heldR = nodes.gainR.gain.value;
+
       cancelFrequency(nodes.source, now);
       nodes.gainL.gain.cancelScheduledValues(now);
       nodes.gainR.gain.cancelScheduledValues(now);
@@ -502,14 +588,17 @@ export class PlaybackEngine {
       const target = valueAtTime(events, offset);
 
       // Frequency: no click risk from an instant jump — reanchor directly at the new offset.
-      anchorFrequency(nodes.source, target, now);
+      anchorFrequency(nodes.source, target, at);
 
-      // Gain: glide from whatever it currently holds to the new target (0 if pausing/stopping),
-      // so every transition — including a large seek jump — is click-free.
-      nodes.gainL.gain.setValueAtTime(nodes.gainL.gain.value, now);
-      nodes.gainR.gain.setValueAtTime(nodes.gainR.gain.value, now);
-      nodes.gainL.gain.linearRampToValueAtTime(audible ? target.leftGain : 0, now + CLICK_FREE_RAMP);
-      nodes.gainR.gain.linearRampToValueAtTime(audible ? target.rightGain : 0, now + CLICK_FREE_RAMP);
+      // Gain: pin the value it actually holds, keep it flat across the lookahead window, then
+      // glide to the new target (0 if pausing/stopping) over a ramp that is entirely ahead of the
+      // audio thread. Every transition, including a large seek jump, is click-free.
+      nodes.gainL.gain.setValueAtTime(heldL, now);
+      nodes.gainR.gain.setValueAtTime(heldR, now);
+      nodes.gainL.gain.setValueAtTime(heldL, at);
+      nodes.gainR.gain.setValueAtTime(heldR, at);
+      nodes.gainL.gain.linearRampToValueAtTime(audible ? target.leftGain : 0, at + CLICK_FREE_RAMP);
+      nodes.gainR.gain.linearRampToValueAtTime(audible ? target.rightGain : 0, at + CLICK_FREE_RAMP);
 
       if (audible) {
         for (const event of events) {
@@ -524,7 +613,7 @@ export class PlaybackEngine {
       } else {
         // Pausing or stopping: buffer sources can't be gated back on, so they are released once
         // the anti-click fade has finished and rebuilt by the next play.
-        stopNoise(nodes.source, now + CLICK_FREE_RAMP);
+        stopNoise(nodes.source, at + CLICK_FREE_RAMP);
       }
     }
 

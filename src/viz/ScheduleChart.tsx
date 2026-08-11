@@ -1,5 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatClock, formatHz } from '../app/format';
 import type { Schedule } from '../document/types';
 import { VoiceType } from '../document/types';
@@ -123,6 +123,14 @@ export function ScheduleChart({
     [model, width, height],
   );
 
+  const xTicks = useMemo(
+    () =>
+      layout
+        ? timeTicks(layout.model.duration, Math.max(3, Math.round(width / PX_PER_TIME_TICK)))
+        : [],
+    [layout, width],
+  );
+
   const scrubbing = useRef(false);
 
   const pointerPosition = useCallback(
@@ -225,7 +233,6 @@ export function ScheduleChart({
     hoveredLane && hoverX !== null && pixelY !== null
       ? nearestBreakpoint(hoveredLane, layout.timeScale, hoverX, pixelY, BREAKPOINT_HIT_RADIUS)
       : null;
-  const xTicks = timeTicks(layout.model.duration, Math.max(3, Math.round(width / PX_PER_TIME_TICK)));
 
   return (
     <div className={containerClass(className)} ref={containerRef}>
@@ -251,13 +258,7 @@ export function ScheduleChart({
         onKeyDown={stepHover}
         onBlur={() => setHover(null)}
       >
-        {layout.lanes.map((lane) => (
-          <Lane key={lane.model.id} lane={lane} layout={layout} xTicks={xTicks} />
-        ))}
-
-        <TimeAxis layout={layout} xTicks={xTicks} />
-
-        {model.truncated && <TruncationMarker layout={layout} />}
+        <StaticPlot layout={layout} xTicks={xTicks} />
 
         {hover && hoverX !== null && (
           <Crosshair
@@ -289,7 +290,36 @@ function chartLabel(schedule: Schedule, voiceCount: number, duration: number): s
   return `Beat and base frequency over time for ${name} — ${voices}, ${formatClock(duration)} long.`;
 }
 
-function Legend({ voices }: { voices: VoiceIdentity[] }) {
+/**
+ * Everything in the plot that does not move: lanes, band shading, grid, curves, axis.
+ *
+ * **Memoised on the layout alone**, which is what keeps an advancing playhead from rebuilding it.
+ * Without this, every tick of the clock re-ran `polylinePath` over every breakpoint of every voice
+ * — 77 of them per voice in `oobe-lucid-dreams-2` — and rebuilt two lanes of ticks and band
+ * shading, on the same thread the audio graph is competing for. On a phone that is enough garbage
+ * per second to make playback crackle; see PROGRESS.md.
+ */
+const StaticPlot = memo(function StaticPlot({
+  layout,
+  xTicks,
+}: {
+  layout: ChartLayout;
+  xTicks: number[];
+}) {
+  return (
+    <>
+      {layout.lanes.map((lane) => (
+        <Lane key={lane.model.id} lane={lane} layout={layout} xTicks={xTicks} />
+      ))}
+
+      <TimeAxis layout={layout} xTicks={xTicks} />
+
+      {layout.model.truncated && <TruncationMarker layout={layout} />}
+    </>
+  );
+});
+
+const Legend = memo(function Legend({ voices }: { voices: VoiceIdentity[] }) {
   return (
     <ul className="schedule-chart__legend">
       {voices.map((voice) => {
@@ -304,7 +334,7 @@ function Legend({ voices }: { voices: VoiceIdentity[] }) {
       })}
     </ul>
   );
-}
+});
 
 function Lane({ lane, layout, xTicks }: { lane: LaneLayout; layout: ChartLayout; xTicks: number[] }) {
   const right = lane.x + lane.width;

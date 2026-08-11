@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Schedule } from '../document/types';
+import type { EngineDiagnostics } from '../engine/engine';
 import { PlaybackEngine } from '../engine/engine';
 import { SilentKeepalive } from './keepalive';
+
+/**
+ * How often the playhead readout is refreshed while playing.
+ *
+ * Not every frame. A twenty-minute programme moves the chart's playhead about a third of a pixel
+ * per second, so 60 Hz buys nothing visible and costs a full React render each frame — enough
+ * work on a phone to starve the audio thread and crackle. rAF still drives it, so a backgrounded
+ * tab stops polling and the readout catches up on return.
+ */
+const CLOCK_INTERVAL_MS = 100;
 
 export interface VoiceGate {
   muted: boolean;
@@ -23,6 +34,8 @@ export interface Player {
    */
   transport: number;
   voiceGates: VoiceGate[];
+  /** What the device reports about its output. **Diagnostic only** — see `src/app/debug.ts`. */
+  diagnostics(): EngineDiagnostics;
   play(): void;
   pause(): void;
   stop(): void;
@@ -110,9 +123,12 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
     if (!playing) return;
 
     let frame = 0;
-    const tick = () => {
+    let published = 0;
+
+    const tick = (now: number) => {
       const instance = engineRef.current;
-      if (instance) {
+      if (instance && now - published >= CLOCK_INTERVAL_MS) {
+        published = now;
         setOffset(instance.getCurrentOffset());
         if (instance.getDuration() > 0 && instance.getCurrentOffset() >= instance.getDuration()) {
           instance.stop();
@@ -132,9 +148,11 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
 
   const play = useCallback(() => {
     if (!schedule) return;
-    engine().play();
-    // Inside the same gesture as the `AudioContext`, which is what both of them need (§4.4).
-    silence.start();
+    const instance = engine();
+    instance.play();
+    // Inside the same gesture as the `AudioContext`, which is what both of them need (§4.4), and
+    // after it, so the silence can be generated at the rate the output is actually running at.
+    silence.start(instance.getSampleRate());
     setPlaying(true);
     moved();
   }, [engine, moved, schedule, silence]);
@@ -191,12 +209,15 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
     [toggleGate],
   );
 
+  const diagnostics = useCallback(() => engine().getDiagnostics(), [engine]);
+
   return {
     playing,
     offset,
     duration,
     transport,
     voiceGates,
+    diagnostics,
     play,
     pause,
     stop,

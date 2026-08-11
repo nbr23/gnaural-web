@@ -99,6 +99,28 @@
   max-width: 340px;
 }
 
+/* Temporary, behind `?debug=1` — see src/app/debug.ts. */
+.diagnostics {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font: 13px/1.5 var(--mono);
+
+  & dt {
+    color: var(--text);
+  }
+
+  & dd {
+    margin: 0;
+    color: var(--text-h);
+  }
+}
+
 .player__wake-lock {
   display: flex;
   align-items: flex-start;

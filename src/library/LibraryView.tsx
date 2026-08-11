@@ -1,3 +1,4 @@
+import { BUILD_ID } from '../app/debug';
 import { formatDuration } from '../app/format';
 import { navigate } from '../app/routing';
 import type { BundledProgram } from './programs';
@@ -60,6 +61,10 @@ export function LibraryView({ onOpenFile, imported, onRemoveImported }: LibraryV
           </ul>
         </section>
       ))}
+
+      {/* An installed PWA can be running a build older than the one you just deployed — the
+          service worker waits for every client to close before it swaps. Say which one this is. */}
+      <p className="library__build">build {BUILD_ID}</p>
     </div>
   );
 }

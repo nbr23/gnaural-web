@@ -2,9 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>vite-scaffold</title>
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <!-- `viewport-fit=cover` so the fixed now-playing bar can pad itself past the gesture area. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Matches --bg in src/index.css: the app is dark by default, so the browser chrome is too. -->
+    <meta name="theme-color" content="#16171d" />
+    <meta
+      name="description"
+      content="Play, export and share Gnaural binaural-beat programs. Works offline; nothing leaves your device."
+    />
+    <title>Gnaural Web</title>
   </head>
   <body>
     <div id="root"></div>
