@@ -11,6 +11,8 @@ import { afterEach, beforeEach } from 'vitest';
 export interface TestRoot {
   readonly container: HTMLDivElement;
   render(element: ReactNode): void;
+  /** Throw the tree away and mount a fresh one — the closest a test gets to reloading the page. */
+  remount(element: ReactNode): void;
   /** Run an interaction and flush the resulting renders. */
   act(action: () => void): void;
   click(element: Element | null | undefined): void;
@@ -41,6 +43,11 @@ export function setupRoot(): TestRoot {
       return container;
     },
     render: (element) => act(() => root.render(element)),
+    remount: (element) => {
+      act(() => root.unmount());
+      root = createRoot(container);
+      act(() => root.render(element));
+    },
     act: (action) => act(action),
     click: (element) => {
       act(() => {
@@ -68,6 +75,13 @@ export function setInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+/** The `setInputValue` trick, for a checkbox — where React derives `onChange` from `click`. */
+export function setCheckbox(input: HTMLInputElement, checked: boolean): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked')?.set;
+  setter?.call(input, checked);
+  input.dispatchEvent(new Event('click', { bubbles: true }));
+}
+
 /** The `setInputValue` trick, for a `<select>`. */
 export function setSelectValue(select: HTMLSelectElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
@@ -76,13 +90,22 @@ export function setSelectValue(select: HTMLSelectElement, value: string): void {
 }
 
 /**
- * Flush pending async work — a lazily imported program, a file read — and the renders it causes.
- * A dynamic import settles on a macrotask, so a microtask drain alone is not enough.
+ * Flush pending async work — a lazily imported program, a file read, an IndexedDB query — and the
+ * renders it causes. A dynamic import settles on a macrotask, so a microtask drain alone is not
+ * enough, and a chain of them needs one turn each: fake-indexeddb spends a turn per request, and
+ * `App` runs its library read, its settings read and a program load concurrently.
  */
-export async function flush(times = 4): Promise<void> {
+export async function flush(times = 12): Promise<void> {
   for (let i = 0; i < times; i++) {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
   }
+}
+
+/** Let real time pass, for the debounce on a persisted setting. */
+export async function wait(ms: number): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  });
 }

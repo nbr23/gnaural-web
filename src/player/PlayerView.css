@@ -99,6 +99,26 @@
   max-width: 340px;
 }
 
+.player__wake-lock {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  max-width: 52ch;
+
+  & input {
+    /* Line the box up with the first line of a label that wraps to two. */
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+  }
+
+  & small {
+    font-size: 13px;
+  }
+}
+
 .export {
   display: flex;
   flex-direction: column;
@@ -148,7 +168,8 @@
   accent-color: var(--accent);
 }
 
-.export__error {
+.export__error,
+.export__notice {
   font-size: 14px;
   color: var(--text-h);
 }

@@ -1,0 +1,50 @@
+/* Pinned to the bottom of the viewport, above the safe area on a phone, so it survives scrolling
+   a nineteen-item library. `.library` gets its own bottom padding so the last card clears it. */
+.now-playing {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Full-bleed background, but its contents line up with the 900px column `#root` centres —
+     `100%` is the bar's own width, so no scrollbar to account for. */
+  padding-block: 10px calc(10px + env(safe-area-inset-bottom));
+  padding-inline: max(16px, calc((100% - 868px) / 2));
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.now-playing__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font: inherit;
+  text-align: left;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.now-playing__title {
+  color: var(--text-h);
+  font-weight: 600;
+  font-size: 15px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now-playing__time {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}

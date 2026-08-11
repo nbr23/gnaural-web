@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Schedule } from '../document/types';
 import { PlaybackEngine } from '../engine/engine';
+import { SilentKeepalive } from './keepalive';
 
 export interface VoiceGate {
   muted: boolean;
@@ -13,13 +14,19 @@ export interface Player {
   /** Current schedule-time offset in seconds, polled from the engine's own clock. */
   offset: number;
   duration: number;
-  masterGain: number;
+  /**
+   * Bumped by every play, pause, stop and seek, and by nothing else.
+   *
+   * `offset` moves 60 times a second and says nothing about *why*; this says the playhead was
+   * moved deliberately. It is what `useMediaSession` publishes position on, so the OS is told
+   * where the playhead jumped to without being told 60 times a second where it drifted to.
+   */
+  transport: number;
   voiceGates: VoiceGate[];
   play(): void;
   pause(): void;
   stop(): void;
   seek(offset: number): void;
-  setMasterGain(value: number): void;
   toggleMute(index: number): void;
   toggleSolo(index: number): void;
 }
@@ -35,15 +42,22 @@ export interface Player {
  * has already faded on its own scheduled ramp.
  *
  * The engine is constructed lazily on the first play, because `AudioContext` must be created
- * inside a user gesture (§4.4).
+ * inside a user gesture (§4.4). The silent keepalive that makes lock-screen controls appear is
+ * owned the same way, and started in the same gesture.
+ *
+ * `masterGain` is a *controlled* input rather than state owned here: it is a persisted setting
+ * (`useSettings`), and the engine is only its sink.
  */
-export function usePlayer(schedule: Schedule | null): Player {
+export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
   const engineRef = useRef<PlaybackEngine | null>(null);
+  const keepalive = useRef(new SilentKeepalive());
   const [playing, setPlaying] = useState(false);
   const [offset, setOffset] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [masterGain, setMasterGainState] = useState(1);
+  const [transport, setTransport] = useState(0);
   const [voiceGates, setVoiceGates] = useState<VoiceGate[]>([]);
+
+  const moved = useCallback(() => setTransport((count) => count + 1), []);
 
   const readGates = useCallback((engine: PlaybackEngine, of: Schedule): VoiceGate[] => {
     return of.voices.map((_voice, index) => ({
@@ -63,9 +77,9 @@ export function usePlayer(schedule: Schedule | null): Player {
   const masterGainRef = useRef(masterGain);
   masterGainRef.current = masterGain;
 
-  // A new schedule tears down and rebuilds the graph; transport state resets with it. Leaving the
-  // player (schedule becomes null) runs the cleanup, which stops playback rather than leaving a
-  // program running with no visible transport.
+  // A new schedule tears down and rebuilds the graph; transport state resets with it. Navigating
+  // to the library no longer clears the schedule, so this cleanup now runs only when the program
+  // genuinely changes — and stopping the old one is exactly right then.
   useEffect(() => {
     if (!schedule) return;
 
@@ -76,11 +90,21 @@ export function usePlayer(schedule: Schedule | null): Player {
     setOffset(0);
     setDuration(instance.getDuration());
     setVoiceGates(readGates(instance, schedule));
+    moved();
 
     return () => {
       instance.stop();
     };
-  }, [schedule, engine, readGates]);
+  }, [schedule, engine, readGates, moved]);
+
+  const silence = keepalive.current;
+  useEffect(() => () => silence.dispose(), [silence]);
+
+  // Only reaches the engine once one exists: before the first play there is no AudioContext to
+  // apply a level to, and `load()` above already carries the current value in.
+  useEffect(() => {
+    engineRef.current?.setMasterGain(masterGain);
+  }, [masterGain]);
 
   useEffect(() => {
     if (!playing) return;
@@ -92,8 +116,10 @@ export function usePlayer(schedule: Schedule | null): Player {
         setOffset(instance.getCurrentOffset());
         if (instance.getDuration() > 0 && instance.getCurrentOffset() >= instance.getDuration()) {
           instance.stop();
+          silence.stop();
           setPlaying(false);
           setOffset(0);
+          moved();
           return;
         }
       }
@@ -102,25 +128,33 @@ export function usePlayer(schedule: Schedule | null): Player {
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing]);
+  }, [playing, silence, moved]);
 
   const play = useCallback(() => {
     if (!schedule) return;
     engine().play();
+    // Inside the same gesture as the `AudioContext`, which is what both of them need (§4.4).
+    silence.start();
     setPlaying(true);
-  }, [engine, schedule]);
+    moved();
+  }, [engine, moved, schedule, silence]);
 
   const pause = useCallback(() => {
     engineRef.current?.pause();
+    // The keepalive keeps running while paused: the media notification is the transport now, and
+    // it has to survive a pause to be pressed again.
     setPlaying(false);
     setOffset(engineRef.current?.getCurrentOffset() ?? 0);
-  }, []);
+    moved();
+  }, [moved]);
 
   const stop = useCallback(() => {
     engineRef.current?.stop();
+    silence.stop();
     setPlaying(false);
     setOffset(0);
-  }, []);
+    moved();
+  }, [moved, silence]);
 
   const seek = useCallback(
     (next: number) => {
@@ -128,16 +162,9 @@ export function usePlayer(schedule: Schedule | null): Player {
       const instance = engine();
       instance.seek(next);
       setOffset(instance.getCurrentOffset());
+      moved();
     },
-    [engine, schedule],
-  );
-
-  const setMasterGain = useCallback(
-    (value: number) => {
-      setMasterGainState(value);
-      engine().setMasterGain(value);
-    },
-    [engine],
+    [engine, moved, schedule],
   );
 
   const toggleGate = useCallback(
@@ -168,13 +195,12 @@ export function usePlayer(schedule: Schedule | null): Player {
     playing,
     offset,
     duration,
-    masterGain,
+    transport,
     voiceGates,
     play,
     pause,
     stop,
     seek,
-    setMasterGain,
     toggleMute,
     toggleSolo,
   };

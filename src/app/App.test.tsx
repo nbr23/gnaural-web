@@ -1,12 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
+import { parseSchedule } from '../document/parser';
 import { loadFixture } from '../document/test-fixtures';
+import { encodeSharePayload } from '../files/shareLink';
 import { PROGRAMS } from '../library/programs';
-import { flush, setInputValue, setSelectValue, setupRoot } from '../test-utils';
+import { listImported } from '../library/storage';
+import { mediaSession, resetDatabase, resetPlatform, wakeLocks } from '../test-setup';
+import { flush, setCheckbox, setInputValue, setSelectValue, setupRoot, wait } from '../test-utils';
 
 const root = setupRoot();
 
+/** Comfortably past `useSettings`'s write debounce. */
+const WRITE_DEBOUNCE = 400;
+
 beforeEach(() => {
+  resetDatabase();
+  resetPlatform();
   window.location.hash = '';
 });
 
@@ -64,9 +73,8 @@ describe('routing', () => {
     expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
   });
 
-  it('redirects the opened-file route when nothing has been opened this session', async () => {
-    // The route depends on in-memory state, so a reload lands on it with nothing behind it.
-    window.location.hash = '#/opened';
+  it('redirects an imported id that is no longer stored', async () => {
+    window.location.hash = '#/i/deleted-long-ago';
     root.render(<App />);
     await flush();
 
@@ -108,27 +116,84 @@ describe('player view', () => {
   });
 });
 
-describe('export', () => {
-  it('offers WAV and .gnaural export, with the size a WAV would take', async () => {
+describe('export and share', () => {
+  it('offers a link, .gnaural and WAV, with the size a WAV would take', async () => {
     window.location.hash = '#/p/powernap';
     root.render(<App />);
     await flush();
 
-    expect(root.byText('.button', 'Export WAV')).toBeDefined();
+    expect(root.byText('.button', 'Share link')).toBeDefined();
     expect(root.byText('.button', 'Export .gnaural')).toBeDefined();
+    expect(root.byText('.button', 'Export WAV')).toBeDefined();
     // 20 minutes of 44.1 kHz stereo — large enough that the estimate is the point of showing it.
     expect(root.query('.export__estimate')?.textContent).toBe('≈ 202 MB');
   });
 
-  it('halves the estimate at the lower sample rate', async () => {
+  it('halves the estimate at the lower sample rate, and remembers the choice', async () => {
     window.location.hash = '#/p/powernap';
     root.render(<App />);
     await flush();
 
-    const select = root.query('.export__rate select') as HTMLSelectElement;
-    root.act(() => setSelectValue(select, '22050'));
-
+    root.act(() => setSelectValue(root.query('.export__rate select') as HTMLSelectElement, '22050'));
     expect(root.query('.export__estimate')?.textContent).toBe('≈ 101 MB');
+
+    // Remounting is the closest a test gets to a reload: the setting comes back from IndexedDB.
+    await wait(WRITE_DEBOUNCE);
+    root.remount(<App />);
+    await flush();
+    expect(root.query('.export__estimate')?.textContent).toBe('≈ 101 MB');
+  });
+
+  it('copies a share link to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', Object.create(navigator, { clipboard: { value: { writeText } } }));
+
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+    root.click(root.byText('.button', 'Share link'));
+    await flush();
+
+    expect(root.query('.export__notice')?.textContent).toBe('Link copied.');
+    expect(writeText.mock.calls[0][0]).toContain('#/s/');
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('share links', () => {
+  it('plays a program carried entirely in the fragment', async () => {
+    const schedule = parseSchedule(loadFixture('powernap.gnaural'));
+    window.location.hash = `#/s/${await encodeSharePayload(schedule)}`;
+    root.render(<App />);
+    await flush();
+
+    expect(root.query('.player__title')?.textContent).toBe('Power Nap');
+    // Not in the library yet, so it offers to keep it — a bundled program does not.
+    expect(root.byText('.button', 'Add to library')).toBeDefined();
+  });
+
+  it('saves a shared program to the library on request', async () => {
+    const schedule = parseSchedule(loadFixture('powernap.gnaural'));
+    window.location.hash = `#/s/${await encodeSharePayload(schedule)}`;
+    root.render(<App />);
+    await flush();
+
+    root.click(root.byText('.button', 'Add to library'));
+    await flush();
+
+    expect(window.location.hash).toMatch(/^#\/i\//);
+    expect(await listImported()).toHaveLength(1);
+    // Now it is one of the user's own, so the offer is gone.
+    expect(root.byText('.button', 'Add to library')).toBeUndefined();
+  });
+
+  it('reports a fragment that is not a readable program', async () => {
+    window.location.hash = '#/s/bm90YXNjaGVkdWxl';
+    root.render(<App />);
+    await flush();
+
+    expect(root.query('[role="alert"]')?.textContent).toContain('shared link');
+    expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
   });
 });
 
@@ -141,15 +206,54 @@ describe('opening a file', () => {
     });
   }
 
-  it('plays a dropped schedule and routes to the opened view', async () => {
+  it('imports a dropped schedule and plays it', async () => {
     root.render(<App />);
     drop(loadFixture('powernap.gnaural'));
     await flush();
 
-    expect(window.location.hash).toBe('#/opened');
+    expect(window.location.hash).toMatch(/^#\/i\//);
     expect(root.query('.player__title')?.textContent).toBe('Power Nap');
-    // The byline names the file, since an opened file has no library metadata behind it.
+    // The byline names the file it arrived as, which the library metadata cannot supply.
     expect(root.query('.player__byline')?.textContent).toBe('dropped.gnaural');
+  });
+
+  it('keeps an imported program across a reload', async () => {
+    root.render(<App />);
+    drop(loadFixture('powernap.gnaural'));
+    await flush();
+    const hash = window.location.hash;
+
+    root.remount(<App />);
+    await flush();
+
+    expect(window.location.hash).toBe(hash);
+    expect(root.query('.player__title')?.textContent).toBe('Power Nap');
+  });
+
+  it('lists imported programs above the bundled ones, and removes them', async () => {
+    root.render(<App />);
+    drop(loadFixture('powernap.gnaural'), 'mine.gnaural');
+    await flush();
+
+    root.click(root.byText('.player__back', 'Library'));
+    await flush();
+    expect(root.text()).toContain('Imported');
+    expect(root.queryAll('.program-card')).toHaveLength(PROGRAMS.length + 1);
+
+    root.click(root.query('.library__remove'));
+    await flush();
+    expect(root.queryAll('.program-card')).toHaveLength(PROGRAMS.length);
+    expect(await listImported()).toHaveLength(0);
+  });
+
+  it('does not import the same file twice', async () => {
+    root.render(<App />);
+    drop(loadFixture('powernap.gnaural'), 'first.gnaural');
+    await flush();
+    drop(loadFixture('powernap.gnaural'), 'second.gnaural');
+    await flush();
+
+    expect(await listImported()).toHaveLength(1);
   });
 
   it('reports a file it cannot read instead of throwing', async () => {
@@ -160,5 +264,204 @@ describe('opening a file', () => {
     expect(root.query('[role="alert"]')?.textContent).toContain('broken.gnaural');
     // And stays on the library rather than half-loading a player.
     expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
+    expect(await listImported()).toHaveLength(0);
+  });
+});
+
+describe('playback outside the player', () => {
+  async function openAndPlay(hash = '#/p/powernap') {
+    window.location.hash = hash;
+    root.render(<App />);
+    await flush();
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+  }
+
+  it('keeps playing when you go back to the library, and says what is playing', async () => {
+    await openAndPlay();
+    root.click(root.byText('.player__back', 'Library'));
+    await flush();
+
+    expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
+    expect(root.query('.now-playing__title')?.textContent).toBe('Power Nap');
+    expect(root.byText('.now-playing .button--primary', 'Pause')).toBeDefined();
+  });
+
+  it('returns to the player from the now-playing bar', async () => {
+    await openAndPlay();
+    root.click(root.byText('.player__back', 'Library'));
+    await flush();
+
+    root.click(root.query('.now-playing__open'));
+    await flush();
+
+    expect(window.location.hash).toBe('#/p/powernap');
+    expect(root.query('.player__title')?.textContent).toBe('Power Nap');
+  });
+
+  it('shows no bar for a program that was opened but never started', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+    root.click(root.byText('.player__back', 'Library'));
+    await flush();
+
+    expect(root.query('.now-playing')).toBeNull();
+  });
+
+  it('stops from the bar', async () => {
+    await openAndPlay();
+    root.click(root.byText('.player__back', 'Library'));
+    await flush();
+
+    root.click(root.byText('.now-playing .button', 'Stop'));
+    await flush();
+
+    expect(root.query('.now-playing')).toBeNull();
+  });
+});
+
+describe('media session', () => {
+  it('publishes the program as lock-screen metadata', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    expect(mediaSession.metadata?.title).toBe('Power Nap');
+    expect(mediaSession.metadata?.artist).toBe('Gnaural');
+    expect(mediaSession.metadata?.album).toBe('Gnaural Web');
+  });
+
+  it('tracks playback state and drives the transport from its handlers', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+    expect(mediaSession.playbackState).toBe('paused');
+
+    root.act(() => mediaSession.handlers.get('play')?.({}));
+    await flush();
+    expect(mediaSession.playbackState).toBe('playing');
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+
+    root.act(() => mediaSession.handlers.get('pause')?.({}));
+    await flush();
+    expect(mediaSession.playbackState).toBe('paused');
+  });
+
+  it('seeks to an absolute position, and publishes it', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    root.act(() => mediaSession.handlers.get('seekto')?.({ seekTime: 600 }));
+    await flush();
+
+    expect(root.query('.timeline__times')?.textContent).toContain('10:00');
+    expect(mediaSession.position?.position).toBeCloseTo(600, 0);
+    expect(mediaSession.position?.duration).toBeCloseTo(1200, 0);
+    // A zero rate is a TypeError in Chrome; `playbackState` is what stops the OS extrapolating.
+    expect(mediaSession.position?.playbackRate).toBe(1);
+    expect(mediaSession.playbackState).toBe('paused');
+  });
+
+  it('treats the skip actions as ±30s within the one program', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    root.act(() => mediaSession.handlers.get('seekto')?.({ seekTime: 600 }));
+    root.act(() => mediaSession.handlers.get('nexttrack')?.({}));
+    await flush();
+
+    expect(root.query('.timeline__times')?.textContent).toContain('10:30');
+  });
+
+  it('publishes nothing while no program is loaded', async () => {
+    // A sentinel, so this cannot pass just because the stub started empty.
+    mediaSession.metadata = { title: 'left over' };
+    mediaSession.playbackState = 'playing';
+
+    root.render(<App />);
+    await flush();
+
+    expect(mediaSession.metadata).toBeNull();
+    expect(mediaSession.playbackState).toBe('none');
+  });
+
+  it('keeps the metadata up while the library is on screen', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+
+    root.click(root.byText('.player__back', 'Library'));
+    await flush();
+
+    expect(mediaSession.metadata?.title).toBe('Power Nap');
+    expect(mediaSession.playbackState).toBe('playing');
+  });
+});
+
+describe('wake lock', () => {
+  it('takes none by default, even while playing', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+
+    expect(wakeLocks).toHaveLength(0);
+  });
+
+  it('takes one while playing once enabled, and releases it on pause', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    root.act(() =>
+      setCheckbox(root.query('.player__wake-lock input') as HTMLInputElement, true),
+    );
+    // Enabling it alone must not light the screen — only playing does.
+    expect(wakeLocks).toHaveLength(0);
+
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+    expect(wakeLocks).toHaveLength(1);
+    expect(wakeLocks[0].released).toBe(false);
+
+    root.click(root.byText('.button--primary', 'Pause'));
+    await flush();
+    expect(wakeLocks[0].released).toBe(true);
+  });
+
+  it('remembers the toggle', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+    root.act(() =>
+      setCheckbox(root.query('.player__wake-lock input') as HTMLInputElement, true),
+    );
+    await wait(WRITE_DEBOUNCE);
+
+    root.remount(<App />);
+    await flush();
+    expect((root.query('.player__wake-lock input') as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe('settings', () => {
+  it('remembers the master volume', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    const volume = root.query('.player__volume input') as HTMLInputElement;
+    root.act(() => setInputValue(volume, '0.35'));
+    await wait(WRITE_DEBOUNCE);
+
+    root.remount(<App />);
+    await flush();
+    expect((root.query('.player__volume input') as HTMLInputElement).value).toBe('0.35');
   });
 });

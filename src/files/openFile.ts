@@ -2,8 +2,8 @@
  * Getting a `.gnaural` file's text into the app, by whichever route the browser supports.
  *
  * Everything here returns plain text and never parses — the caller owns parsing so it can catch
- * a malformed file and show a message instead of an exception. Opened files live in memory only;
- * IndexedDB persistence is step 8.
+ * a malformed file and show a message instead of an exception, and so the text it stores in the
+ * library is the file's own bytes.
  */
 
 export interface OpenedFile {

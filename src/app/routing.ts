@@ -4,27 +4,37 @@ import { useEffect, useState } from 'react';
  * Hash routing, hand-rolled.
  *
  * The fragment rather than a path because there is no server to configure (PLAN.md §2 — no
- * backend), and hand-rolled rather than a router dependency because there are two views. It buys
- * one thing that matters on the target platform: Android's back button returns to the library
- * instead of leaving the app.
+ * backend), and hand-rolled rather than a router dependency because there is a library and a
+ * player and nothing else. It buys one thing that matters on the target platform: Android's back
+ * button returns to the library instead of leaving the app.
  *
- * `#/s/…` is deliberately left unclaimed for step 8's share links, which put a compressed
- * schedule in the fragment.
+ * Three kinds of program, three prefixes. Only `#/s/` carries its program with it; the other two
+ * are references, one into the bundle and one into IndexedDB.
  */
 export type Route =
   | { view: 'library' }
+  /** A bundled program, by the id in `src/library/programs.ts`. */
   | { view: 'program'; id: string }
-  /** A file the user opened this session. Depends on in-memory state, so it survives no reload. */
-  | { view: 'opened' };
+  /** A program the user imported, by its IndexedDB key. */
+  | { view: 'imported'; id: string }
+  /** A shared program, compressed into the fragment itself — self-contained, so reload-safe. */
+  | { view: 'shared'; payload: string };
 
 export const LIBRARY: Route = { view: 'library' };
 
 export function parseHash(hash: string): Route {
   const path = hash.replace(/^#\/?/, '');
-  if (path === 'opened') return { view: 'opened' };
 
   const program = /^p\/(.+)$/.exec(path);
   if (program) return { view: 'program', id: decodeURIComponent(program[1]) };
+
+  const imported = /^i\/(.+)$/.exec(path);
+  if (imported) return { view: 'imported', id: decodeURIComponent(imported[1]) };
+
+  // base64url by construction, so the payload is taken verbatim — percent-encoding it would only
+  // make an already-long fragment longer.
+  const shared = /^s\/([A-Za-z0-9\-_]+)$/.exec(path);
+  if (shared) return { view: 'shared', payload: shared[1] };
 
   return LIBRARY;
 }
@@ -33,8 +43,10 @@ export function formatHash(route: Route): string {
   switch (route.view) {
     case 'program':
       return `#/p/${encodeURIComponent(route.id)}`;
-    case 'opened':
-      return '#/opened';
+    case 'imported':
+      return `#/i/${encodeURIComponent(route.id)}`;
+    case 'shared':
+      return `#/s/${route.payload}`;
     default:
       return '#/';
   }

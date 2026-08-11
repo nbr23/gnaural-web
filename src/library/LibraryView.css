@@ -1,3 +1,8 @@
+/* Room for the fixed now-playing bar, so the last card is never trapped underneath it. */
+.library {
+  padding-bottom: 96px;
+}
+
 .library__header {
   display: flex;
   flex-direction: column;
@@ -29,6 +34,38 @@
 @media (min-width: 700px) {
   .library__list {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* The remove control overlays the card's top-right corner rather than sitting beside it, so an
+   imported row is the same width and shape as a bundled one. */
+.library__imported {
+  position: relative;
+
+  & .program-card {
+    padding-right: 48px;
+  }
+}
+
+.library__remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 32px;
+  height: 32px;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-h);
+    background: var(--bg);
   }
 }
 

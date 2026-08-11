@@ -3,12 +3,8 @@ import { serializeSchedule } from '../document/serializer';
 import type { Schedule } from '../document/types';
 import { GNAURAL_EXTENSION } from '../files/openFile';
 import { fileNameFor, saveBlob } from '../files/saveFile';
-import {
-  DEFAULT_EXPORT_SAMPLE_RATE,
-  RenderCancelledError,
-  renderFrameCount,
-  renderSchedule,
-} from '../engine/render';
+import { ShareTooLargeError, encodeSharePayload, shareUrl } from '../files/shareLink';
+import { RenderCancelledError, renderFrameCount, renderSchedule } from '../engine/render';
 import { encodeWav, wavByteLength } from '../engine/wav';
 
 export type ExportStatus = 'idle' | 'rendering' | 'saving';
@@ -18,12 +14,13 @@ export interface Exporter {
   /** 0–1 while rendering. */
   progress: number;
   error: string | null;
-  sampleRate: number;
+  /** Transient confirmation of a share, since copying to the clipboard is otherwise invisible. */
+  notice: string | null;
   /** Size of the WAV the current settings would produce, exactly as `encodeWav` will write it. */
   estimatedBytes: number;
-  setSampleRate(rate: number): void;
   exportWav(): void;
   exportGnaural(): void;
+  share(): void;
   cancel(): void;
 }
 
@@ -34,12 +31,14 @@ export interface Exporter {
  * own sample rate, in its own `OfflineAudioContext`, and neither reads nor disturbs playback.
  * Nothing about it needs to outlive the player view, so it is held by the panel rather than
  * threaded down from `App`.
+ *
+ * `sampleRate` is a persisted setting passed in, not state owned here.
  */
-export function useExport(schedule: Schedule): Exporter {
+export function useExport(schedule: Schedule, sampleRate: number): Exporter {
   const [status, setStatus] = useState<ExportStatus>('idle');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [sampleRate, setSampleRate] = useState(DEFAULT_EXPORT_SAMPLE_RATE);
+  const [notice, setNotice] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
   // A render outlives navigation away from the player, so state updates are dropped once the
@@ -101,17 +100,56 @@ export function useExport(schedule: Schedule): Exporter {
     await save(fileNameFor(schedule.title, GNAURAL_EXTENSION), blob);
   }, [save, schedule]);
 
+  /**
+   * Hand the whole program to someone else as a URL — the native share sheet on the platforms
+   * that have one (Android is the target, §2), the clipboard everywhere else.
+   *
+   * A program too big for a fragment falls back to exporting the file (§5.1), which is the same
+   * program by a slower route rather than a dead end.
+   */
+  const share = useCallback(async () => {
+    setError(null);
+    setNotice(null);
+
+    let url: string;
+    try {
+      url = shareUrl(await encodeSharePayload(schedule));
+    } catch (thrown) {
+      if (!(thrown instanceof ShareTooLargeError)) throw thrown;
+      setNotice('Too large for a link — exporting the file instead.');
+      await exportGnaural();
+      return;
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: schedule.title || 'Gnaural program', url });
+        return;
+      } catch (thrown) {
+        // Dismissing the share sheet is a cancel, not a failure worth reporting.
+        if (thrown instanceof DOMException && thrown.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice('Link copied.');
+    } catch {
+      setError('The link could not be copied.');
+    }
+  }, [exportGnaural, schedule]);
+
   const cancel = useCallback(() => abort.current?.abort(), []);
 
   return {
     status,
     progress,
     error,
-    sampleRate,
+    notice,
     estimatedBytes,
-    setSampleRate,
     exportWav: () => void exportWav(),
     exportGnaural: () => void exportGnaural(),
+    share: () => void share(),
     cancel,
   };
 }

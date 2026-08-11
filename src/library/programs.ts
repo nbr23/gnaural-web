@@ -9,7 +9,8 @@ import type { Schedule } from '../document/types';
  *
  * The manifest carries the metadata `.gnaural` has no field for — category and the per-preset
  * attribution — while the `.gnaural` files themselves remain the source of truth for playback.
- * User-imported programs from IndexedDB join this list in step 8.
+ * Programs the user imported are separate, in `storage.ts`: they have no category and their
+ * metadata is derived from the file rather than curated.
  */
 export interface BundledProgram {
   /** Stable id, also the filename stem and the `#/p/<id>` route segment. */
@@ -24,7 +25,7 @@ export interface BundledProgram {
 
 /**
  * Lazy so each program is its own chunk rather than ~96 KB in the main bundle — the list only
- * needs the manifest, and step 8's service worker can then precache the schedules individually.
+ * needs the manifest, and the service worker can then precache the schedules individually.
  */
 const sources = import.meta.glob('../../fixtures/**/*.gnaural', {
   query: '?raw',

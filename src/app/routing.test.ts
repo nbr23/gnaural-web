@@ -6,17 +6,23 @@ describe('parseHash', () => {
     expect(parseHash('#/p/powernap')).toEqual({ view: 'program', id: 'powernap' });
   });
 
-  it('reads the opened-file route', () => {
-    expect(parseHash('#/opened')).toEqual({ view: 'opened' });
+  it('reads an imported program route', () => {
+    expect(parseHash('#/i/2f9b')).toEqual({ view: 'imported', id: '2f9b' });
   });
 
-  it('falls back to the library for empty, unknown, and reserved hashes', () => {
+  it('reads a share route, taking the payload verbatim', () => {
+    expect(parseHash('#/s/q1bO-_AA')).toEqual({ view: 'shared', payload: 'q1bO-_AA' });
+  });
+
+  it('falls back to the library for empty, unknown, and malformed hashes', () => {
     expect(parseHash('')).toEqual({ view: 'library' });
     expect(parseHash('#')).toEqual({ view: 'library' });
     expect(parseHash('#/')).toEqual({ view: 'library' });
     expect(parseHash('#/nonsense')).toEqual({ view: 'library' });
-    // Reserved for step 8's share links; until they exist it must not look like a program.
-    expect(parseHash('#/s/AAAA')).toEqual({ view: 'library' });
+    // Not base64url, so it cannot be a share payload and must not be treated as one.
+    expect(parseHash('#/s/not a payload')).toEqual({ view: 'library' });
+    // The route an opened file used before imports were persisted; now nothing.
+    expect(parseHash('#/opened')).toEqual({ view: 'library' });
   });
 
   it('round-trips ids that need escaping', () => {
@@ -29,6 +35,7 @@ describe('formatHash', () => {
   it('formats each view', () => {
     expect(formatHash({ view: 'library' })).toBe('#/');
     expect(formatHash({ view: 'program', id: 'sleep-smr' })).toBe('#/p/sleep-smr');
-    expect(formatHash({ view: 'opened' })).toBe('#/opened');
+    expect(formatHash({ view: 'imported', id: '2f9b' })).toBe('#/i/2f9b');
+    expect(formatHash({ view: 'shared', payload: 'q1bO-_AA' })).toBe('#/s/q1bO-_AA');
   });
 });
