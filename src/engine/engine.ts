@@ -26,6 +26,34 @@ const PLAYBACK_LATENCY_HINT: AudioContextLatencyCategory = 'playback';
 const MIN_LOOKAHEAD = 0.05;
 
 /**
+ * How far ahead an endlessly-looping schedule is scheduled (§3.2 — `loops` of 0 or less repeats
+ * forever, because Gnaural decrements a counter and stops only when it hits exactly zero).
+ *
+ * "Forever" cannot be handed to the audio thread, and §4.2 rules out the usual answer: no chunked
+ * look-ahead scheduler, because a JS timer topping up automation is exactly what gets throttled
+ * with the screen off. So an endless schedule is scheduled to a bound and then ends normally.
+ * Twelve hours outruns any real session — the longest bundled programme is under three — so the
+ * bound is a deliberate limit rather than a silent truncation.
+ */
+const LOOP_HORIZON_SECONDS = 12 * 60 * 60;
+
+/** Second bound on the same thing, for a schedule short enough that the horizon alone would
+ *  schedule an absurd number of passes. */
+const MAX_LOOP_PASSES = 1000;
+
+/**
+ * How many times the schedule plays through (§3.2).
+ *
+ * `loops` counts passes, so 1 plays once. Zero and negatives repeat forever and are bounded here.
+ */
+function passCount(schedule: Schedule, duration: number): number {
+  if (duration <= 0) return 1;
+  const declared = Math.floor(schedule.loops);
+  if (declared > 0) return declared;
+  return Math.max(1, Math.min(MAX_LOOP_PASSES, Math.ceil(LOOP_HORIZON_SECONDS / duration)));
+}
+
+/**
  * How far ahead of `currentTime` a transport transition is scheduled.
  *
  * **Without this the anti-click ramp is not a ramp.** `currentTime` is where the audio thread has
@@ -45,15 +73,6 @@ function scheduleLookahead(context: BaseAudioContext): number {
   // Chrome on Android reports 0 here, so in practice the floor is what applies on the target
   // platform and the scaling term only ever helps a desktop that reports honestly.
   return Math.max(MIN_LOOKAHEAD, buffered * 3);
-}
-
-/** What the device reports about its output path. **Diagnostic only** — see `src/app/debug.ts`. */
-export interface EngineDiagnostics {
-  sampleRate: number | null;
-  baseLatency: number | null;
-  outputLatency: number | null;
-  state: string | null;
-  lookahead: number | null;
 }
 
 interface OutputChain {
@@ -304,6 +323,37 @@ function scheduleEnding(events: AutomationEvent[], t0: number, endOffset: number
   nodes.gainR.gain.linearRampToValueAtTime(0, t0 + endOffset + CLICK_FREE_RAMP);
 }
 
+/**
+ * The transition from one pass of the schedule to the next, for a voice that is *longer* than the
+ * schedule.
+ *
+ * Only such a voice needs one. §3.5's unconditional wrap means a voice's automation already ends
+ * at entry[0]'s values, so for a voice as long as the schedule the last segment glides back to
+ * exactly where the next pass starts and the seam is continuous with nothing scheduled at all.
+ *
+ * A longer voice is a different matter: §3.7 says the shortest voice ends the schedule and resets
+ * every voice, so this one is cut off partway through its curve and restarted from entry[0].
+ * Gnaural steps there. **Deviation, deliberate:** the gain is ramped over `CLICK_FREE_RAMP`
+ * instead, for the reason §4.4 gives for every other transition — a step on a live sine is a
+ * click. Frequency snaps, which carries no such risk.
+ */
+function scheduleSeam(events: AutomationEvent[], atSeam: number, duration: number, nodes: VoiceNodes): void {
+  const before = valueAtTime(events, duration);
+  const after = events[0];
+
+  anchorFrequency(nodes.source, after, atSeam);
+  nodes.gainL.gain.setValueAtTime(before.leftGain, atSeam);
+  nodes.gainR.gain.setValueAtTime(before.rightGain, atSeam);
+  nodes.gainL.gain.linearRampToValueAtTime(after.leftGain, atSeam + CLICK_FREE_RAMP);
+  nodes.gainR.gain.linearRampToValueAtTime(after.rightGain, atSeam + CLICK_FREE_RAMP);
+}
+
+/** Whether §3.7 cuts this voice short — it outlasts the schedule, so a loop restarts it mid-curve. */
+function outlastsSchedule(events: AutomationEvent[], duration: number): boolean {
+  const end = events[events.length - 1]?.time ?? 0;
+  return end > duration + 1e-9;
+}
+
 /** Voices this app can render. Other types are parsed and preserved, but silent (§3.3). */
 function isRenderable(voice: Voice): boolean {
   return voice.type === VoiceType.Binaural || voice.type === VoiceType.PinkNoise;
@@ -321,8 +371,12 @@ function isRenderable(voice: Voice): boolean {
  * `PlaybackEngine` instead of building a graph of its own.
  *
  * Voice types 0 (binaural) and 1 (noise) are rendered. Types 2–6 are parsed and preserved by the
- * document layer but silent here; surfacing a user-visible warning for them (§3.3) is a later
- * step. `loops` (§3.7) is not yet applied — see PROGRESS.md.
+ * document layer but silent here (§3.3), and `VoiceList`/`WarningList` say so.
+ *
+ * **Exactly one pass, whatever `loops` says.** This is the export path (`renderSchedule`), and a
+ * WAV of a schedule that repeats forever is not a file anyone can write. Repetition is a playback
+ * behaviour, so it lives in `PlaybackEngine`; keeping it out of here is also what lets §5.3's null
+ * test compare the two paths over the same stretch of audio.
  */
 export function playSchedule(context: BaseAudioContext, schedule: Schedule): void {
   const output = buildOutputChain(context, schedule);
@@ -382,10 +436,11 @@ export class PlaybackEngine {
   private schedule: Schedule | null = null;
   private output: OutputChain | null = null;
   private voiceStates: VoiceState[] = [];
-  private anchorContextTime = 0; // context.currentTime corresponding to schedule-offset 0
-  private frozenOffset = 0; // offset to resume from; authoritative only while paused
+  private anchorContextTime = 0; // context.currentTime corresponding to total-time zero
+  private frozenTotal = 0; // total offset to resume from; authoritative only while paused
   private playing = false;
   private duration = 0;
+  private passes = 1;
   private masterGain = 1;
   private muted = new Set<number>();
   private soloed = new Set<number>();
@@ -398,27 +453,49 @@ export class PlaybackEngine {
     this.teardownGraph();
     this.schedule = schedule;
     this.duration = scheduleDuration(schedule);
-    this.frozenOffset = 0;
+    this.passes = passCount(schedule, this.duration);
+    this.frozenTotal = 0;
     this.playing = false;
     this.muted = new Set(schedule.voices.flatMap((voice, index) => (voice.muted ? [index] : [])));
     this.soloed = new Set();
   }
 
+  /**
+   * Create the context and graph without scheduling anything or making a sound.
+   *
+   * Exists so the caller can get the output's real sample rate *before* starting playback — the
+   * silent keepalive needs it, and on Android that element has to be playing before the context is
+   * asked to resume, since it is what holds audio focus. Idempotent, and `play()` still calls the
+   * same thing, so skipping it changes nothing but the ordering.
+   */
+  prepare(): void {
+    if (!this.schedule) return;
+    this.ensureGraph();
+  }
+
   play(): void {
     if (!this.schedule) return;
     this.ensureGraph();
-    this.rescheduleFrom(this.frozenOffset, true);
+    this.rescheduleFrom(this.frozenTotal, true);
   }
 
   pause(): void {
     if (!this.context || !this.playing) return;
-    this.rescheduleFrom(this.getCurrentOffset(), false);
+    this.rescheduleFrom(this.getTotalOffset(), false);
   }
 
+  /**
+   * Seek within the current pass. A looping schedule keeps the passes it has already played.
+   *
+   * Seeking to the very end of a pass therefore lands on the start of the next one, because on a
+   * looping schedule those are the same instant and the same audio. Only the end of the final pass
+   * is the end of playback.
+   */
   seek(offset: number): void {
     if (!this.schedule) return;
     this.ensureGraph();
-    this.rescheduleFrom(Math.min(this.duration, Math.max(0, offset)), this.playing);
+    const within = Math.min(this.duration, Math.max(0, offset));
+    this.rescheduleFrom(this.getPass() * this.duration + within, this.playing);
   }
 
   stop(): void {
@@ -426,36 +503,54 @@ export class PlaybackEngine {
     this.rescheduleFrom(0, false);
   }
 
+  /** Where the playhead sits **within the current pass** — what the timeline and chart plot. */
   getCurrentOffset(): number {
-    if (!this.context) return this.frozenOffset;
-    const elapsed = this.playing
-      ? this.context.currentTime - this.anchorContextTime
-      : this.frozenOffset;
-    return Math.min(this.duration, Math.max(0, elapsed));
+    if (this.duration <= 0) return 0;
+    const total = this.getTotalOffset();
+    // At the very end the modulo would wrap to zero, which reads as "back at the start" when what
+    // is true is "finished".
+    return total >= this.getTotalDuration() ? this.duration : total % this.duration;
   }
 
-  /** How long the schedule plays for — the shortest voice, per §3.7. */
+  /** How long one pass lasts — the shortest voice, per §3.7. */
   getDuration(): number {
     return this.duration;
+  }
+
+  /** Everything that will be played: one pass per `loops`, bounded for an endless schedule. */
+  getTotalDuration(): number {
+    return this.duration * this.passes;
+  }
+
+  /** Which pass is playing, counting from zero. */
+  getPass(): number {
+    if (this.duration <= 0) return 0;
+    return Math.min(this.passes - 1, Math.floor(this.getTotalOffset() / this.duration));
+  }
+
+  /** How many passes there are, per `loops` (§3.2). */
+  getPassCount(): number {
+    return this.passes;
+  }
+
+  /** Whether the last pass has run out. The audio has already faded on its own scheduled ramp. */
+  hasEnded(): boolean {
+    const total = this.getTotalDuration();
+    return total > 0 && this.getTotalOffset() >= total;
+  }
+
+  /** Elapsed time across every pass — the engine's own coordinate, and what `seek` works in. */
+  private getTotalOffset(): number {
+    if (!this.context) return this.frozenTotal;
+    const elapsed = this.playing
+      ? this.context.currentTime - this.anchorContextTime
+      : this.frozenTotal;
+    return Math.min(this.getTotalDuration(), Math.max(0, elapsed));
   }
 
   /** The output rate, once a context exists — what anything sharing the output must match. */
   getSampleRate(): number | null {
     return this.context?.sampleRate ?? null;
-  }
-
-  /** What the device actually reports about its output. **Diagnostic only** — see `debug.ts`. */
-  getDiagnostics(): EngineDiagnostics {
-    const context = this.context as AudioContext | null;
-    if (!context) return { sampleRate: null, baseLatency: null, outputLatency: null, state: null, lookahead: null };
-
-    return {
-      sampleRate: context.sampleRate,
-      baseLatency: context.baseLatency ?? null,
-      outputLatency: context.outputLatency ?? null,
-      state: context.state ?? null,
-      lookahead: scheduleLookahead(context),
-    };
   }
 
   isPlaying(): boolean {
@@ -504,6 +599,36 @@ export class PlaybackEngine {
     return this.soloed.size === 0 || this.soloed.has(index);
   }
 
+  /**
+   * Bring the context back if the platform put it to sleep.
+   *
+   * Creating an `AudioContext` inside a user gesture (§4.4) gets it `running`, and for a page that
+   * stays in the foreground that is the end of it. Android is not that page: pressing pause on the
+   * media notification hands audio focus away, and Chrome **suspends** the context when it goes.
+   * A suspended context's `currentTime` stops, so `rescheduleFrom` goes on scheduling perfectly
+   * correct automation against a clock that never reaches it — silence, a frozen playhead, and no
+   * way back, because nothing else in the app would ever have resumed it. Found on hardware:
+   * lock-screen pause worked and then nothing could start playback again, in the app or out of it.
+   *
+   * Not awaited. `resume()` must be called from within the user gesture that asked for playback,
+   * and the clock stays frozen until it settles, so the automation scheduled immediately after
+   * this is still comfortably in the future when the audio thread gets there.
+   *
+   * `baseLatency` is the discriminator `scheduleLookahead` already uses for "is this a real-time
+   * context": an `OfflineAudioContext` also reports `suspended` before it renders, and resuming
+   * one out of band would start its render early.
+   */
+  private resumeIfSuspended(): void {
+    const context = this.context as AudioContext | null;
+    if (!context || typeof context.baseLatency !== 'number') return;
+
+    if (context.state !== 'suspended' || typeof context.resume !== 'function') return;
+
+    // A refusal costs us this one transition, not the session — better than throwing out of a
+    // click handler.
+    void context.resume().catch(() => undefined);
+  }
+
   /** Lazily create the `AudioContext` (§4.4 — must happen inside a user gesture) and build the
    *  persistent voice graph, the first time either is needed. */
   private ensureGraph(): void {
@@ -550,19 +675,33 @@ export class PlaybackEngine {
     }
   }
 
-  /** Rebuild every voice's scheduled automation as of schedule-time `offset` (PLAN.md §4.3). */
-  private rescheduleFrom(offset: number, playing: boolean): void {
+  /**
+   * Rebuild every voice's scheduled automation as of `total` seconds into playback (PLAN.md §4.3).
+   *
+   * `total` counts across passes, so for a looping schedule this schedules the remainder of the
+   * current pass and then every pass after it, in full and up front — no JS timer touches audio
+   * (§4.2), which is the whole reason playback survives a screen-off phone.
+   */
+  private rescheduleFrom(total: number, playing: boolean): void {
     const context = this.context;
     if (!context) return;
+
+    // Before the clock is read, because a suspended one is frozen and everything below is
+    // relative to it.
+    if (playing) this.resumeIfSuspended();
 
     const now = context.currentTime;
     // The instant the transition happens: far enough ahead that the whole ramp below is still in
     // the future when the audio thread reaches it. See `scheduleLookahead`.
     const at = now + scheduleLookahead(context);
-    const t0 = at + CLICK_FREE_RAMP - offset;
+    const t0 = at + CLICK_FREE_RAMP - total;
+    const totalDuration = this.getTotalDuration();
     // Seeking to the very end leaves nothing to play; treat it as silent rather than holding the
     // final value.
-    const audible = playing && offset < this.duration;
+    const audible = playing && total < totalDuration;
+    const offset = this.duration > 0 ? total % this.duration : 0;
+    const firstPass = this.duration > 0 ? Math.floor(total / this.duration) : 0;
+    const lastPassStart = (this.passes - 1) * this.duration;
 
     for (const { events, nodes } of this.voiceStates) {
       // Read before cancelling: `cancelScheduledValues` drops a ramp in progress and leaves the
@@ -590,15 +729,29 @@ export class PlaybackEngine {
       nodes.gainR.gain.linearRampToValueAtTime(audible ? target.rightGain : 0, at + CLICK_FREE_RAMP);
 
       if (audible) {
-        for (const event of events) {
-          if (event.time <= offset) continue;
-          if (event.time > this.duration) break;
-          rampFrequency(nodes.source, event, t0 + event.time);
-          nodes.gainL.gain.linearRampToValueAtTime(event.leftGain, t0 + event.time);
-          nodes.gainR.gain.linearRampToValueAtTime(event.rightGain, t0 + event.time);
+        const truncated = outlastsSchedule(events, this.duration);
+
+        for (let pass = firstPass; pass < this.passes; pass++) {
+          const passStart = pass * this.duration;
+          // Only a voice §3.7 cuts short needs anything at the seam; for one as long as the
+          // schedule, §3.5's wrap has already brought it back to entry[0].
+          if (pass > firstPass && truncated) scheduleSeam(events, t0 + passStart, this.duration, nodes);
+
+          for (const event of events) {
+            // The first event of a later pass sits at the same instant as the previous pass's
+            // terminal one and carries the same values; scheduling both would put two events on
+            // one param at one time to no effect.
+            if (pass > firstPass && event.time <= 0) continue;
+            if (passStart + event.time <= total) continue;
+            if (event.time > this.duration) break;
+            rampFrequency(nodes.source, event, t0 + passStart + event.time);
+            nodes.gainL.gain.linearRampToValueAtTime(event.leftGain, t0 + passStart + event.time);
+            nodes.gainR.gain.linearRampToValueAtTime(event.rightGain, t0 + passStart + event.time);
+          }
         }
-        scheduleEnding(events, t0, this.duration, nodes);
-        startSource(context, nodes.source, t0, offset);
+
+        scheduleEnding(events, t0 + lastPassStart, this.duration, nodes);
+        startSource(context, nodes.source, t0, total);
       } else {
         // Pausing or stopping: buffer sources can't be gated back on, so they are released once
         // the anti-click fade has finished and rebuilt by the next play.
@@ -607,7 +760,7 @@ export class PlaybackEngine {
     }
 
     this.anchorContextTime = t0;
-    this.frozenOffset = offset;
+    this.frozenTotal = total;
     this.playing = playing;
   }
 }

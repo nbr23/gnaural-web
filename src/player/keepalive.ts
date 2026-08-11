@@ -1,4 +1,3 @@
-import { keepaliveDisabled } from '../app/debug';
 import { encodeWav } from '../engine/wav';
 
 /**
@@ -34,6 +33,24 @@ export class SilentKeepalive {
   private url: string | null = null;
 
   /**
+   * Called when *anything* starts or stops the element: a notification button, a headset key,
+   * another app taking audio focus — or this class's own `start()`/`stop()`.
+   *
+   * This element is what Chrome builds its media notification from (`?keepalive=0` produces no
+   * controls at all, confirmed on hardware), so it is also what those controls operate. Following
+   * the element therefore observes what the platform actually did, rather than depending on being
+   * told about it — `useMediaSession`'s action handlers remain the documented route and are still
+   * registered, and this is a second, lower-level reading of the same intent.
+   *
+   * Handlers must be **idempotent against the caller's own transport state**, because these fire
+   * for this class's own calls too. Asking "is the engine already playing?" is the whole guard.
+   */
+  onPlatformPlay: (() => void) | null = null;
+  onPlatformPause: (() => void) | null = null;
+
+  private listeners: [string, EventListener][] = [];
+
+  /**
    * Must be called from inside a user gesture, like the `AudioContext` it accompanies (§4.4).
    * Resolves nothing and rejects nothing: a browser that refuses playback costs us the
    * notification, not the audio.
@@ -42,9 +59,6 @@ export class SilentKeepalive {
    * on Android, can make the shared output stream reconfigure underneath the audio that matters.
    */
   start(sampleRate: number | null): void {
-    // `?keepalive=0`, until a phone has said whether this module is needed at all.
-    if (keepaliveDisabled()) return;
-
     if (!this.element) {
       const rate = sampleRate ?? FALLBACK_SAMPLE_RATE;
       // `AudioBuffer` is directly constructible, so this needs no context of its own — and must
@@ -61,6 +75,14 @@ export class SilentKeepalive {
 
       const element = new Audio(this.url);
       element.loop = true;
+      // Kept so `dispose()` can detach them: tearing down calls `pause()`, which fires a `pause`
+      // event of its own, and a disposed keepalive driving a transport action on the way out is
+      // exactly the kind of thing that turns an unmount into a bug.
+      this.listeners = [
+        ['play', () => this.onPlatformPlay?.()],
+        ['pause', () => this.onPlatformPause?.()],
+      ];
+      for (const [event, listener] of this.listeners) element.addEventListener(event, listener);
       // Deliberately not muted: a muted element raises no media session, which is the whole point.
       element.volume = 1;
       element.setAttribute('aria-hidden', 'true');
@@ -74,11 +96,20 @@ export class SilentKeepalive {
     void this.element.play().catch(() => undefined);
   }
 
+  /**
+   * Called on pause as well as stop, and that matters.
+   *
+   * An element left running is media the platform believes is still playing, so its notification
+   * offers nothing to press — the play button becomes inert, with no state change, no `play` event
+   * and no action handler. Stopping it here is what leaves the notification something to resume.
+   */
   stop(): void {
     this.element?.pause();
   }
 
   dispose(): void {
+    for (const [event, listener] of this.listeners) this.element?.removeEventListener(event, listener);
+    this.listeners = [];
     this.element?.pause();
     this.element?.remove();
     this.element = null;

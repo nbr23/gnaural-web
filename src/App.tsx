@@ -1,11 +1,14 @@
 import type { DragEvent as ReactDragEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Route } from './app/routing';
+import { HeadphoneNotice } from './app/HeadphoneNotice';
 import { LIBRARY, formatHash, navigate, redirect, useRoute } from './app/routing';
+import { UpdatePrompt } from './app/UpdatePrompt';
 import { useSettings } from './app/useSettings';
-import { parseSchedule } from './document/parser';
+import { parseSchedule, parseScheduleWithWarnings } from './document/parser';
 import { serializeSchedule } from './document/serializer';
 import type { Schedule } from './document/types';
+import type { ScheduleWarning } from './document/warnings';
 import { droppedFile, pickFile } from './files/openFile';
 import { decodeSharePayload } from './files/shareLink';
 import { LibraryView } from './library/LibraryView';
@@ -23,6 +26,12 @@ interface LoadedProgram {
   /** The route this was resolved for, so re-entering it does not re-parse and reload the engine. */
   route: Route;
   schedule: Schedule;
+  /**
+   * What §3.4's defensive parse absorbed. Held per loaded program rather than persisted with an
+   * imported one: recomputing costs a parse that has already happened, and a stored list could
+   * drift from the file it describes.
+   */
+  warnings: ScheduleWarning[];
   /** Byline for the player — a bundled program's credit, or the file it arrived as. */
   subtitle?: string;
   /** Set when the program is not in the library yet, and is therefore worth offering to keep. */
@@ -35,7 +44,7 @@ class MissingProgramError extends Error {}
 function App() {
   const route = useRoute();
   const library = useLibrary();
-  const { settings, set } = useSettings();
+  const { settings, hydrated, set } = useSettings();
   const [current, setCurrent] = useState<LoadedProgram | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -155,6 +164,14 @@ function App() {
       }}
       onDrop={onDrop}
     >
+      <UpdatePrompt />
+
+      {/* Gated on the settings read, not just the flag: the default is "not yet seen", so
+          rendering before the read lands would flash this on every launch. */}
+      {hydrated && !settings.headphoneNoticeSeen && (
+        <HeadphoneNotice onDismiss={() => set('headphoneNoticeSeen', true)} />
+      )}
+
       {error && (
         <p className="app__error" role="alert">
           {error}
@@ -164,6 +181,7 @@ function App() {
       {!onLibrary && current && (
         <PlayerView
           schedule={current.schedule}
+          warnings={current.warnings}
           subtitle={current.subtitle}
           player={player}
           masterGain={settings.masterGain}
@@ -211,7 +229,7 @@ async function resolveRoute(
       const program = findProgram(route.id);
       if (!program) throw new MissingProgramError();
       try {
-        return { schedule: await loadProgram(route.id), subtitle: program.author || undefined };
+        return { ...(await loadProgram(route.id)), subtitle: program.author || undefined };
       } catch {
         throw new Error(`${program.title} could not be loaded.`);
       }
@@ -221,7 +239,7 @@ async function resolveRoute(
       const program = imported.find((candidate) => candidate.id === route.id);
       if (!program) throw new MissingProgramError();
       try {
-        return { schedule: parseSchedule(program.text), subtitle: program.sourceName };
+        return { ...parseScheduleWithWarnings(program.text), subtitle: program.sourceName };
       } catch {
         throw new Error(`${program.title} could not be read.`);
       }
@@ -236,6 +254,10 @@ async function resolveRoute(
       }
       return {
         schedule,
+        // A link carries a `Schedule`, never XML, so §3.4's file-level warnings cannot apply to
+        // one — whatever the original file said about itself did not survive serialization.
+        // `scheduleWarnings` still runs over it in the player.
+        warnings: [],
         subtitle: schedule.author || 'Shared link',
         // The link carried the program, not a file, so re-serializing is the honest source text.
         unsaved: { name: schedule.title.trim() || 'Shared program', text: serializeSchedule(schedule) },

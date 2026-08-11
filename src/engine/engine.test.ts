@@ -1,5 +1,5 @@
 import { OfflineAudioContext } from 'node-web-audio-api';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Entry, Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import { compileVoice, valueAtTime } from './compiler';
@@ -541,5 +541,255 @@ describe('end of schedule (§3.7)', () => {
 
     engine.seek(999);
     expect(engine.getCurrentOffset()).toBe(20);
+  });
+});
+
+/** Largest sample-to-sample step in a window — a step, rather than a glide, is what clicks. */
+function maxStep(samples: Float32Array): number {
+  let worst = 0;
+  for (let i = 1; i < samples.length; i++) worst = Math.max(worst, Math.abs(samples[i] - samples[i - 1]));
+  return worst;
+}
+
+describe('loops (§3.2)', () => {
+  /** One pass: full volume for 0.2 s, fading to silence by 0.4 s, then §3.5's wrap back to full. */
+  const PASS = 0.4;
+  function loopingSchedule(loops: number, extraVoices: Voice[] = []): Schedule {
+    const voice = makeVoice([
+      makeEntry({ duration: 0.2, baseFreq: 400, beatFreq: 0, volumeLeft: 1, volumeRight: 1 }),
+      makeEntry({ duration: 0.2, baseFreq: 400, beatFreq: 0, volumeLeft: 0, volumeRight: 0 }),
+    ]);
+    return makeSchedule([voice, ...extraVoices], { loops });
+  }
+
+  it('plays once by default, and a single pass is all the engine reports', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    engine.load(loopingSchedule(1));
+
+    expect(engine.getPassCount()).toBe(1);
+    expect(engine.getTotalDuration()).toBe(engine.getDuration());
+  });
+
+  it('replays the whole schedule `loops` times, then stops', async () => {
+    const context = new OfflineAudioContext(2, Math.round(1.2 * SAMPLE_RATE), SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(loopingSchedule(2));
+    engine.play();
+
+    const left = (await context.startRendering()).getChannelData(0);
+    // Offline contexts get no lookahead, so schedule-time zero is CLICK_FREE_RAMP into the render.
+    const at = (t: number) => Math.round((CLICK_FREE_RAMP + t) * SAMPLE_RATE);
+
+    // The envelope repeats: loud at the top of each pass, silent at the end of each.
+    expect(peakAmplitude(left.subarray(at(0.02), at(0.08)))).toBeGreaterThan(0.5);
+    expect(peakAmplitude(left.subarray(at(0.18), at(0.2)))).toBeLessThan(0.1);
+    expect(peakAmplitude(left.subarray(at(0.42), at(0.48)))).toBeGreaterThan(0.5);
+    expect(peakAmplitude(left.subarray(at(0.58), at(0.6)))).toBeLessThan(0.1);
+
+    // And then it is over, rather than running on for a third pass.
+    expect(peakAmplitude(left.subarray(at(2 * PASS + CLICK_FREE_RAMP)))).toBe(0);
+    expect(engine.getPass()).toBe(1);
+    expect(engine.hasEnded()).toBe(true);
+  });
+
+  it('joins one pass to the next without a discontinuity', async () => {
+    const context = new OfflineAudioContext(2, Math.round(1.2 * SAMPLE_RATE), SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    // Frequency and volume both move, so the seam has something to get wrong. §3.5's unconditional
+    // wrap is what makes it continuous: the last segment already glides back to entry[0].
+    engine.load(
+      makeSchedule(
+        [
+          makeVoice([
+            makeEntry({ duration: 0.2, baseFreq: 200, beatFreq: 0, volumeLeft: 0.3, volumeRight: 0.3 }),
+            makeEntry({ duration: 0.2, baseFreq: 400, beatFreq: 0, volumeLeft: 1, volumeRight: 1 }),
+          ]),
+        ],
+        { loops: 3 },
+      ),
+    );
+    engine.play();
+
+    const left = (await context.startRendering()).getChannelData(0);
+    const around = (t: number) =>
+      left.subarray(
+        Math.round((CLICK_FREE_RAMP + t - 0.01) * SAMPLE_RATE),
+        Math.round((CLICK_FREE_RAMP + t + 0.01) * SAMPLE_RATE),
+      );
+
+    // A 400 Hz sine at 44.1 kHz steps by at most ~0.057 between samples; a seam that snapped
+    // volume from 1.0 back to 0.3 would step by an order of magnitude more.
+    expect(maxStep(around(PASS))).toBeLessThan(0.1);
+    expect(maxStep(around(2 * PASS))).toBeLessThan(0.1);
+  });
+
+  it('ramps rather than snaps a voice that §3.7 cuts short at the seam', async () => {
+    const context = new OfflineAudioContext(2, Math.round(1.2 * SAMPLE_RATE), SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    // The second voice outlasts the schedule, so a loop restarts it partway up its own volume
+    // curve — the one seam that is genuinely discontinuous in Gnaural.
+    engine.load(
+      loopingSchedule(2, [
+        makeVoice([
+          makeEntry({ duration: 0.6, baseFreq: 300, beatFreq: 0, volumeLeft: 0, volumeRight: 0 }),
+          makeEntry({ duration: 0.6, baseFreq: 300, beatFreq: 0, volumeLeft: 1, volumeRight: 1 }),
+        ]),
+      ]),
+    );
+    engine.play();
+
+    const left = (await context.startRendering()).getChannelData(0);
+    const seam = left.subarray(
+      Math.round((CLICK_FREE_RAMP + PASS - 0.005) * SAMPLE_RATE),
+      Math.round((CLICK_FREE_RAMP + PASS + 0.03) * SAMPLE_RATE),
+    );
+
+    expect(maxStep(seam)).toBeLessThan(0.1);
+  });
+
+  it('repeats endlessly for `loops` of zero or less, bounded so it can still be scheduled', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    const minutes = () => makeSchedule([makeVoice([makeEntry({ duration: 60, baseFreq: 300 })])], { loops: 0 });
+
+    engine.load(minutes());
+    expect(engine.getPassCount()).toBe(720); // 12 hours of one-minute passes
+    expect(engine.getTotalDuration()).toBe(12 * 60 * 60);
+
+    // Gnaural decrements to exactly zero, so anything below one loops forever too.
+    engine.load({ ...minutes(), loops: -3 });
+    expect(engine.getPassCount()).toBe(720);
+  });
+
+  it('caps the pass count for a schedule short enough that the horizon alone would not', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    engine.load(makeSchedule([makeVoice([makeEntry({ duration: 1, baseFreq: 300 })])], { loops: 0 }));
+
+    expect(engine.getPassCount()).toBe(1000);
+  });
+
+  it('seeks within the current pass rather than back to the first', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    engine.load(loopingSchedule(4));
+
+    engine.seek(0.3);
+    expect(engine.getCurrentOffset()).toBeCloseTo(0.3);
+    expect(engine.getPass()).toBe(0);
+  });
+
+  it('treats the end of a pass as the start of the next, because that is one instant', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    engine.load(loopingSchedule(4));
+
+    engine.seek(999); // clamped to the end of pass 1, which is where pass 2 begins
+    expect(engine.getPass()).toBe(1);
+    expect(engine.getCurrentOffset()).toBe(0);
+    expect(engine.hasEnded()).toBe(false);
+
+    // Only the end of the *final* pass is the end of playback.
+    engine.seek(999);
+    engine.seek(999);
+    engine.seek(999);
+    expect(engine.getPass()).toBe(3);
+    expect(engine.getCurrentOffset()).toBe(PASS);
+    expect(engine.hasEnded()).toBe(true);
+  });
+});
+
+/** A real-time-looking context the platform has suspended, as Android does on a media-session pause. */
+function suspended(context: OfflineAudioContext): { context: OfflineAudioContext; resume: ReturnType<typeof vi.fn> } {
+  const resume = vi.fn().mockResolvedValue(undefined);
+  withBaseLatency(context, 0.01);
+  Object.defineProperty(context, 'state', { get: () => 'suspended', configurable: true });
+  Object.defineProperty(context, 'resume', { value: resume, configurable: true });
+  return { context, resume };
+}
+
+describe('a context the platform suspended', () => {
+  const schedule = () =>
+    makeSchedule([makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0 })])]);
+
+  it('is resumed on play, so a lock-screen pause is not the end of the session', () => {
+    // Found on hardware: pause from the notification took audio focus away, Chrome suspended the
+    // context, and nothing — not the notification, not the in-app button — could start it again.
+    const { context, resume } = suspended(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule());
+
+    engine.play();
+    expect(resume).toHaveBeenCalled();
+  });
+
+  it('is resumed on a seek that resumes playback, since seek is the same primitive', () => {
+    const { context, resume } = suspended(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule());
+    engine.play();
+    resume.mockClear();
+
+    engine.seek(10);
+    expect(resume).toHaveBeenCalled();
+  });
+
+  it('is left alone when stopping or pausing — those want it quiet, not running', () => {
+    const { context, resume } = suspended(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule());
+    engine.play();
+    resume.mockClear();
+
+    engine.stop();
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it('never resumes an offline context, which reports suspended until it renders', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const resume = vi.fn();
+    Object.defineProperty(context, 'resume', { value: resume, configurable: true });
+
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule());
+    engine.play();
+
+    expect(resume).not.toHaveBeenCalled();
+    // And the render still produces sound, rather than having been started out from under it.
+    expect(peakAmplitude((await context.startRendering()).getChannelData(0))).toBeGreaterThan(0.5);
+  });
+});
+
+describe('prepare()', () => {
+  const schedule = () =>
+    makeSchedule([makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0 })])]);
+
+  it('exposes the output rate before anything is scheduled', () => {
+    // This is what lets the keepalive be started *before* the engine on Android, without losing
+    // the real sample rate — the ordering that makes audio focus available to the resume.
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    engine.load(schedule());
+
+    engine.prepare();
+    expect(engine.getSampleRate()).toBe(SAMPLE_RATE);
+  });
+
+  it('makes no sound on its own, and does not disturb the play that follows', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule());
+
+    engine.prepare();
+    engine.prepare(); // idempotent
+    engine.play();
+
+    const left = (await context.startRendering()).getChannelData(0);
+    expect(peakAmplitude(left.subarray(Math.round(0.1 * SAMPLE_RATE)))).toBeGreaterThan(0.5);
+  });
+
+  it('is silent if play never follows', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule());
+
+    engine.prepare();
+
+    expect(peakAmplitude((await context.startRendering()).getChannelData(0))).toBe(0);
   });
 });

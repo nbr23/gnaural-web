@@ -1,6 +1,6 @@
 import manifest from '../../fixtures/presets/manifest.json';
-import { parseSchedule } from '../document/parser';
-import type { Schedule } from '../document/types';
+import type { ParseResult } from '../document/parser';
+import { parseScheduleWithWarnings } from '../document/parser';
 
 /**
  * The bundled program library: the 17 converted presets described by
@@ -130,9 +130,14 @@ export function findProgram(id: string): BundledProgram | undefined {
   return PROGRAMS.find((program) => program.id === id);
 }
 
-export async function loadProgram(id: string): Promise<Schedule> {
+/**
+ * Parse a bundled program's chunk. Warnings come back with it (§3.4) for the same reason they do
+ * for an imported file: `powernap.gnaural` is the one program in the library with a stale header,
+ * and it is real Gnaural output rather than a mistake worth hiding.
+ */
+export async function loadProgram(id: string): Promise<ParseResult> {
   const path = Object.keys(sources).find((key) => idFromPath(key) === id);
   if (!path) throw new Error(`Unknown program: ${id}`);
 
-  return parseSchedule(await sources[path]());
+  return parseScheduleWithWarnings(await sources[path]());
 }

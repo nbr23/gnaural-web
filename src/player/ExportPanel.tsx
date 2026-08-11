@@ -68,6 +68,17 @@ export function ExportPanel({ schedule, sampleRate, onSampleRateChange }: Export
         <span className="export__estimate">≈ {formatBytes(exporter.estimatedBytes)}</span>
       </div>
 
+      {/* Repetition is a playback behaviour, not part of the program's audio — and a WAV of a
+          schedule that repeats forever is not a file anyone can write. Say so rather than let the
+          length come as a surprise. */}
+      {Math.floor(schedule.loops) !== 1 && (
+        <p className="export__notice">
+          The WAV covers one pass. This program{' '}
+          {schedule.loops <= 0 ? 'repeats until stopped' : `repeats ${Math.floor(schedule.loops)} times`}{' '}
+          when played.
+        </p>
+      )}
+
       {busy && (
         <div className="export__row">
           <progress className="export__progress" value={exporter.progress} max={1} />

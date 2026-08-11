@@ -1,5 +1,6 @@
 import type { Entry, Schedule, Voice } from './types';
 import { VoiceType } from './types';
+import type { ScheduleWarning } from './warnings';
 
 /**
  * Schedule-level child elements that are never captured verbatim into `preserved`: either a
@@ -42,6 +43,40 @@ const DEDICATED_ENTRY_ATTRIBUTES = new Set([
   'basefreq',
 ]);
 
+/**
+ * Collects what §3.4's defensive handling silently absorbed, so the app can say what it did.
+ *
+ * Nothing here changes how a file is parsed — every fallback below was already the behaviour. The
+ * only new thing is that it leaves a record instead of being invisible.
+ */
+class ParseReport {
+  readonly warnings: ScheduleWarning[] = [];
+  /** Field names whose value would not parse, aggregated so ten bad entries make one sentence. */
+  private readonly unparseable = new Set<string>();
+
+  add(severity: ScheduleWarning['severity'], kind: ScheduleWarning['kind'], message: string): void {
+    this.warnings.push({ severity, kind, message });
+  }
+
+  unparseableValue(field: string): void {
+    this.unparseable.add(field);
+  }
+
+  finish(): ScheduleWarning[] {
+    if (this.unparseable.size > 0) {
+      const fields = [...this.unparseable].sort();
+      this.warnings.push({
+        severity: 'warning',
+        kind: 'unparseable-value',
+        // A warning, not a notice: a value that fell back to a default is a value the file asked
+        // for and did not get, which is audible.
+        message: `Some values could not be read and fell back to defaults: ${fields.join(', ')}.`,
+      });
+    }
+    return this.warnings;
+  }
+}
+
 function childrenOf(parent: Element): Element[] {
   return Array.from(parent.children);
 }
@@ -51,14 +86,16 @@ function childText(parent: Element, tag: string): string | undefined {
   return child ? (child.textContent ?? '') : undefined;
 }
 
-function parseNum(text: string | undefined, fallback: number): number {
+function parseNum(text: string | undefined, fallback: number, report?: ParseReport, field?: string): number {
   if (text === undefined) return fallback;
   const n = Number(text);
-  return Number.isFinite(n) ? n : fallback;
+  if (Number.isFinite(n)) return n;
+  if (report && field) report.unparseableValue(field);
+  return fallback;
 }
 
-function attrNum(el: Element, name: string, fallback: number): number {
-  return parseNum(el.getAttribute(name) ?? undefined, fallback);
+function attrNum(el: Element, name: string, fallback: number, report?: ParseReport): number {
+  return parseNum(el.getAttribute(name) ?? undefined, fallback, report, name);
 }
 
 function parseBool01(text: string | undefined, fallback: boolean): boolean {
@@ -75,6 +112,24 @@ function parseBool01(text: string | undefined, fallback: boolean): boolean {
  * in each level's `preserved` map so serialization can round-trip them losslessly.
  */
 export function parseSchedule(xml: string): Schedule {
+  return parseScheduleWithWarnings(xml).schedule;
+}
+
+export interface ParseResult {
+  schedule: Schedule;
+  /** What §3.4's defensive handling absorbed. Empty for a clean file, which is most of them. */
+  warnings: ScheduleWarning[];
+}
+
+/**
+ * `parseSchedule`, plus a record of everything unusual the file contained (§3.4's "user-visible
+ * warning list for anything unusual").
+ *
+ * Kept as a separate entry point rather than changing `parseSchedule`'s return type: most callers
+ * — round-trip tests, the serializer's fixtures, the share-link decoder — want the document and
+ * nothing else, and the information collected here has no meaning once the XML is gone.
+ */
+export function parseScheduleWithWarnings(xml: string): ParseResult {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const root = doc.documentElement;
 
@@ -91,32 +146,74 @@ export function parseSchedule(xml: string): Schedule {
     throw new Error(`Not a Gnaural schedule — the root element is <${root.tagName}>.`);
   }
 
+  const report = new ParseReport();
+
   const preserved: Record<string, string> = {};
   for (const child of childrenOf(root)) {
     if (DEDICATED_SCHEDULE_ELEMENTS.has(child.tagName)) continue;
     preserved[child.tagName] = child.textContent ?? '';
   }
 
-  const voices = childrenOf(root)
-    .filter((c) => c.tagName === 'voice')
-    .map(parseVoice);
+  const voiceElements = childrenOf(root).filter((c) => c.tagName === 'voice');
+  const voices = voiceElements.map((el, index) => parseVoice(el, index, report));
 
-  return {
+  checkDeclaredCount(report, childText(root, 'voicecount'), voices.length, 'voices');
+  checkDeclaredCount(
+    report,
+    childText(root, 'totalentrycount'),
+    voices.reduce((total, voice) => total + voice.entries.length, 0),
+    'entries',
+  );
+
+  const ids = voices.map((voice) => voice.id);
+  if (new Set(ids).size !== ids.length) {
+    report.add(
+      'notice',
+      'duplicate-voice-id',
+      'Two or more voices share an id. Voices are tracked by position instead, so this changes nothing about playback.',
+    );
+  }
+
+  const schedule: Schedule = {
     title: childText(root, 'title') ?? '',
     description: childText(root, 'schedule_description') ?? '',
     author: childText(root, 'author') ?? '',
-    loops: parseNum(childText(root, 'loops'), 1),
+    loops: parseNum(childText(root, 'loops'), 1, report, 'loops'),
     masterVolume: {
-      left: parseNum(childText(root, 'overallvolume_left'), 1),
-      right: parseNum(childText(root, 'overallvolume_right'), 1),
+      left: parseNum(childText(root, 'overallvolume_left'), 1, report, 'overallvolume_left'),
+      right: parseNum(childText(root, 'overallvolume_right'), 1, report, 'overallvolume_right'),
     },
     stereoSwap: parseBool01(childText(root, 'stereoswap'), false),
     voices,
     preserved,
   };
+
+  return { schedule, warnings: report.finish() };
 }
 
-function parseVoice(voiceEl: Element): Voice {
+/**
+ * §3.4's headline case: `powernap.gnaural` declares three voices and fourteen entries against one
+ * voice and twelve entries. A notice rather than a warning — the declared counts are ignored by
+ * design and rewritten correctly on export, so nothing about playback is affected.
+ */
+function checkDeclaredCount(
+  report: ParseReport,
+  declaredText: string | undefined,
+  actual: number,
+  noun: string,
+): void {
+  if (declaredText === undefined) return;
+  const declared = Number(declaredText);
+  if (!Number.isFinite(declared) || declared === actual) return;
+
+  report.add(
+    'notice',
+    'stale-count',
+    `The file says it has ${declared} ${noun} but contains ${actual}. The real contents were used.`,
+  );
+}
+
+function parseVoice(voiceEl: Element, index: number, report: ParseReport): Voice {
   const preserved: Record<string, string> = {};
   for (const child of childrenOf(voiceEl)) {
     if (DEDICATED_VOICE_ELEMENTS.has(child.tagName)) continue;
@@ -127,13 +224,23 @@ function parseVoice(voiceEl: Element): Voice {
   const entries = entriesContainer
     ? childrenOf(entriesContainer)
         .filter((c) => c.tagName === 'entry')
-        .map(parseEntry)
+        .map((el) => parseEntry(el, report))
     : [];
 
+  const description = childText(voiceEl, 'description') ?? '';
+
+  if (entries.length === 0) {
+    report.add(
+      'notice',
+      'empty-voice',
+      `${description.trim() || `Voice ${index + 1}`} has no entries, so it has no duration and makes no sound.`,
+    );
+  }
+
   return {
-    id: parseNum(childText(voiceEl, 'id'), 0),
-    description: childText(voiceEl, 'description') ?? '',
-    type: parseNum(childText(voiceEl, 'type'), 0) as VoiceType,
+    id: parseNum(childText(voiceEl, 'id'), 0, report, 'id'),
+    description,
+    type: parseNum(childText(voiceEl, 'type'), 0, report, 'type') as VoiceType,
     muted: parseBool01(childText(voiceEl, 'voice_mute'), false),
     hidden: parseBool01(childText(voiceEl, 'voice_hide'), false),
     mono: parseBool01(childText(voiceEl, 'voice_mono'), false),
@@ -142,7 +249,7 @@ function parseVoice(voiceEl: Element): Voice {
   };
 }
 
-function parseEntry(entryEl: Element): Entry {
+function parseEntry(entryEl: Element, report: ParseReport): Entry {
   const preserved: Record<string, string> = {};
   for (const attr of Array.from(entryEl.attributes)) {
     if (DEDICATED_ENTRY_ATTRIBUTES.has(attr.name)) continue;
@@ -150,11 +257,11 @@ function parseEntry(entryEl: Element): Entry {
   }
 
   return {
-    duration: attrNum(entryEl, 'duration', 0),
-    volumeLeft: attrNum(entryEl, 'volume_left', 1),
-    volumeRight: attrNum(entryEl, 'volume_right', 1),
-    beatFreq: attrNum(entryEl, 'beatfreq', 0),
-    baseFreq: attrNum(entryEl, 'basefreq', 0),
+    duration: attrNum(entryEl, 'duration', 0, report),
+    volumeLeft: attrNum(entryEl, 'volume_left', 1, report),
+    volumeRight: attrNum(entryEl, 'volume_right', 1, report),
+    beatFreq: attrNum(entryEl, 'beatfreq', 0, report),
+    baseFreq: attrNum(entryEl, 'basefreq', 0, report),
     preserved,
   };
 }

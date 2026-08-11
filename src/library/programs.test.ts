@@ -34,7 +34,7 @@ describe('every bundled program parses', () => {
   // generated to a different shape than Gnaural's own output (many short entries, epsilon-length
   // breakpoints, explicit noise voices).
   it.each(PROGRAMS.map((program) => [program.id, program] as const))('%s', async (_id, program) => {
-    const schedule = await loadProgram(program.id);
+    const { schedule } = await loadProgram(program.id);
 
     expect(schedule.voices.length).toBeGreaterThan(0);
     expect(schedule.voices.every((voice) => voice.entries.length > 0)).toBe(true);

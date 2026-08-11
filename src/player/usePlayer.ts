@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Schedule } from '../document/types';
-import type { EngineDiagnostics } from '../engine/engine';
 import { PlaybackEngine } from '../engine/engine';
 import { SilentKeepalive } from './keepalive';
 
@@ -22,9 +21,13 @@ export interface VoiceGate {
 
 export interface Player {
   playing: boolean;
-  /** Current schedule-time offset in seconds, polled from the engine's own clock. */
+  /** Offset within the current pass, in seconds, polled from the engine's own clock. */
   offset: number;
+  /** How long one pass lasts. A looping schedule replays the same duration, it does not extend it. */
   duration: number;
+  /** Which pass is playing, counting from zero — 0 for everything that does not loop (§3.2). */
+  pass: number;
+  passCount: number;
   /**
    * Bumped by every play, pause, stop and seek, and by nothing else.
    *
@@ -34,8 +37,6 @@ export interface Player {
    */
   transport: number;
   voiceGates: VoiceGate[];
-  /** What the device reports about its output. **Diagnostic only** — see `src/app/debug.ts`. */
-  diagnostics(): EngineDiagnostics;
   play(): void;
   pause(): void;
   stop(): void;
@@ -67,6 +68,8 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
   const [playing, setPlaying] = useState(false);
   const [offset, setOffset] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [pass, setPass] = useState(0);
+  const [passCount, setPassCount] = useState(1);
   const [transport, setTransport] = useState(0);
   const [voiceGates, setVoiceGates] = useState<VoiceGate[]>([]);
 
@@ -102,6 +105,8 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
     setPlaying(false);
     setOffset(0);
     setDuration(instance.getDuration());
+    setPass(0);
+    setPassCount(instance.getPassCount());
     setVoiceGates(readGates(instance, schedule));
     moved();
 
@@ -130,11 +135,13 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
       if (instance && now - published >= CLOCK_INTERVAL_MS) {
         published = now;
         setOffset(instance.getCurrentOffset());
-        if (instance.getDuration() > 0 && instance.getCurrentOffset() >= instance.getDuration()) {
+        setPass(instance.getPass());
+        if (instance.hasEnded()) {
           instance.stop();
           silence.stop();
           setPlaying(false);
           setOffset(0);
+          setPass(0);
           moved();
           return;
         }
@@ -149,28 +156,43 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
   const play = useCallback(() => {
     if (!schedule) return;
     const instance = engine();
-    instance.play();
-    // Inside the same gesture as the `AudioContext`, which is what both of them need (§4.4), and
-    // after it, so the silence can be generated at the rate the output is actually running at.
+    // The keepalive starts before the engine. The silent element is what claims audio focus, so
+    // claiming it first is the right order for anything the engine then asks the platform for.
+    // `prepare()` creates the context without scheduling, purely so the silence can still be
+    // generated at the rate the output actually runs at. All inside one gesture (§4.4).
+    instance.prepare();
     silence.start(instance.getSampleRate());
+    instance.play();
     setPlaying(true);
     moved();
   }, [engine, moved, schedule, silence]);
 
   const pause = useCallback(() => {
     engineRef.current?.pause();
-    // The keepalive keeps running while paused: the media notification is the transport now, and
-    // it has to survive a pause to be pressed again.
+    // **The keepalive pauses with the player**, reversing 8b's decision to leave it running.
+    //
+    // That decision reasoned that the notification is the transport now, so the element must keep
+    // going to survive a pause and be pressed again. It is exactly backwards. The notification is
+    // built from this element, so an element that never stopped is media that Chrome believes is
+    // still playing: its play button then has nothing to do, produces no state change, fires no
+    // `play` event, and invokes no action handler. On the device the counter did not move at all.
+    //
+    // The device also settled the worry behind the original decision. Stop *did* pause the element,
+    // and the notification's play button worked fine afterwards — so pausing it does not cost the
+    // notification. Ordered after `engine.pause()` so the resulting `pause` event finds the engine
+    // already stopped and does nothing.
+    silence.stop();
     setPlaying(false);
     setOffset(engineRef.current?.getCurrentOffset() ?? 0);
     moved();
-  }, [moved]);
+  }, [moved, silence]);
 
   const stop = useCallback(() => {
     engineRef.current?.stop();
     silence.stop();
     setPlaying(false);
     setOffset(0);
+    setPass(0);
     moved();
   }, [moved, silence]);
 
@@ -209,15 +231,50 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
     [toggleGate],
   );
 
-  const diagnostics = useCallback(() => engine().getDiagnostics(), [engine]);
+  /**
+   * Follow the keepalive element's transport, which is what Android's notification actually drives.
+   *
+   * `useMediaSession` remains the documented route and is still registered; this is a second,
+   * lower-level reading of the same intent. Since `?keepalive=0` produces no notification at all
+   * on the device, the element is what Chrome built those controls from — so whatever the buttons
+   * do, they do to the element, and observing it does not depend on being told.
+   *
+   * It may well be that the action handlers alone would now suffice, since the bug that motivated
+   * this was really `pause()` leaving the element running (see `pause` above) and Chrome therefore
+   * having no state change to report. That was never re-tested separately, so this stays: it costs
+   * two listeners and it is the more direct signal of the two.
+   *
+   * Read through refs and guarded on the *engine's* own `isPlaying()` rather than React state:
+   * these events fire for `play()`/`stop()`'s own calls too, and the engine's flag is set
+   * synchronously, so a re-entrant call is a no-op instead of a loop.
+   */
+  const playRef = useRef(play);
+  const pauseRef = useRef(pause);
+  playRef.current = play;
+  pauseRef.current = pause;
+
+  useEffect(() => {
+    silence.onPlatformPlay = () => {
+      if (!engineRef.current?.isPlaying()) playRef.current();
+    };
+    silence.onPlatformPause = () => {
+      if (engineRef.current?.isPlaying()) pauseRef.current();
+    };
+
+    return () => {
+      silence.onPlatformPlay = null;
+      silence.onPlatformPause = null;
+    };
+  }, [silence]);
 
   return {
     playing,
     offset,
     duration,
+    pass,
+    passCount,
     transport,
     voiceGates,
-    diagnostics,
     play,
     pause,
     stop,

@@ -12,10 +12,20 @@ export const DEFAULT_SETTINGS: Settings = {
   exportSampleRate: DEFAULT_EXPORT_SAMPLE_RATE,
   /** Off by default (PLAN.md §5.1) — it burns battery and the common case is a sleep program. */
   wakeLock: false,
+  headphoneNoticeSeen: false,
 };
 
 export interface SettingsStore {
   settings: Settings;
+  /**
+   * Whether the stored values have arrived yet.
+   *
+   * Everything else here tolerates the defaults showing first — a volume slider that jumps from 1
+   * to 0.35 a frame later is not worth a blank launch. A *first-run* notice does not tolerate it:
+   * its default is "not yet seen", so without this it would flash on every single launch and then
+   * vanish. Anything gated on a boolean the user has already answered must wait for the read.
+   */
+  hydrated: boolean;
   set<K extends keyof Settings>(key: K, value: Settings[K]): void;
 }
 
@@ -29,6 +39,7 @@ export interface SettingsStore {
  */
 export function useSettings(): SettingsStore {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [hydrated, setHydrated] = useState(false);
 
   /** Anything the user changed during the initial read must win over what that read returns. */
   const touched = useRef(new Set<keyof Settings>());
@@ -54,6 +65,7 @@ export function useSettings(): SettingsStore {
         }
         return merged;
       });
+      setHydrated(true);
     });
 
     return () => {
@@ -83,5 +95,5 @@ export function useSettings(): SettingsStore {
     [write],
   );
 
-  return { settings, set };
+  return { settings, hydrated, set };
 }

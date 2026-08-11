@@ -32,6 +32,14 @@ describe('library view', () => {
     expect(root.text()).toContain('OOBE');
   });
 
+  it('shows which build it is running', () => {
+    // With `registerType: 'prompt'` an installed PWA can serve a build older than the one just
+    // deployed, and this is the only always-visible answer to "which one is this?".
+    root.render(<App />);
+
+    expect(root.query('.library__build')?.textContent).toMatch(/^build \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  });
+
   it('credits each program on its card', () => {
     root.render(<App />);
     const card = root.byText('.program-card', 'Power Nap');
@@ -463,5 +471,169 @@ describe('settings', () => {
     root.remount(<App />);
     await flush();
     expect((root.query('.player__volume input') as HTMLInputElement).value).toBe('0.35');
+  });
+});
+
+describe('the warning surface (§3.3, §3.4, §3.7)', () => {
+  function drop(text: string, name = 'odd.gnaural') {
+    const event = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: { files: [new File([text], name)] } });
+    root.act(() => {
+      root.query('.app')?.dispatchEvent(event);
+    });
+  }
+
+  /** A voice of the given type, long enough to be a plausible programme. */
+  function voiceXml(type: number, description: string, duration: number): string {
+    return `<voice><description>${description}</description><id>${type}</id><type>${type}</type>
+      <entries><entry duration="${duration}" volume_left="1" volume_right="1" beatfreq="8" basefreq="200"/></entries>
+    </voice>`;
+  }
+
+  it('says a voice type it cannot render will be silent, and still plays the rest', async () => {
+    root.render(<App />);
+    drop(`<?xml version="1.0"?><schedule><title>Mixed</title>
+      ${voiceXml(0, 'tone', 600)}${voiceXml(3, 'pulse', 600)}</schedule>`);
+    await flush();
+
+    expect(root.query('.warnings__list[role="alert"]')?.textContent).toContain('does not render yet');
+    // Something is still audible, so the transport stays live.
+    expect((root.byText('.button', 'Play') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('refuses to offer Play for a schedule with nothing renderable in it', async () => {
+    root.render(<App />);
+    drop(`<?xml version="1.0"?><schedule><title>Silent</title>${voiceXml(5, 'drops', 600)}</schedule>`);
+    await flush();
+
+    expect(root.text()).toContain('would play silence');
+    expect((root.byText('.button', 'Play') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("folds powernap's stale header away as a note rather than raising an alarm", async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    // §3.4 tells the parser to ignore the declared counts, so this is transparency, not a fault.
+    expect(root.query('.warnings__list[role="alert"]')).toBeNull();
+    expect(root.query('.warnings__notices summary')?.textContent).toContain('2 notes');
+    expect(root.text()).toContain('says it has 3 voices but contains 1');
+  });
+
+  it('shows nothing at all for an ordinary programme', async () => {
+    window.location.hash = '#/p/airplanetravelaid';
+    root.render(<App />);
+    await flush();
+
+    expect(root.query('.warnings')).toBeNull();
+  });
+});
+
+describe('the headphone notice (§4.4, §5.1)', () => {
+  it('appears on a first visit and stays dismissed on the next', async () => {
+    root.render(<App />);
+    await flush();
+
+    expect(root.query('.headphones')).not.toBeNull();
+    root.click(root.byText('.headphones .button', 'Got it'));
+    expect(root.query('.headphones')).toBeNull();
+
+    await wait(WRITE_DEBOUNCE);
+    root.remount(<App />);
+    await flush();
+    expect(root.query('.headphones')).toBeNull();
+  });
+
+  it('waits for the stored answer rather than flashing the default', () => {
+    // Rendered but not flushed: the IndexedDB read has not settled, so nothing is asserted yet
+    // about whether this person has already dismissed it.
+    root.render(<App />);
+
+    expect(root.query('.headphones')).toBeNull();
+  });
+
+  it('says what the audio is, and makes no claim about what it does (§2)', async () => {
+    root.render(<App />);
+    await flush();
+
+    const text = root.query('.headphones')?.textContent ?? '';
+    expect(text).toContain('does not happen at all');
+    expect(text).not.toMatch(/sleep better|cure|treat|anxiety|therapy/i);
+  });
+});
+
+describe('the silent keepalive element', () => {
+  function audio(): HTMLAudioElement | null {
+    return document.querySelector('audio');
+  }
+
+  it('pauses with the player, so the notification has something left to resume', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    root.click(root.byText('.button', 'Play'));
+    expect(audio()?.paused).toBe(false);
+
+    // 8b left this running across a pause. That made the element look, to the platform, like media
+    // that was still playing — so its notification's play button had nothing to do, fired no
+    // `play` event, and reached the app not at all. Found on hardware.
+    root.click(root.byText('.button', 'Pause'));
+    expect(audio()?.paused).toBe(true);
+
+    root.click(root.byText('.button', 'Play'));
+    expect(audio()?.paused).toBe(false);
+  });
+
+  it('follows the element when the platform starts it, which is how the notification gets in', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    root.click(root.byText('.button', 'Play'));
+    root.click(root.byText('.button', 'Pause'));
+    expect(root.byText('.button', 'Play')).toBeDefined();
+
+    // What Chrome does to the element when the notification's play button is pressed. The app has
+    // to notice this directly: the MediaSession `play` action handler was never invoked.
+    root.act(() => {
+      audio()?.dispatchEvent(new Event('play'));
+    });
+
+    expect(root.byText('.button', 'Pause')).toBeDefined();
+  });
+
+  it('follows the element when the platform stops it', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    root.click(root.byText('.button', 'Play'));
+    root.act(() => {
+      audio()?.dispatchEvent(new Event('pause'));
+    });
+
+    expect(root.byText('.button', 'Play')).toBeDefined();
+  });
+
+  it('treats an echo of its own pause as nothing to do, rather than as a loop', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    root.click(root.byText('.button', 'Play'));
+    root.click(root.byText('.button', 'Pause'));
+
+    // `pause()` stops the element, which fires a `pause` event straight back. The guard is the
+    // engine's own flag, set synchronously, so the return trip finds nothing to do.
+    root.act(() => {
+      audio()?.dispatchEvent(new Event('pause'));
+    });
+
+    expect(root.byText('.button', 'Play')).toBeDefined();
+    // And a single press still resumes — the echo has not left anything in a half-state.
+    root.click(root.byText('.button', 'Play'));
+    expect(root.byText('.button', 'Pause')).toBeDefined();
   });
 });

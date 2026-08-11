@@ -39,6 +39,8 @@ export interface Settings {
   masterGain: number;
   exportSampleRate: number;
   wakeLock: boolean;
+  /** Whether the one-time headphone notice (§4.4) has been dismissed. */
+  headphoneNoticeSeen: boolean;
 }
 
 interface GnauralDB extends DBSchema {

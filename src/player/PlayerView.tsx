@@ -1,8 +1,10 @@
-import { debugEnabled } from '../app/debug';
+import { useMemo } from 'react';
 import { LIBRARY, navigate } from '../app/routing';
 import type { Schedule } from '../document/types';
+import type { ScheduleWarning } from '../document/warnings';
+import { scheduleWarnings } from '../document/warnings';
 import { ScheduleChart } from '../viz/ScheduleChart';
-import { Diagnostics } from './Diagnostics';
+import { WarningList } from './WarningList';
 import { ExportPanel } from './ExportPanel';
 import { Readout } from './Readout';
 import { Timeline } from './Timeline';
@@ -14,6 +16,8 @@ const SEEK_STEP_SECONDS = 30;
 
 export interface PlayerViewProps {
   schedule: Schedule;
+  /** What the *file* contained (§3.4). What the *program* does is derived here from the model. */
+  warnings: ScheduleWarning[];
   subtitle?: string;
   player: Player;
   masterGain: number;
@@ -28,6 +32,7 @@ export interface PlayerViewProps {
 
 export function PlayerView({
   schedule,
+  warnings,
   subtitle,
   player,
   masterGain,
@@ -39,6 +44,11 @@ export function PlayerView({
   onSaveToLibrary,
 }: PlayerViewProps) {
   const title = schedule.title.trim() || 'Untitled program';
+
+  // The file's own oddities (§3.4, produced at parse time) and what the program will actually do
+  // (§3.3, §3.7, derived here) are the same statement to a listener, so they read as one list.
+  const all = useMemo(() => [...warnings, ...scheduleWarnings(schedule)], [warnings, schedule]);
+  const silent = all.some((warning) => warning.kind === 'nothing-to-play');
 
   return (
     <div className="player">
@@ -61,6 +71,8 @@ export function PlayerView({
         <p className="player__description">{schedule.description.trim()}</p>
       )}
 
+      <WarningList warnings={all} />
+
       <Readout schedule={schedule} offset={player.offset} />
 
       <ScheduleChart
@@ -72,6 +84,19 @@ export function PlayerView({
 
       <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
 
+      {/* The timeline plots one pass, because that is the curve; a repeating schedule replays it
+          rather than extending it (§3.2). Which pass you are on is the part the timeline cannot
+          show. */}
+      {schedule.loops <= 0 ? (
+        <p className="player__passes">Repeats until stopped — pass {player.pass + 1}</p>
+      ) : (
+        player.passCount > 1 && (
+          <p className="player__passes">
+            Pass {player.pass + 1} of {player.passCount}
+          </p>
+        )
+      )}
+
       <div className="player__transport">
         <button
           type="button"
@@ -80,9 +105,12 @@ export function PlayerView({
         >
           −{SEEK_STEP_SECONDS}s
         </button>
+        {/* Nothing renderable means Play would produce silence for the schedule's full length.
+            The warning above says why; a disabled button is what stops it being a mystery. */}
         <button
           type="button"
           className="button button--primary"
+          disabled={silent}
           onClick={() => (player.playing ? player.pause() : player.play())}
         >
           {player.playing ? 'Pause' : 'Play'}
@@ -137,8 +165,6 @@ export function PlayerView({
         sampleRate={exportSampleRate}
         onSampleRateChange={onExportSampleRateChange}
       />
-
-      {debugEnabled() && <Diagnostics player={player} />}
 
       <p className="player__note">Headphones required — the beat only exists between two ears.</p>
     </div>

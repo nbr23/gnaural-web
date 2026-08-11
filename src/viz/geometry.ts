@@ -8,7 +8,7 @@
  * through DOM events on individual marks.
  */
 
-import { scheduleDuration, voiceDuration } from '../document/timing';
+import { DURATION_EPSILON, scheduleDuration, voiceDuration } from '../document/timing';
 import type { Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import type { AutomationEvent } from '../engine/compiler';
@@ -24,9 +24,6 @@ const LANE_DEFINITIONS: Record<LaneId, { title: string; unit: string; valueOf(e:
   beat: { title: 'Beat frequency', unit: 'Hz', valueOf: eventBeatFreq },
   base: { title: 'Base frequency', unit: 'Hz', valueOf: eventBaseFreq },
 };
-
-/** Voice durations closer than this are equal for the purposes of the §3.7 truncation warning. */
-const DURATION_EPSILON = 0.05;
 
 /** Headroom above and below a lane's data, as a fraction of its value range. */
 const DOMAIN_PADDING = 0.1;

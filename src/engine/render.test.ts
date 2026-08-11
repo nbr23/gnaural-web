@@ -38,6 +38,8 @@ function makeSchedule(voices: Voice[], overrides: Partial<Schedule> = {}): Sched
     title: '',
     description: '',
     author: '',
+    // The null test below compares one pass of live playback against the export, so the fixture
+    // must not loop — `PlaybackEngine` repeats, `renderSchedule` deliberately does not.
     loops: 1,
     masterVolume: { left: 1, right: 1 },
     stereoSwap: false,

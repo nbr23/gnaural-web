@@ -17,7 +17,7 @@ export interface VoiceListProps {
  * Each row is keyed with the same colour the chart draws that voice in, so identity carries
  * across the two views. Voice types this app cannot render are labelled as silent rather than
  * hidden, and have their controls disabled: §3.3 is explicit that a voice must never be silently
- * dropped. The full warning surface is step 9.
+ * dropped. This is the per-voice half of that; `WarningList` states it once for the program.
  */
 const TYPE_LABELS: Partial<Record<VoiceType, string>> = {
   [VoiceType.PinkNoise]: 'noise',

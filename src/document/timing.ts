@@ -25,6 +25,13 @@ export function scheduleDuration(schedule: Schedule): number {
   return durations.length > 0 ? Math.min(...durations) : 0;
 }
 
+/**
+ * Voice durations closer together than this count as equal (§3.7 — "differ by more than a rounding
+ * error"). Shared by the chart's truncation rule and the warning that names the offending voices,
+ * so the picture and the text can never disagree about whether a schedule is ragged.
+ */
+export const DURATION_EPSILON = 0.05;
+
 /** The longest voice — how much of the schedule there is to *draw*, so no curve gets cropped. */
 export function longestVoiceDuration(schedule: Schedule): number {
   const durations = schedule.voices.map(voiceDuration);
