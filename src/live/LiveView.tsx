@@ -10,7 +10,7 @@ import type { Player } from '../player/usePlayer';
 import type { LiveValues } from './liveSchedule';
 import { BASE_RANGE, BEAT_RANGE, buildLiveSchedule, clampValues, describeLive } from './liveSchedule';
 import { SLIDER_STEP, bandTargets, beatBandTicks, positionToValue, valueToPosition } from './sliders';
-import { useThrottled } from './useThrottled';
+import { useThrottled } from '../app/useThrottled';
 import './LiveView.css';
 
 /** §1: "sessions run 15–60 minutes", and the length of `powernap`, which is the canonical one. */

@@ -5,7 +5,7 @@ import type { Player } from '../player/usePlayer';
 import { setInputValue, setupRoot, wait } from '../test-utils';
 import { LiveView } from './LiveView';
 import { BASE_RANGE, BEAT_RANGE } from './liveSchedule';
-import { LIVE_UPDATE_INTERVAL_MS } from './useThrottled';
+import { ENGINE_UPDATE_INTERVAL_MS } from '../app/useThrottled';
 
 const root = setupRoot();
 
@@ -114,7 +114,7 @@ describe('LiveView', () => {
   it('pushes the sliders through `update`, never through a reload', async () => {
     const { player } = render();
     root.act(() => setInputValue(baseSlider(), '1'));
-    await wait(LIVE_UPDATE_INTERVAL_MS * 2);
+    await wait(ENGINE_UPDATE_INTERVAL_MS * 2);
 
     expect(pushedEntry(player).baseFreq).toBe(BASE_RANGE.max);
   });
@@ -125,7 +125,7 @@ describe('LiveView', () => {
     root.act(() => {
       for (let i = 0; i <= 20; i++) setInputValue(beatSlider(), String(i / 20));
     });
-    await wait(LIVE_UPDATE_INTERVAL_MS * 2);
+    await wait(ENGINE_UPDATE_INTERVAL_MS * 2);
 
     const calls = (player.update as ReturnType<typeof vi.fn>).mock.calls.length;
     expect(calls).toBeLessThan(21);
@@ -134,7 +134,7 @@ describe('LiveView', () => {
 
   it('seeds from the stored values once the settings read lands', async () => {
     const { player, values } = render({ stored: { base: 320, beat: 4.5 }, hydrated: true });
-    await wait(LIVE_UPDATE_INTERVAL_MS * 2);
+    await wait(ENGINE_UPDATE_INTERVAL_MS * 2);
 
     expect(root.query('.readout')?.textContent).toContain('320');
     expect(pushedEntry(player).beatFreq).toBe(4.5);
@@ -146,7 +146,7 @@ describe('LiveView', () => {
   it('persists a value someone actually moved', async () => {
     const { values } = render();
     root.act(() => setInputValue(baseSlider(), '0'));
-    await wait(LIVE_UPDATE_INTERVAL_MS * 2);
+    await wait(ENGINE_UPDATE_INTERVAL_MS * 2);
 
     expect(values.at(-1)).toEqual({ baseFreq: BASE_RANGE.min, beatFreq: 10 });
   });

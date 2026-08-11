@@ -3,7 +3,7 @@ import { formatDuration } from '../app/format';
 import { LIVE, navigate } from '../app/routing';
 import type { BundledProgram } from './programs';
 import { programsByCategory } from './programs';
-import type { ImportedProgram } from './storage';
+import type { Draft, ImportedProgram } from './storage';
 import './LibraryView.css';
 
 export interface LibraryViewProps {
@@ -11,9 +11,17 @@ export interface LibraryViewProps {
   /** Null while IndexedDB is still being read — the section holds off rather than flashing empty. */
   imported: ImportedProgram[] | null;
   onRemoveImported: (id: string) => void;
+  drafts: Draft[] | null;
+  onDiscardDraft: (id: string) => void;
 }
 
-export function LibraryView({ onOpenFile, imported, onRemoveImported }: LibraryViewProps) {
+export function LibraryView({
+  onOpenFile,
+  imported,
+  onRemoveImported,
+  drafts,
+  onDiscardDraft,
+}: LibraryViewProps) {
   return (
     <div className="library">
       <header className="library__header">
@@ -34,6 +42,28 @@ export function LibraryView({ onOpenFile, imported, onRemoveImported }: LibraryV
           Sliders instead of a timeline — set a beat and a tone and listen. Nothing to load.
         </span>
       </button>
+
+      {/* Unfinished work leads: it is the only thing here that is waiting on someone. */}
+      {drafts && drafts.length > 0 && (
+        <section className="library__group">
+          <h2 className="library__category">Drafts</h2>
+          <ul className="library__list">
+            {drafts.map((draft) => (
+              <li key={draft.id} className="library__imported">
+                <DraftCard draft={draft} />
+                <button
+                  type="button"
+                  className="library__remove"
+                  aria-label={`Discard ${draft.title}`}
+                  onClick={() => onDiscardDraft(draft.id)}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* The user's own programs lead: they are the ones that got here on purpose. */}
       {imported && imported.length > 0 && (
@@ -107,6 +137,19 @@ function ImportedCard({ program }: { program: ImportedProgram }) {
       credit={program.author || program.sourceName}
       description={program.description}
       onClick={() => navigate({ view: 'imported', id: program.id })}
+    />
+  );
+}
+
+function DraftCard({ draft }: { draft: Draft }) {
+  return (
+    <Card
+      title={draft.title}
+      duration={draft.durationSeconds}
+      // Where it was forked from. A draft has no author until someone gives it one.
+      credit={`from ${draft.sourceName}`}
+      description=""
+      onClick={() => navigate({ view: 'editor', id: draft.id })}
     />
   );
 }

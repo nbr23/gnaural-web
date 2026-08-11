@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '../test-utils';
-import { LIVE_UPDATE_INTERVAL_MS, useThrottled } from './useThrottled';
+import { ENGINE_UPDATE_INTERVAL_MS, useThrottled } from './useThrottled';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -37,7 +37,7 @@ describe('useThrottled', () => {
 
     expect(seen).toEqual([1]);
 
-    advance(LIVE_UPDATE_INTERVAL_MS);
+    advance(ENGINE_UPDATE_INTERVAL_MS);
 
     // **The last value is the one that must not be dropped**: it is what the sliders are showing,
     // and an engine left on an intermediate value is audibly not what the readout says.
@@ -53,7 +53,7 @@ describe('useThrottled', () => {
         hook.current(tick * 10);
         hook.current(tick * 10 + 1);
       });
-      advance(LIVE_UPDATE_INTERVAL_MS);
+      advance(ENGINE_UPDATE_INTERVAL_MS);
     }
 
     // One call per interval, never one per event — and the run ends on the final value.
@@ -88,7 +88,7 @@ describe('useThrottled', () => {
 
     target = 'second';
     hook.rerender();
-    advance(LIVE_UPDATE_INTERVAL_MS);
+    advance(ENGINE_UPDATE_INTERVAL_MS);
     act(() => hook.current(undefined));
 
     expect(seen).toEqual(['first', 'second']);

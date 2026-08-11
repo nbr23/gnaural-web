@@ -35,6 +35,8 @@ export interface PlayerViewProps {
   onWakeLockChange(enabled: boolean): void;
   /** Offered only for a program the library does not already hold — today, a shared link. */
   onSaveToLibrary?: () => void;
+  /** Fork this program into a draft and open the editor (§6.1). Never edits it in place. */
+  onEdit: () => void;
 }
 
 export function PlayerView({
@@ -52,6 +54,7 @@ export function PlayerView({
   wakeLock,
   onWakeLockChange,
   onSaveToLibrary,
+  onEdit,
 }: PlayerViewProps) {
   const title = schedule.title.trim() || 'Untitled program';
 
@@ -70,11 +73,18 @@ export function PlayerView({
         {(schedule.author || subtitle) && (
           <p className="player__byline">{subtitle ?? schedule.author}</p>
         )}
-        {onSaveToLibrary && (
-          <button type="button" className="button" onClick={onSaveToLibrary}>
-            Add to library
+        <div className="player__actions">
+          {onSaveToLibrary && (
+            <button type="button" className="button" onClick={onSaveToLibrary}>
+              Add to library
+            </button>
+          )}
+          {/* A copy, always: a bundled program is read-only by nature, and editing an imported one
+              in place would rewrite the file someone brought in. */}
+          <button type="button" className="button" onClick={onEdit}>
+            Edit a copy
           </button>
-        )}
+        </div>
       </header>
 
       {schedule.description.trim() && (

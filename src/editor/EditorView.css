@@ -1,0 +1,114 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 32px;
+}
+
+.editor__header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.editor__title {
+  font-size: 24px;
+}
+
+.editor__state {
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.editor__history,
+.editor__transport,
+.editor__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 16px;
+}
+
+.editor__transport {
+  align-items: center;
+}
+
+.editor__elapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+}
+
+.editor__chart {
+  margin-block: 4px;
+}
+
+.editor__fields,
+.editor__publish {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.editor__fields h2,
+.editor__publish h2 {
+  font-size: 15px;
+  color: var(--text-h);
+}
+
+.editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.editor__field input,
+.editor__field textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  font-family: var(--sans);
+}
+
+.editor__field textarea {
+  resize: vertical;
+}
+
+/* Numbers are read against each other in this row, so they get a fixed, comfortable width rather
+   than stretching to fill it. */
+.editor__row .editor__field {
+  flex: 0 1 11ch;
+}
+
+.editor__row .editor__field:first-child {
+  flex-basis: 14ch;
+}
+
+.editor__field-label,
+.editor__field-hint {
+  color: var(--text);
+}
+
+.editor__field-hint {
+  font-size: 13px;
+}
+
+.editor__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.editor__publish-note {
+  max-width: 62ch;
+  font-size: 14px;
+}

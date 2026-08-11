@@ -4,13 +4,17 @@ import { useCallback, useEffect, useRef } from 'react';
  * How often an edit reaches the engine. The precedent is `CLOCK_INTERVAL_MS` in `usePlayer`, and
  * so is the reasoning, but the number comes from somewhere more specific.
  *
+ * Named for the engine rather than for Live mode, and living in `app/` rather than in `live/`,
+ * because the editor is the second caller: any surface that pushes documents at `PlaybackEngine.
+ * update()` under a finger needs exactly this rate limit, for exactly this reason.
+ *
  * **A transition is already ~70 ms wide.** `scheduleLookahead` is at least 50 ms — and Android
  * reports `baseLatency` 0, so the floor is exactly what applies there — plus `CLICK_FREE_RAMP` at
  * 20 ms. Calling faster than that means every update cancels the previous one's ramp before it has
  * landed, which is the ramp-in-the-past bug rebuilt from the caller's side. 100 ms is the first
  * round number clear of the window.
  */
-export const LIVE_UPDATE_INTERVAL_MS = 100;
+export const ENGINE_UPDATE_INTERVAL_MS = 100;
 
 /**
  * Rate-limit a value going somewhere expensive, delivering the first change at once and the last
@@ -28,7 +32,7 @@ export const LIVE_UPDATE_INTERVAL_MS = 100;
  */
 export function useThrottled<T>(
   action: (value: T) => void,
-  interval = LIVE_UPDATE_INTERVAL_MS,
+  interval = ENGINE_UPDATE_INTERVAL_MS,
 ): (value: T) => void {
   const latest = useRef(action);
   latest.current = action;

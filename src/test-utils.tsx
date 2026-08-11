@@ -16,6 +16,8 @@ export interface TestRoot {
   /** Run an interaction and flush the resulting renders. */
   act(action: () => void): void;
   click(element: Element | null | undefined): void;
+  /** Leave a field. React delegates `onBlur` from `focusout`, which is the event that bubbles. */
+  blur(element: Element | null | undefined): void;
   text(): string;
   query(selector: string): Element | null;
   queryAll(selector: string): Element[];
@@ -54,6 +56,11 @@ export function setupRoot(): TestRoot {
         element?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
     },
+    blur: (element) => {
+      act(() => {
+        element?.dispatchEvent(new Event('focusout', { bubbles: true }));
+      });
+    },
     text: () => container.textContent ?? '',
     query: (selector) => container.querySelector(selector),
     queryAll: (selector) => [...container.querySelectorAll(selector)],
@@ -65,6 +72,14 @@ export function setupRoot(): TestRoot {
 export interface HookResult<T> {
   /** What the hook returned on its most recent render. */
   readonly current: T;
+  /**
+   * Render again, picking up whatever the hook's arguments now close over.
+   *
+   * **Already wrapped in `act`; do not wrap it again.** `act` returns a thenable, so an outer
+   * `act(() => hook.rerender())` turns itself into an *async* act that nobody awaits — the render
+   * and its effects are then deferred past the assertions, and the hook looks as though it ignored
+   * the change.
+   */
   rerender(): void;
   unmount(): void;
 }

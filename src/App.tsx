@@ -9,6 +9,7 @@ import { parseSchedule, parseScheduleWithWarnings } from './document/parser';
 import { serializeSchedule } from './document/serializer';
 import type { Schedule } from './document/types';
 import type { ScheduleWarning } from './document/warnings';
+import { EditorView } from './editor/EditorView';
 import { droppedFile, pickFile } from './files/openFile';
 import { decodeSharePayload } from './files/shareLink';
 import { LibraryView } from './library/LibraryView';
@@ -17,6 +18,7 @@ import { DEFAULT_LIVE_VALUES, buildLiveSchedule } from './live/liveSchedule';
 import { NowPlayingBar } from './library/NowPlayingBar';
 import { findProgram, loadProgram } from './library/programs';
 import type { ImportedProgram } from './library/storage';
+import { getDraft } from './library/storage';
 import { useLibrary } from './library/useLibrary';
 import { PlayerView } from './player/PlayerView';
 import { useMediaSession } from './player/useMediaSession';
@@ -153,6 +155,35 @@ function App() {
     [library],
   );
 
+  /**
+   * Fork what is loaded into a draft and open it (§6.1).
+   *
+   * Its text is `serializeSchedule`, not the source file's bytes: an import keeps the user's own
+   * bytes because re-exporting should hand them back, but a draft is a document about to be
+   * rewritten, and the round-trip is a fixed point either way.
+   */
+  const editCopy = useCallback(async () => {
+    if (!current) return;
+    const { schedule } = current;
+    const name = schedule.title.trim() || current.subtitle || 'Program';
+    const draft = await library.fork(name, serializeSchedule(schedule), schedule);
+    navigate({ view: 'editor', id: draft.id });
+  }, [current, library]);
+
+  const discardDraft = useCallback(
+    async (id: string) => {
+      // Same rule as removing an imported program: what has no library entry and no route to
+      // return to has nowhere left to be, so it is unloaded, which also stops it.
+      if (current?.route.view === 'editor' && current.route.id === id) {
+        resolving.current = null;
+        setCurrent(null);
+      }
+      await library.discard(id);
+      navigate(LIBRARY);
+    },
+    [current, library],
+  );
+
   const removeImported = useCallback(
     async (id: string) => {
       // Deleting what is loaded also unloads it, which stops it — a program with no library entry
@@ -167,7 +198,17 @@ function App() {
   );
 
   const onLibrary = route.view === 'library';
+
+  // The editor's autosave writes straight to IndexedDB on a debounce, so the mirrored list is
+  // stale by the time anyone comes back to look at it. Re-read on arrival rather than pushing
+  // every keystroke through here, which would re-render the library behind the editor.
+  const { reloadDrafts } = library;
+  useEffect(() => {
+    if (onLibrary) void reloadDrafts();
+  }, [onLibrary, reloadDrafts]);
+
   const awaiting = !onLibrary && !current && !error;
+  const draftId = current?.route.view === 'editor' ? current.route.id : null;
   // Only once it has actually been started: a program merely opened and left has nothing to show.
   const nowPlaying = onLibrary && current && (player.playing || player.offset > 0) ? current : null;
 
@@ -219,7 +260,22 @@ function App() {
           onKeep={(schedule, sourceName) => void keepProgram(schedule, sourceName)}
         />
       )}
-      {!onLibrary && current && current.route.view !== 'live' && (
+      {!onLibrary && current && draftId && (
+        <EditorView
+          // A different draft is a different history, not a state to merge into this one.
+          key={draftId}
+          draftId={draftId}
+          initial={current.schedule}
+          player={player}
+          masterGain={settings.masterGain}
+          onMasterGainChange={(value) => set('masterGain', value)}
+          onSaveToLibrary={(schedule) =>
+            void keepProgram(schedule, schedule.title.trim() || 'Draft')
+          }
+          onDiscard={() => void discardDraft(draftId)}
+        />
+      )}
+      {!onLibrary && current && current.route.view !== 'live' && current.route.view !== 'editor' && (
         <PlayerView
           schedule={current.schedule}
           warnings={current.warnings}
@@ -240,6 +296,7 @@ function App() {
           wakeLock={settings.wakeLock}
           onWakeLockChange={(enabled) => set('wakeLock', enabled)}
           onSaveToLibrary={current.unsaved ? () => void saveToLibrary() : undefined}
+          onEdit={() => void editCopy()}
         />
       )}
       {awaiting && <p className="app__loading">Loading…</p>}
@@ -248,6 +305,8 @@ function App() {
           onOpenFile={() => void openFile()}
           imported={library.imported}
           onRemoveImported={(id) => void removeImported(id)}
+          drafts={library.drafts}
+          onDiscardDraft={(id) => void discardDraft(id)}
         />
       )}
       {nowPlaying && (
@@ -292,6 +351,21 @@ async function resolveRoute(
         return { ...parseScheduleWithWarnings(program.text), subtitle: program.sourceName };
       } catch {
         throw new Error(`${program.title} could not be read.`);
+      }
+    }
+
+    // Read straight from the database rather than from the library mirror: a draft is one row, and
+    // waiting for the whole list to settle would delay opening one that was just forked.
+    case 'editor': {
+      const draft = await getDraft(route.id);
+      if (!draft) throw new MissingProgramError();
+      try {
+        // A draft's XML is this app's own output, from the fork and from every autosave since, so
+        // §3.4's file-level warnings cannot apply to one — whatever the original file said about
+        // itself did not survive serialization. Same as a shared link, for the same reason.
+        return { schedule: parseSchedule(draft.xml), warnings: [], subtitle: draft.sourceName };
+      } catch {
+        throw new Error(`${draft.title} could not be read.`);
       }
     }
 

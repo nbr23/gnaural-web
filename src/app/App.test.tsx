@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 import { parseSchedule } from '../document/parser';
 import { loadFixture } from '../document/test-fixtures';
+import { DRAFT_SAVE_DEBOUNCE_MS } from '../editor/useDraft';
 import { encodeSharePayload } from '../files/shareLink';
 import { PROGRAMS } from '../library/programs';
-import { listImported } from '../library/storage';
+import { listDrafts, listImported } from '../library/storage';
 import { mediaSession, resetDatabase, resetPlatform, wakeLocks } from '../test-setup';
 import { flush, setCheckbox, setInputValue, setSelectValue, setupRoot, wait } from '../test-utils';
 
@@ -587,6 +588,131 @@ describe('live mode (§6.1)', () => {
     expect(window.location.hash).toBe(`#/i/${saved.id}`);
     expect(root.query('.player__title')?.textContent).toContain('Hz beat at');
     expect(root.query('.export')).not.toBeNull();
+  });
+});
+
+describe('the editor (§6.1)', () => {
+  /** Fork the bundled Power Nap into a draft and land in the editor. */
+  async function openDraftOf(program = 'powernap') {
+    window.location.hash = `#/p/${program}`;
+    root.render(<App />);
+    await flush();
+    root.click(root.byText('.button', 'Edit a copy'));
+    await flush();
+  }
+
+  function field(label: string): HTMLInputElement {
+    const found = [...root.queryAll('.editor__field')].find((element) =>
+      element.textContent?.startsWith(label),
+    );
+    return found?.querySelector('input, textarea') as HTMLInputElement;
+  }
+
+  function type(label: string, value: string): void {
+    const input = field(label);
+    root.act(() => setInputValue(input, value));
+    root.blur(input);
+  }
+
+  it('forks a program into a draft rather than editing it in place', async () => {
+    await openDraftOf();
+
+    expect(window.location.hash).toMatch(/^#\/e\/.+/);
+    expect(root.query('.editor__title')?.textContent).toBe('Power Nap');
+
+    const [draft] = await listDrafts();
+    expect(draft.sourceName).toBe('Power Nap');
+    // The bundled program is untouched: a copy is the only thing the editor ever opens.
+    expect(await listImported()).toHaveLength(0);
+  });
+
+  it('commits an edit once the field is left, and undoes it', async () => {
+    await openDraftOf();
+
+    type('Title', 'Nap, renamed');
+    expect(root.query('.editor__title')?.textContent).toBe('Nap, renamed');
+
+    root.click(root.byText('.button', 'Undo'));
+    expect(root.query('.editor__title')?.textContent).toBe('Power Nap');
+    expect(field('Title').value).toBe('Power Nap');
+
+    root.click(root.byText('.button', 'Redo'));
+    expect(root.query('.editor__title')?.textContent).toBe('Nap, renamed');
+  });
+
+  it('has nothing to undo before the first edit', async () => {
+    await openDraftOf();
+
+    expect(root.byText('.button', 'Undo')?.hasAttribute('disabled')).toBe(true);
+    expect(root.byText('.button', 'Redo')?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('autosaves, so the draft survives leaving the page', async () => {
+    await openDraftOf();
+    type('Title', 'Saved by itself');
+    await wait(DRAFT_SAVE_DEBOUNCE_MS * 2);
+    await flush();
+
+    const [draft] = await listDrafts();
+    expect(draft.title).toBe('Saved by itself');
+    // XML, not a blob of the model: what is recovered is exportable and openable in Gnaural.
+    expect(parseSchedule(draft.xml).title).toBe('Saved by itself');
+
+    // Reopening the app at the library — the closest a test gets to a reload — finds it under
+    // Drafts, with the title it was last given rather than the one it was forked with.
+    window.location.hash = '';
+    root.remount(<App />);
+    await flush();
+    expect(root.byText('.program-card', 'Saved by itself')).toBeDefined();
+    expect(root.text()).toContain('Drafts');
+  });
+
+  it('keeps playing through an edit, rather than reloading the graph', async () => {
+    // The same invariant Live mode's slider test pins, now with a second caller of `update()`:
+    // `load()` is a teardown, and an editor that pushed documents in through the `schedule` prop
+    // would silence and rewind the program on every commit.
+    await openDraftOf();
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+
+    const swap = root.query('.editor__check input') as HTMLInputElement;
+    root.act(() => setCheckbox(swap, true));
+    type('Volume left', '0.5');
+    await wait(200);
+
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+  });
+
+  it('saves a draft to the library by the same path an import takes', async () => {
+    await openDraftOf();
+    type('Title', 'Ready to share');
+    root.click(root.byText('.button', 'Save to library'));
+    await flush();
+
+    const [saved] = await listImported();
+    expect(saved.title).toBe('Ready to share');
+    expect(window.location.hash).toBe(`#/i/${saved.id}`);
+    // An ordinary program from here on: playable, exportable, shareable.
+    expect(root.query('.export')).not.toBeNull();
+    // And the draft is still there to keep working on.
+    expect(await listDrafts()).toHaveLength(1);
+  });
+
+  it('discards a draft from the editor', async () => {
+    await openDraftOf();
+    root.click(root.byText('.button', 'Discard draft'));
+    await flush();
+
+    expect(await listDrafts()).toHaveLength(0);
+    expect(root.queryAll('.program-card').length).toBe(PROGRAMS.length);
+  });
+
+  it('redirects a draft id that is no longer stored', async () => {
+    window.location.hash = '#/e/deleted-long-ago';
+    root.render(<App />);
+    await flush();
+
+    expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
   });
 });
 

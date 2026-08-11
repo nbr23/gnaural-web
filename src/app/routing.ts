@@ -19,6 +19,8 @@ export type Route =
   | { view: 'program'; id: string }
   /** A program the user imported, by its IndexedDB key. */
   | { view: 'imported'; id: string }
+  /** A draft being authored (§6.1), by its IndexedDB key. */
+  | { view: 'editor'; id: string }
   /** A shared program, compressed into the fragment itself — self-contained, so reload-safe. */
   | { view: 'shared'; payload: string };
 
@@ -36,6 +38,9 @@ export function parseHash(hash: string): Route {
   const imported = /^i\/(.+)$/.exec(path);
   if (imported) return { view: 'imported', id: decodeURIComponent(imported[1]) };
 
+  const editor = /^e\/(.+)$/.exec(path);
+  if (editor) return { view: 'editor', id: decodeURIComponent(editor[1]) };
+
   // base64url by construction, so the payload is taken verbatim — percent-encoding it would only
   // make an already-long fragment longer.
   const shared = /^s\/([A-Za-z0-9\-_]+)$/.exec(path);
@@ -52,6 +57,8 @@ export function formatHash(route: Route): string {
       return `#/p/${encodeURIComponent(route.id)}`;
     case 'imported':
       return `#/i/${encodeURIComponent(route.id)}`;
+    case 'editor':
+      return `#/e/${encodeURIComponent(route.id)}`;
     case 'shared':
       return `#/s/${route.payload}`;
     default:
