@@ -5,6 +5,11 @@ import './NowPlayingBar.css';
 export interface NowPlayingBarProps {
   title: string;
   player: Player;
+  /**
+   * Set for a session that runs until it is stopped. Live mode's document is a twelve-hour
+   * container, which is true and says nothing anyone wants to read next to the elapsed time.
+   */
+  openEnded?: boolean;
   onOpen: () => void;
 }
 
@@ -18,13 +23,14 @@ export interface NowPlayingBarProps {
  *
  * It observes the player like every other view — no audio node is touched here (PLAN.md §4).
  */
-export function NowPlayingBar({ title, player, onOpen }: NowPlayingBarProps) {
+export function NowPlayingBar({ title, player, openEnded, onOpen }: NowPlayingBarProps) {
   return (
     <div className="now-playing">
       <button type="button" className="now-playing__open" onClick={onOpen}>
         <span className="now-playing__title">{title}</span>
         <span className="now-playing__time">
-          {formatClock(player.offset)} / {formatClock(player.duration)}
+          {formatClock(player.offset)}
+          {!openEnded && ` / ${formatClock(player.duration)}`}
         </span>
       </button>
 

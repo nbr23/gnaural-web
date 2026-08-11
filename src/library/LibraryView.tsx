@@ -1,6 +1,6 @@
 import { BUILD_ID } from '../app/build';
 import { formatDuration } from '../app/format';
-import { navigate } from '../app/routing';
+import { LIVE, navigate } from '../app/routing';
 import type { BundledProgram } from './programs';
 import { programsByCategory } from './programs';
 import type { ImportedProgram } from './storage';
@@ -26,6 +26,14 @@ export function LibraryView({ onOpenFile, imported, onRemoveImported }: LibraryV
           Open a .gnaural file
         </button>
       </header>
+
+      {/* Not a program, so not a program card: it has no author, no length and nothing to load. */}
+      <button type="button" className="library__live" onClick={() => navigate(LIVE)}>
+        <span className="library__live-title">Live</span>
+        <span className="library__live-description">
+          Sliders instead of a timeline — set a beat and a tone and listen. Nothing to load.
+        </span>
+      </button>
 
       {/* The user's own programs lead: they are the ones that got here on purpose. */}
       {imported && imported.length > 0 && (

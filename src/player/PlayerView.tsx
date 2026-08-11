@@ -6,6 +6,7 @@ import { scheduleWarnings } from '../document/warnings';
 import type { NoiseLayerSettings } from '../engine/engine';
 import { ScheduleChart } from '../viz/ScheduleChart';
 import { WarningList } from './WarningList';
+import { VolumeSlider, WakeLockToggle } from './Controls';
 import { ExportPanel } from './ExportPanel';
 import { NoisePanel } from './NoisePanel';
 import { Readout } from './Readout';
@@ -62,7 +63,7 @@ export function PlayerView({
   return (
     <div className="player">
       <header className="player__header">
-        <button type="button" className="player__back" onClick={() => navigate(LIBRARY)}>
+        <button type="button" className="back-link" onClick={() => navigate(LIBRARY)}>
           ← Library
         </button>
         <h1 className="player__title">{title}</h1>
@@ -136,31 +137,11 @@ export function PlayerView({
         </button>
       </div>
 
-      <label className="player__volume">
-        <span>Volume</span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={masterGain}
-          onChange={(event) => onMasterGainChange(Number(event.target.value))}
-        />
-      </label>
+      <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
 
       <NoisePanel noise={noise} onChange={onNoiseChange} lostAmbientBed={lostAmbientBed} />
 
-      <label className="player__wake-lock">
-        <input
-          type="checkbox"
-          checked={wakeLock}
-          onChange={(event) => onWakeLockChange(event.target.checked)}
-        />
-        <span>
-          Keep the screen on
-          <small> — off by default; playback continues with the screen off either way.</small>
-        </span>
-      </label>
+      <WakeLockToggle enabled={wakeLock} onChange={onWakeLockChange} />
 
       {schedule.voices.length > 1 && (
         <VoiceList

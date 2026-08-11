@@ -42,6 +42,16 @@ export interface Player {
   pause(): void;
   stop(): void;
   seek(offset: number): void;
+  /**
+   * Swap in an edited document without interrupting playback (§6.1).
+   *
+   * **The caller must keep the `schedule` argument to `usePlayer` identity-stable while using
+   * this.** The effect below keys `load()` on that object, and `load()` is a teardown — pushing a
+   * new document in through the prop instead of through here would rebuild the graph on every
+   * change. The two are different verbs for different events: a different program, and an edit to
+   * the one already loaded.
+   */
+  update(schedule: Schedule): void;
   toggleMute(index: number): void;
   toggleSolo(index: number): void;
 }
@@ -223,6 +233,22 @@ export function usePlayer(
     [engine, moved, schedule],
   );
 
+  /**
+   * Nothing is created here: before the first play there is a `PlaybackEngine` but no
+   * `AudioContext`, and `update()` handles that by storing the new document and returning — so an
+   * edit made before pressing Play is still what plays.
+   *
+   * `duration` and `passCount` are re-read because an edit can change how long the schedule is
+   * (§3.7). Live mode never does, but a caller that does must not have to know to refresh them.
+   */
+  const update = useCallback((next: Schedule) => {
+    const instance = engineRef.current;
+    if (!instance) return;
+    instance.update(next);
+    setDuration(instance.getDuration());
+    setPassCount(instance.getPassCount());
+  }, []);
+
   const toggleGate = useCallback(
     (index: number, apply: (instance: PlaybackEngine, gate: VoiceGate) => void) => {
       if (!schedule) return;
@@ -295,6 +321,7 @@ export function usePlayer(
     pause,
     stop,
     seek,
+    update,
     toggleMute,
     toggleSolo,
   };

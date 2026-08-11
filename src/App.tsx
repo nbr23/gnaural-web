@@ -12,6 +12,8 @@ import type { ScheduleWarning } from './document/warnings';
 import { droppedFile, pickFile } from './files/openFile';
 import { decodeSharePayload } from './files/shareLink';
 import { LibraryView } from './library/LibraryView';
+import { LiveView } from './live/LiveView';
+import { DEFAULT_LIVE_VALUES, buildLiveSchedule } from './live/liveSchedule';
 import { NowPlayingBar } from './library/NowPlayingBar';
 import { findProgram, loadProgram } from './library/programs';
 import type { ImportedProgram } from './library/storage';
@@ -136,6 +138,21 @@ function App() {
     navigate({ view: 'imported', id: (await library.add(name, text, current.schedule)).id });
   }, [current, library]);
 
+  /**
+   * Keep a live session as a program.
+   *
+   * Deliberately the *same* path an opened file takes — serialize, hand to `library.add`, route to
+   * it — so it inherits the dedupe, the card, the share link, the WAV export and the player,
+   * rather than growing a second kind of saved program that only Live mode knows how to make.
+   */
+  const keepProgram = useCallback(
+    async (schedule: Schedule, sourceName: string) => {
+      const text = serializeSchedule(schedule);
+      navigate({ view: 'imported', id: (await library.add(sourceName, text, schedule)).id });
+    },
+    [library],
+  );
+
   const removeImported = useCallback(
     async (id: string) => {
       // Deleting what is loaded also unloads it, which stops it — a program with no library entry
@@ -180,7 +197,29 @@ function App() {
         </p>
       )}
 
-      {!onLibrary && current && (
+      {!onLibrary && current && current.route.view === 'live' && (
+        <LiveView
+          player={player}
+          storedBaseFreq={settings.liveBaseFreq}
+          storedBeatFreq={settings.liveBeatFreq}
+          hydrated={hydrated}
+          onValuesChange={(values) => {
+            set('liveBaseFreq', values.baseFreq);
+            set('liveBeatFreq', values.beatFreq);
+          }}
+          masterGain={settings.masterGain}
+          onMasterGainChange={(value) => set('masterGain', value)}
+          noise={noise}
+          onNoiseChange={(next) => {
+            set('noiseColour', next.colour);
+            set('noiseGain', next.gain);
+          }}
+          wakeLock={settings.wakeLock}
+          onWakeLockChange={(enabled) => set('wakeLock', enabled)}
+          onKeep={(schedule, sourceName) => void keepProgram(schedule, sourceName)}
+        />
+      )}
+      {!onLibrary && current && current.route.view !== 'live' && (
         <PlayerView
           schedule={current.schedule}
           warnings={current.warnings}
@@ -215,6 +254,7 @@ function App() {
         <NowPlayingBar
           title={nowPlaying.schedule.title.trim() || 'Untitled program'}
           player={player}
+          openEnded={nowPlaying.route.view === 'live'}
           onOpen={() => navigate(nowPlaying.route)}
         />
       )}
@@ -254,6 +294,12 @@ async function resolveRoute(
         throw new Error(`${program.title} could not be read.`);
       }
     }
+
+    // Live mode's document is synthesised, not loaded, and the sliders correct it through
+    // `player.update` as soon as the settings read lands — so the values here are only what is
+    // true for the frame before that. §3.4's warnings cannot apply to a document nothing parsed.
+    case 'live':
+      return { schedule: buildLiveSchedule(DEFAULT_LIVE_VALUES), warnings: [] };
 
     case 'shared': {
       let schedule: Schedule;

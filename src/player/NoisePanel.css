@@ -1,0 +1,48 @@
+.noise {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.noise__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.noise__level {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  max-width: 340px;
+}
+
+.noise__colour {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  & select {
+    font: inherit;
+    font-size: 14px;
+    padding: 8px 10px;
+    min-height: 40px;
+    border-radius: 8px;
+    color: var(--text-h);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+}
+
+.noise__label {
+  font-size: 13px;
+}
+
+.noise__note {
+  font-size: 13px;
+  color: var(--text-h);
+  max-width: 52ch;
+}

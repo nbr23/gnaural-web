@@ -62,6 +62,44 @@ export function setupRoot(): TestRoot {
   };
 }
 
+export interface HookResult<T> {
+  /** What the hook returned on its most recent render. */
+  readonly current: T;
+  rerender(): void;
+  unmount(): void;
+}
+
+/**
+ * Mount a hook on its own, for the ones with no component of their own worth rendering.
+ *
+ * Self-contained rather than built on `setupRoot`, so a test can control when it unmounts — which
+ * for anything holding a timer is the interesting moment.
+ */
+export function renderHook<T>(hook: () => T): HookResult<T> {
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+
+  let value!: T;
+  function Probe() {
+    value = hook();
+    return null;
+  }
+
+  act(() => root.render(<Probe />));
+
+  return {
+    get current() {
+      return value;
+    },
+    rerender: () => act(() => root.render(<Probe />)),
+    unmount: () => {
+      act(() => root.unmount());
+      container.remove();
+    },
+  };
+}
+
 /**
  * Set a controlled input's value the way a user would.
  *

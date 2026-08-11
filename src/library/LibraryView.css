@@ -82,6 +82,33 @@
   }
 }
 
+/* Shaped like a card so it reads as another way in, tinted so it does not read as a 20th program. */
+.library__live {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  padding: 14px 16px;
+  margin-bottom: 28px;
+  border-radius: 10px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.library__live-title {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 17px;
+}
+
+.library__live-description {
+  font-size: 14px;
+}
+
 .program-card {
   display: flex;
   flex-direction: column;

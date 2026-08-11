@@ -10,6 +10,11 @@ describe('parseHash', () => {
     expect(parseHash('#/i/2f9b')).toEqual({ view: 'imported', id: '2f9b' });
   });
 
+  it('reads the live route, which carries nothing', () => {
+    expect(parseHash('#/live')).toEqual({ view: 'live' });
+    expect(parseHash('#live')).toEqual({ view: 'live' });
+  });
+
   it('reads a share route, taking the payload verbatim', () => {
     expect(parseHash('#/s/q1bO-_AA')).toEqual({ view: 'shared', payload: 'q1bO-_AA' });
   });
@@ -34,6 +39,7 @@ describe('parseHash', () => {
 describe('formatHash', () => {
   it('formats each view', () => {
     expect(formatHash({ view: 'library' })).toBe('#/');
+    expect(formatHash({ view: 'live' })).toBe('#/live');
     expect(formatHash({ view: 'program', id: 'sleep-smr' })).toBe('#/p/sleep-smr');
     expect(formatHash({ view: 'imported', id: '2f9b' })).toBe('#/i/2f9b');
     expect(formatHash({ view: 'shared', payload: 'q1bO-_AA' })).toBe('#/s/q1bO-_AA');

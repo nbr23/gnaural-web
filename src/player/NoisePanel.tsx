@@ -1,6 +1,7 @@
 import type { NoiseLayerSettings } from '../engine/engine';
 import type { NoiseColour } from '../engine/noise';
 import { NOISE_COLOURS } from '../engine/noise';
+import './NoisePanel.css';
 
 /**
  * `gnaural` first because it is the sound this app already makes: a schedule's own noise voice

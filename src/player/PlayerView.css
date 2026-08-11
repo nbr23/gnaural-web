@@ -11,16 +11,6 @@
   gap: 6px;
 }
 
-.player__back {
-  font: inherit;
-  font-size: 15px;
-  padding: 8px 0;
-  background: none;
-  border: 0;
-  color: var(--accent);
-  cursor: pointer;
-}
-
 .player__title {
   font-size: 24px;
 }
@@ -46,38 +36,6 @@
   margin-block: 4px;
 }
 
-/* KPI row: what the listener is hearing right now. */
-.readout {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 12px 28px;
-}
-
-.readout__tile {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.readout__label {
-  font-size: 12px;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-}
-
-.readout__value {
-  font-size: 26px;
-  color: var(--text-h);
-  font-weight: 600;
-  /* Proportional figures deliberately: tabular digits look loose at this size. */
-}
-
-.readout__source {
-  font-size: 13px;
-  align-self: center;
-}
-
 .timeline {
   display: flex;
   flex-direction: column;
@@ -95,83 +53,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.player__volume {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 14px;
-  max-width: 340px;
-}
-
-.player__wake-lock {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-size: 14px;
-  max-width: 52ch;
-
-  & input {
-    /* Line the box up with the first line of a label that wraps to two. */
-    margin-top: 3px;
-    width: 18px;
-    height: 18px;
-    accent-color: var(--accent);
-  }
-
-  & small {
-    font-size: 13px;
-  }
-}
-
-.noise {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.noise__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-}
-
-.noise__level {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 14px;
-  max-width: 340px;
-}
-
-.noise__colour {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-
-  & select {
-    font: inherit;
-    font-size: 14px;
-    padding: 8px 10px;
-    min-height: 40px;
-    border-radius: 8px;
-    color: var(--text-h);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    cursor: pointer;
-  }
-}
-
-.noise__label {
-  font-size: 13px;
-}
-
-.noise__note {
-  font-size: 13px;
-  color: var(--text-h);
-  max-width: 52ch;
 }
 
 .export {

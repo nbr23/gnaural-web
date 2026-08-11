@@ -13,6 +13,8 @@ import { useEffect, useState } from 'react';
  */
 export type Route =
   | { view: 'library' }
+  /** Live mode (§6.1) — sliders, no program to name, so the route carries nothing. */
+  | { view: 'live' }
   /** A bundled program, by the id in `src/library/programs.ts`. */
   | { view: 'program'; id: string }
   /** A program the user imported, by its IndexedDB key. */
@@ -21,9 +23,12 @@ export type Route =
   | { view: 'shared'; payload: string };
 
 export const LIBRARY: Route = { view: 'library' };
+export const LIVE: Route = { view: 'live' };
 
 export function parseHash(hash: string): Route {
   const path = hash.replace(/^#\/?/, '');
+
+  if (path === 'live') return LIVE;
 
   const program = /^p\/(.+)$/.exec(path);
   if (program) return { view: 'program', id: decodeURIComponent(program[1]) };
@@ -41,6 +46,8 @@ export function parseHash(hash: string): Route {
 
 export function formatHash(route: Route): string {
   switch (route.view) {
+    case 'live':
+      return '#/live';
     case 'program':
       return `#/p/${encodeURIComponent(route.id)}`;
     case 'imported':

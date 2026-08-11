@@ -4,6 +4,7 @@ import type { Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import { compileVoice, eventBaseFreq, eventBeatFreq, valueAtTime } from '../engine/compiler';
 import { bandFor } from '../viz/bands';
+import './Readout.css';
 
 export interface ReadoutProps {
   schedule: Schedule;

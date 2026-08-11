@@ -1,0 +1,150 @@
+.live {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 32px;
+}
+
+.live__header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.live__title {
+  font-size: 24px;
+}
+
+.live__lede {
+  max-width: 52ch;
+  font-size: 15px;
+}
+
+.live__note {
+  font-size: 14px;
+}
+
+.live__transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.live__elapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+}
+
+/* The value sits with its own label rather than beside the thumb: a phone-width slider has no
+   room for a floating readout, and the tiles above already carry the headline figures. */
+.live__slider {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  & input[type='range'] {
+    min-height: 44px;
+  }
+}
+
+.live__slider-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+
+  & strong {
+    color: var(--text-h);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.live__beat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.live__bands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Jump targets, not snap points — the slider itself moves continuously. `aria-pressed` marks the
+   band the beat is currently in, which is a statement about where you are rather than about what
+   you last pressed. */
+.live__band {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  min-height: 36px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+
+  &[aria-pressed='true'] {
+    color: var(--accent);
+    background: var(--accent-bg);
+    border-color: var(--accent-border);
+  }
+}
+
+.live__keep {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.live__keep-note {
+  max-width: 52ch;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.live__keep-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.live__field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+
+  & input {
+    font: inherit;
+    font-size: 14px;
+    padding: 8px 10px;
+    min-height: 44px;
+    width: 5em;
+    border-radius: 8px;
+    color: var(--text-h);
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+}
+
+.live__field--grow {
+  flex: 1;
+  min-width: 220px;
+
+  & input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+  }
+}
+
+.live__field-unit {
+  margin-left: -4px;
+}

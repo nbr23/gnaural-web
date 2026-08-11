@@ -48,6 +48,16 @@ export interface Settings {
    */
   noiseColour: NoiseColour;
   noiseGain: number;
+  /**
+   * Where Live mode's sliders were left (§6.1). The same class of thing as the noise layer: a
+   * preference about listening, belonging to the person rather than to any program.
+   *
+   * Not the hash — `#/s/` already means "a program in a URL", a live session is not a program, and
+   * writing the fragment on every slider move would either flood the history or fight the back
+   * button the router exists for.
+   */
+  liveBaseFreq: number;
+  liveBeatFreq: number;
 }
 
 interface GnauralDB extends DBSchema {

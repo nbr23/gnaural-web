@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SILENT_NOISE_LAYER } from '../engine/engine';
 import { DEFAULT_EXPORT_SAMPLE_RATE } from '../engine/render';
+import { DEFAULT_LIVE_VALUES } from '../live/liveSchedule';
 import type { Settings } from '../library/storage';
 import { loadSettings, saveSetting } from '../library/storage';
 
@@ -21,6 +22,8 @@ export const DEFAULT_SETTINGS: Settings = {
    */
   noiseColour: SILENT_NOISE_LAYER.colour,
   noiseGain: SILENT_NOISE_LAYER.gain,
+  liveBaseFreq: DEFAULT_LIVE_VALUES.baseFreq,
+  liveBeatFreq: DEFAULT_LIVE_VALUES.beatFreq,
 };
 
 export interface SettingsStore {

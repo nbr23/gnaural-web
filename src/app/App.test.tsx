@@ -76,7 +76,7 @@ describe('routing', () => {
     root.render(<App />);
     await flush();
 
-    root.click(root.byText('.player__back', 'Library'));
+    root.click(root.byText('.back-link', 'Library'));
     await flush();
 
     expect(root.queryAll('.program-card')).toHaveLength(PROGRAMS.length);
@@ -252,7 +252,7 @@ describe('opening a file', () => {
     drop(loadFixture('powernap.gnaural'), 'mine.gnaural');
     await flush();
 
-    root.click(root.byText('.player__back', 'Library'));
+    root.click(root.byText('.back-link', 'Library'));
     await flush();
     expect(root.text()).toContain('Imported');
     expect(root.queryAll('.program-card')).toHaveLength(PROGRAMS.length + 1);
@@ -296,7 +296,7 @@ describe('playback outside the player', () => {
 
   it('keeps playing when you go back to the library, and says what is playing', async () => {
     await openAndPlay();
-    root.click(root.byText('.player__back', 'Library'));
+    root.click(root.byText('.back-link', 'Library'));
     await flush();
 
     expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
@@ -306,7 +306,7 @@ describe('playback outside the player', () => {
 
   it('returns to the player from the now-playing bar', async () => {
     await openAndPlay();
-    root.click(root.byText('.player__back', 'Library'));
+    root.click(root.byText('.back-link', 'Library'));
     await flush();
 
     root.click(root.query('.now-playing__open'));
@@ -320,7 +320,7 @@ describe('playback outside the player', () => {
     window.location.hash = '#/p/powernap';
     root.render(<App />);
     await flush();
-    root.click(root.byText('.player__back', 'Library'));
+    root.click(root.byText('.back-link', 'Library'));
     await flush();
 
     expect(root.query('.now-playing')).toBeNull();
@@ -328,7 +328,7 @@ describe('playback outside the player', () => {
 
   it('stops from the bar', async () => {
     await openAndPlay();
-    root.click(root.byText('.player__back', 'Library'));
+    root.click(root.byText('.back-link', 'Library'));
     await flush();
 
     root.click(root.byText('.now-playing .button', 'Stop'));
@@ -412,7 +412,7 @@ describe('media session', () => {
     root.click(root.byText('.button--primary', 'Play'));
     await flush();
 
-    root.click(root.byText('.player__back', 'Library'));
+    root.click(root.byText('.back-link', 'Library'));
     await flush();
 
     expect(mediaSession.metadata?.title).toBe('Power Nap');
@@ -437,7 +437,7 @@ describe('wake lock', () => {
     await flush();
 
     root.act(() =>
-      setCheckbox(root.query('.player__wake-lock input') as HTMLInputElement, true),
+      setCheckbox(root.query('.wake-lock input') as HTMLInputElement, true),
     );
     // Enabling it alone must not light the screen — only playing does.
     expect(wakeLocks).toHaveLength(0);
@@ -457,13 +457,13 @@ describe('wake lock', () => {
     root.render(<App />);
     await flush();
     root.act(() =>
-      setCheckbox(root.query('.player__wake-lock input') as HTMLInputElement, true),
+      setCheckbox(root.query('.wake-lock input') as HTMLInputElement, true),
     );
     await wait(WRITE_DEBOUNCE);
 
     root.remount(<App />);
     await flush();
-    expect((root.query('.player__wake-lock input') as HTMLInputElement).checked).toBe(true);
+    expect((root.query('.wake-lock input') as HTMLInputElement).checked).toBe(true);
   });
 });
 
@@ -473,13 +473,13 @@ describe('settings', () => {
     root.render(<App />);
     await flush();
 
-    const volume = root.query('.player__volume input') as HTMLInputElement;
+    const volume = root.query('.volume input') as HTMLInputElement;
     root.act(() => setInputValue(volume, '0.35'));
     await wait(WRITE_DEBOUNCE);
 
     root.remount(<App />);
     await flush();
-    expect((root.query('.player__volume input') as HTMLInputElement).value).toBe('0.35');
+    expect((root.query('.volume input') as HTMLInputElement).value).toBe('0.35');
   });
 
   it('remembers the noise layer, which belongs to the listener rather than to a program', async () => {
@@ -499,6 +499,94 @@ describe('settings', () => {
 
     expect((root.query('.noise__level input') as HTMLInputElement).value).toBe('0.3');
     expect((root.query('.noise__colour select') as HTMLSelectElement).value).toBe('brown');
+  });
+});
+
+describe('live mode (§6.1)', () => {
+  it('opens from the library and has sliders instead of a timeline', async () => {
+    root.render(<App />);
+    root.click(root.query('.library__live'));
+    await flush();
+
+    expect(window.location.hash).toBe('#/live');
+    expect(root.query('.live__title')?.textContent).toBe('Live');
+    expect(root.queryAll('.live__slider input')).toHaveLength(2);
+    expect(root.query('.schedule-chart')).toBeNull();
+  });
+
+  it('plays, and says what is playing from the library', async () => {
+    window.location.hash = '#/live';
+    root.render(<App />);
+    await flush();
+
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+
+    // A program with no title of its own still has to be nameable on a lock screen.
+    expect(mediaSession.metadata?.title).toBe('Live');
+
+    root.click(root.byText('.back-link', 'Library'));
+    await flush();
+    expect(root.query('.now-playing__title')?.textContent).toBe('Live');
+    // No total: the twelve-hour container is true and tells a listener nothing.
+    expect(root.query('.now-playing__time')?.textContent).not.toContain('/');
+
+    root.click(root.query('.now-playing__open'));
+    await flush();
+    expect(window.location.hash).toBe('#/live');
+  });
+
+  it('keeps playing through a slider move, rather than reloading the graph', async () => {
+    // `load()` is a teardown: it silences everything and returns to zero, and `usePlayer` would
+    // report not-playing again. An edit has to go through `update()` instead, which is the whole
+    // reason step 1 exists — and a slider bound to the schedule *prop* would quietly do the wrong
+    // one on every pixel of a drag.
+    window.location.hash = '#/live';
+    root.render(<App />);
+    await flush();
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+
+    const base = root.queryAll('.live__slider input')[0] as HTMLInputElement;
+    root.act(() => setInputValue(base, '0.4'));
+    root.act(() => setInputValue(base, '0.5'));
+    await wait(200);
+
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+  });
+
+  it('remembers where the sliders were left', async () => {
+    window.location.hash = '#/live';
+    root.render(<App />);
+    await flush();
+
+    const base = root.queryAll('.live__slider input')[0] as HTMLInputElement;
+    root.act(() => setInputValue(base, '0'));
+    await wait(WRITE_DEBOUNCE);
+
+    root.remount(<App />);
+    await flush();
+
+    expect(root.query('.readout')?.textContent).toContain('40 Hz');
+  });
+
+  it('keeps a session as a program, by the same path an import takes', async () => {
+    window.location.hash = '#/live';
+    root.render(<App />);
+    await flush();
+
+    root.act(() => setInputValue(root.query('.live__field input') as HTMLInputElement, '5'));
+    root.click(root.byText('.button', 'Keep'));
+    await flush();
+
+    const [saved] = await listImported();
+    expect(saved.durationSeconds).toBe(300);
+    expect(saved.sourceName).toBe('Live session');
+
+    // It lands in the library as an ordinary program: routed to, playable, exportable, shareable.
+    expect(window.location.hash).toBe(`#/i/${saved.id}`);
+    expect(root.query('.player__title')?.textContent).toContain('Hz beat at');
+    expect(root.query('.export')).not.toBeNull();
   });
 });
 

@@ -115,6 +115,17 @@ p {
   }
 }
 
+/* "← Library", from any view that has one to go back to. */
+.back-link {
+  font: inherit;
+  font-size: 15px;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+}
+
 .button--primary {
   color: var(--accent);
   background: var(--accent-bg);

@@ -1,0 +1,27 @@
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  max-width: 340px;
+}
+
+.wake-lock {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  max-width: 52ch;
+
+  & input {
+    /* Line the box up with the first line of a label that wraps to two. */
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+  }
+
+  & small {
+    font-size: 13px;
+  }
+}

@@ -1,0 +1,31 @@
+/* KPI row: what the listener is hearing right now. */
+.readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px 28px;
+}
+
+.readout__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.readout__label {
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.readout__value {
+  font-size: 26px;
+  color: var(--text-h);
+  font-weight: 600;
+  /* Proportional figures deliberately: tabular digits look loose at this size. */
+}
+
+.readout__source {
+  font-size: 13px;
+  align-self: center;
+}
