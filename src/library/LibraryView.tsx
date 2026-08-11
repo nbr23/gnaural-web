@@ -62,6 +62,15 @@ export function LibraryView({ onOpenFile, imported, onRemoveImported }: LibraryV
         </section>
       ))}
 
+      {/* The bundled descriptions are upstream prose, preserved verbatim for credit (PLAN.md §10,
+          fixtures/presets/README.md), and several of them say what the audio is *for*. PLAN.md §2
+          forbids this app making medical claims; attributing them keeps the words where they came
+          from instead of putting them in the app's own voice. */}
+      <p className="library__attribution">
+        The bundled programs' titles and descriptions are their original authors' words, kept as
+        they were written. They are not claims made by this app.
+      </p>
+
       {/* An installed PWA can be running a build older than the one you just deployed — the
           service worker waits to be told to swap. Say which one this is. */}
       <p className="library__build">build {BUILD_ID}</p>

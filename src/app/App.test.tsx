@@ -40,6 +40,15 @@ describe('library view', () => {
     expect(root.query('.library__build')?.textContent).toMatch(/^build \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
   });
 
+  it('attributes the bundled descriptions to their authors rather than to the app', () => {
+    // Several presets describe what the audio is *for* ("an aid for Attention Deficit
+    // Hyperactivity Disorder"). The prose is upstream and preserved verbatim for credit, so §2's
+    // no-medical-claims rule is met by saying whose words they are, not by rewriting them.
+    root.render(<App />);
+
+    expect(root.query('.library__attribution')?.textContent).toContain("original authors' words");
+  });
+
   it('credits each program on its card', () => {
     root.render(<App />);
     const card = root.byText('.program-card', 'Power Nap');

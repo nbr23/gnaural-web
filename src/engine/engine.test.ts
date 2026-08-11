@@ -793,3 +793,206 @@ describe('prepare()', () => {
     expect(peakAmplitude((await context.startRendering()).getChannelData(0))).toBe(0);
   });
 });
+
+/**
+ * Run an edit partway through an offline render.
+ *
+ * `OfflineAudioContext.suspend()` stops the render at a quantum boundary and hands control back, so
+ * an edit can be applied against a graph that is genuinely mid-flight — the same thing a drag does
+ * during playback, at sample resolution and with no browser. This is what makes §6.1's live
+ * re-scheduling assertable rather than merely reviewed.
+ */
+async function renderWithEditAt(
+  context: OfflineAudioContext,
+  when: number,
+  edit: () => void,
+): Promise<AudioBuffer> {
+  const suspended = context.suspend(when).then(() => {
+    edit();
+    void context.resume();
+  });
+
+  // Yield once before starting the render. `suspend()` hands its request to the audio thread
+  // asynchronously, and node-web-audio-api rejects it with `InvalidStateError` if the render has
+  // already run past the point — which, issued back to back, it does a few percent of the time.
+  // Measured in this container: 2 rejections in 60 without this line, 0 in 120 with it.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  // Awaited together so a rejected suspend fails the test outright. Left unhandled it would render
+  // without ever applying the edit, and the failure would surface as a baffling assertion about
+  // frequency somewhere else entirely.
+  const [buffer] = await Promise.all([context.startRendering(), suspended]);
+  return buffer;
+}
+
+/** A steady tone, so a frequency measured after an edit is unambiguous. */
+function steadySchedule(baseFreq: number, volume = 1, voices = 1): Schedule {
+  return makeSchedule(
+    Array.from({ length: voices }, (_unused, id) =>
+      makeVoice([makeEntry({ duration: 30, baseFreq, beatFreq: 0, volumeLeft: volume, volumeRight: volume })], { id }),
+    ),
+  );
+}
+
+describe('update() — live re-scheduling (§6.1)', () => {
+  const EDIT_AT = 0.5;
+
+  function windowOf(samples: Float32Array, from: number, to: number): Float32Array {
+    return samples.subarray(Math.round(from * SAMPLE_RATE), Math.round(to * SAMPLE_RATE));
+  }
+
+  it('is heard from the edit onwards, and not before it', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(steadySchedule(300));
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
+      engine.update(steadySchedule(500)),
+    );
+    const left = buffer.getChannelData(0);
+
+    // Zero-crossing counting resolves to 1/window, so ~3.3 Hz over these 0.3 s windows.
+    expect(Math.abs(estimateFrequency(windowOf(left, 0.1, 0.4), SAMPLE_RATE) - 300)).toBeLessThan(5);
+    expect(Math.abs(estimateFrequency(windowOf(left, 0.6, 0.9), SAMPLE_RATE) - 500)).toBeLessThan(5);
+  });
+
+  it('does not click at the edit, because the oscillator keeps its phase', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(steadySchedule(300));
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
+      engine.update(steadySchedule(500)),
+    );
+
+    // A phase-continuous 500 Hz sine steps ~0.07 per sample at this rate; a restarted oscillator or
+    // a stepped gain would jump far further.
+    expect(maxStep(windowOf(buffer.getChannelData(0), 0.45, 0.55))).toBeLessThan(0.2);
+  });
+
+  it('keeps playing rather than starting over — the graph is not rebuilt', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(steadySchedule(300));
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
+      engine.update(steadySchedule(500)),
+    );
+
+    // `load()` would have faded to silence and faded back in. Nothing here dips at all.
+    expect(peakAmplitude(windowOf(buffer.getChannelData(0), 0.45, 0.6))).toBeGreaterThan(0.9);
+  });
+
+  it('does not walk the playhead backwards, however many edits arrive', () => {
+    // The failure this pins: `rescheduleFrom` lands `lookahead + CLICK_FREE_RAMP` in the future, so
+    // rescheduling *at* the current offset silently rewinds by that much. Once per seek it is
+    // invisible; ten times a second under a drag it stalls the playhead outright.
+    const context = withBaseLatency(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE), 0.04);
+    const engine = new PlaybackEngine(context);
+    engine.load(steadySchedule(300));
+    engine.play();
+    engine.seek(5);
+
+    const before = engine.getCurrentOffset();
+    for (let i = 0; i < 20; i++) engine.update(steadySchedule(300 + i));
+
+    expect(engine.getCurrentOffset()).toBeCloseTo(before, 6);
+  });
+
+  it('crossfades rather than cuts when an edit removes a voice', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(steadySchedule(300, 0.5, 2));
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
+      engine.update(steadySchedule(300, 0.5, 1)),
+    );
+    const left = buffer.getChannelData(0);
+
+    expect(peakAmplitude(windowOf(left, 0.1, 0.4))).toBeGreaterThan(0.7);
+    expect(peakAmplitude(windowOf(left, 0.6, 0.9))).toBeCloseTo(0.5, 1);
+    // Retiring a voice ramps it out over CLICK_FREE_RAMP; releasing it outright would step.
+    expect(maxStep(windowOf(left, 0.45, 0.6))).toBeLessThan(0.2);
+  });
+
+  it('applies an edit to stereoswap without rewiring the graph (§3.2)', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    const asymmetric = { masterVolume: { left: 0.5, right: 1 }, stereoSwap: false };
+    engine.load(makeSchedule(steadySchedule(300).voices, asymmetric));
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
+      engine.update(makeSchedule(steadySchedule(300).voices, { ...asymmetric, stereoSwap: true })),
+    );
+
+    expect(peakAmplitude(windowOf(buffer.getChannelData(0), 0.1, 0.4))).toBeCloseTo(0.5, 1);
+    expect(peakAmplitude(windowOf(buffer.getChannelData(0), 0.6, 0.9))).toBeCloseTo(1, 1);
+  });
+
+  it('leaves session mute and solo alone, but takes on a mute the edit actually changed', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(steadySchedule(300, 1, 2));
+    engine.play();
+
+    engine.setVoiceSoloed(1, true);
+    engine.update(steadySchedule(400, 1, 2));
+    expect(engine.isVoiceSoloed(1)).toBe(true);
+
+    const muted = steadySchedule(400, 1, 2);
+    muted.voices[0] = { ...muted.voices[0], muted: true };
+    engine.update(muted);
+    expect(engine.isVoiceMuted(0)).toBe(true);
+
+    // A listener's own un-mute must survive every later edit that does not touch the flag.
+    engine.setVoiceMuted(0, false);
+    engine.update(steadySchedule(410, 1, 2));
+    expect(engine.isVoiceMuted(0)).toBe(false);
+  });
+
+  it('stays paused, and where it was, when edited while paused', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(makeRampingSchedule().schedule);
+    engine.play();
+    engine.seek(7.5);
+    engine.pause();
+
+    const before = engine.getCurrentOffset();
+    engine.update(makeRampingSchedule().schedule);
+
+    expect(engine.isPlaying()).toBe(false);
+    expect(engine.getCurrentOffset()).toBeCloseTo(before, 6);
+  });
+
+  it('ends the schedule where an edit that shortens it puts the end (§3.7)', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(steadySchedule(300));
+    engine.play();
+    engine.seek(20);
+
+    engine.update(makeSchedule([makeVoice([makeEntry({ duration: 10, baseFreq: 300 })])]));
+
+    expect(engine.getDuration()).toBe(10);
+    // Clamped to the new end rather than left stranded at 20. The last CLICK_FREE_RAMP of it is the
+    // same bookkeeping lag every transport call has, and resolves as real time advances.
+    expect(engine.getCurrentOffset()).toBeGreaterThan(10 - CLICK_FREE_RAMP * 1.5);
+    expect(engine.getCurrentOffset()).toBeLessThanOrEqual(10);
+  });
+
+  it('loads outright when nothing is loaded yet, so a first edit is not a special case', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+
+    engine.update(steadySchedule(300));
+
+    expect(engine.getDuration()).toBe(30);
+    expect(engine.getCurrentOffset()).toBe(0);
+  });
+});

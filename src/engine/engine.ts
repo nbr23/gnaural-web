@@ -76,9 +76,11 @@ function scheduleLookahead(context: BaseAudioContext): number {
 }
 
 interface OutputChain {
-  /** Bus a voice's left-channel signal feeds. Already accounts for `stereoSwap`. */
-  left: AudioNode;
-  right: AudioNode;
+  /** Bus a voice's left-channel signal feeds, carrying `overallvolume_left` (§3.2). */
+  left: GainNode;
+  right: GainNode;
+  /** The `stereoSwap` routing matrix — see `buildOutputChain`. */
+  route: { ll: GainNode; lr: GainNode; rl: GainNode; rr: GainNode };
   /** App-level master, independent of the file's `overallvolume_*`. */
   masterGain: GainNode;
 }
@@ -87,9 +89,15 @@ interface OutputChain {
  * Per-channel master gain (§3.2 — `overallvolume_left`/`_right` apply once, after all voices are
  * summed) into a `ChannelMergerNode`, then the app's own master gain, then the destination.
  *
- * `stereoSwap` swaps which merger input each channel feeds, which is deliberately *after*
- * `overallvolume_*` has been applied — §3.2: the left master gain follows the audio into the
- * right output, so asymmetric master volumes plus a swap do not behave like a naive swap.
+ * `stereoSwap` is applied *after* `overallvolume_*` — §3.2: the left master gain follows the audio
+ * into the right output, so asymmetric master volumes plus a swap do not behave like a naive swap.
+ *
+ * It is a **four-gain routing matrix rather than a choice of merger input**, so that swapping is a
+ * parameter change instead of a rewiring. `update()` must never tear the output chain down (an
+ * edit is not a new program), and reconnecting a live node is both a click and a node the graph
+ * keeps a reference to. With the gains at exactly 1 and 0 the matrix is arithmetically transparent
+ * — `x * 1 + 0` — so an offline export renders the same samples it always did, which is what keeps
+ * §5.3's null test comparing like with like.
  */
 function buildOutputChain(context: BaseAudioContext, schedule: Schedule): OutputChain {
   const left = context.createGain();
@@ -98,13 +106,52 @@ function buildOutputChain(context: BaseAudioContext, schedule: Schedule): Output
   right.gain.value = schedule.masterVolume.right;
 
   const merger = context.createChannelMerger(2);
-  left.connect(merger, 0, schedule.stereoSwap ? 1 : 0);
-  right.connect(merger, 0, schedule.stereoSwap ? 0 : 1);
+  const route = {
+    ll: context.createGain(),
+    lr: context.createGain(),
+    rl: context.createGain(),
+    rr: context.createGain(),
+  };
+  left.connect(route.ll).connect(merger, 0, 0);
+  left.connect(route.lr).connect(merger, 0, 1);
+  right.connect(route.rl).connect(merger, 0, 0);
+  right.connect(route.rr).connect(merger, 0, 1);
 
   const masterGain = context.createGain();
   merger.connect(masterGain).connect(context.destination);
 
-  return { left, right, masterGain };
+  const output = { left, right, route, masterGain };
+  setStereoSwap(output, schedule.stereoSwap);
+  return output;
+}
+
+/**
+ * Point each channel at its output (§3.2). Called with `at` to ramp instead of step, which is what
+ * an edit to `stereoswap` during playback needs; called without one at build time, where the gains
+ * must land on exactly 1 and 0 for the matrix to stay arithmetically transparent.
+ */
+function setStereoSwap(output: OutputChain, swapped: boolean, at?: number): void {
+  const straight = swapped ? 0 : 1;
+  const crossed = swapped ? 1 : 0;
+  const targets: [AudioParam, number][] = [
+    [output.route.ll.gain, straight],
+    [output.route.rr.gain, straight],
+    [output.route.lr.gain, crossed],
+    [output.route.rl.gain, crossed],
+  ];
+
+  for (const [param, value] of targets) {
+    if (at === undefined) param.value = value;
+    else rampParam(param, value, at);
+  }
+}
+
+/** Glide a param that is not otherwise automated to a new value, click-free (§4.4). */
+function rampParam(param: AudioParam, value: number, at: number): void {
+  if (param.value === value) return;
+  param.cancelScheduledValues(at);
+  param.setValueAtTime(param.value, at);
+  param.linearRampToValueAtTime(value, at + CLICK_FREE_RAMP);
 }
 
 /**
@@ -360,6 +407,22 @@ function isRenderable(voice: Voice): boolean {
 }
 
 /**
+ * Whether an edit changes the *shape* of the voice graph rather than the values flowing through it.
+ *
+ * Only three things do: how many voices there are, what kind of source each one needs (`type`), and
+ * whether it is downmixed (`mono`) — the one flag that changes a voice's wiring rather than a
+ * param. Everything else an editor can touch — every entry, every volume, the master volumes,
+ * `stereoswap`, mute flags — is a value, and values are what `rescheduleFrom` already rewrites. So
+ * the common editing case, dragging a breakpoint, never rebuilds a node.
+ */
+function requiresVoiceRebuild(previous: Schedule, next: Schedule): boolean {
+  if (previous.voices.length !== next.voices.length) return true;
+  return next.voices.some(
+    (voice, index) => voice.type !== previous.voices[index].type || voice.mono !== previous.voices[index].mono,
+  );
+}
+
+/**
  * Build the full audio graph for a schedule and start playback immediately at
  * `context.currentTime`: one persistent source pair per renderable voice (§4.4 — oscillators are
  * reused for the whole session, never stopped/restarted per segment), summed through per-channel
@@ -458,6 +521,78 @@ export class PlaybackEngine {
     this.playing = false;
     this.muted = new Set(schedule.voices.flatMap((voice, index) => (voice.muted ? [index] : [])));
     this.soloed = new Set();
+  }
+
+  /**
+   * Swap in an edited version of the loaded schedule without interrupting playback (§6.1).
+   *
+   * `load()` is for a different program: it tears the graph down, silences everything and returns
+   * to zero, all of which are right when you pick another file and wrong for an edit. This keeps
+   * the context, the output chain, the oscillators and their phase, the playhead, the session
+   * mute/solo state and the master gain, and rewrites only what the edit changed — then
+   * re-schedules from where the playhead already is, which §4.3 made a single call.
+   *
+   * **The playhead is projected forward across the transition, and that is the whole subtlety.**
+   * `rescheduleFrom(total)` means "be at schedule-time `total` when this lands", and what it lands
+   * on is `scheduleLookahead + CLICK_FREE_RAMP` in the future — so passing the *current* offset
+   * silently walks the clock backwards by that much. Once per seek it is the invisible artifact
+   * `getCurrentOffset` already documents. Ten times a second under a drag it is 0.7 s of lost
+   * playback per second, and the playhead visibly stalls. Adding the window back is what makes an
+   * edit continuous instead of a very small seek.
+   *
+   * Two paths, indistinguishable from outside: values are written into the voices that already
+   * exist, and only a change of voice count, `type` or `mono` builds new nodes (see
+   * `requiresVoiceRebuild`) — a crossfade, not a cut.
+   */
+  update(schedule: Schedule): void {
+    const previous = this.schedule;
+    if (!previous) {
+      this.load(schedule);
+      return;
+    }
+    // The document is immutable and reference-compared (§4.1), so this is the honest no-op test.
+    if (schedule === previous) return;
+
+    // Read the position under the *old* duration, before the edit can change what a pass is.
+    const wasPlaying = this.playing;
+    const pass = this.getPass();
+    const offset = this.getCurrentOffset();
+
+    this.adoptDocumentMutes(previous, schedule);
+    this.schedule = schedule;
+    this.duration = scheduleDuration(schedule);
+    this.passes = passCount(schedule, this.duration);
+
+    // An edit can change how long the schedule is (§3.7 — the shortest voice decides). Keep the
+    // position within the pass rather than the absolute time across passes: that is what the
+    // listener hears as "where I am", and a schedule cut shorter than the playhead simply ends.
+    const resumeAt =
+      Math.min(pass, this.passes - 1) * this.duration + Math.min(offset, this.duration);
+
+    const context = this.context;
+    if (!context || !this.output) {
+      this.frozenTotal = Math.min(this.getTotalDuration(), resumeAt);
+      return;
+    }
+
+    const lookahead = scheduleLookahead(context);
+    const at = context.currentTime + lookahead;
+    rampParam(this.output.left.gain, schedule.masterVolume.left, at);
+    rampParam(this.output.right.gain, schedule.masterVolume.right, at);
+    setStereoSwap(this.output, schedule.stereoSwap, at);
+
+    if (requiresVoiceRebuild(previous, schedule)) {
+      this.retireVoices(at + CLICK_FREE_RAMP);
+      this.buildVoices(context, schedule, this.output);
+    } else {
+      for (const state of this.voiceStates) {
+        state.events = compileVoice(schedule.voices[state.index]);
+      }
+      this.applyVoiceGates();
+    }
+
+    const projected = wasPlaying ? lookahead + CLICK_FREE_RAMP : 0;
+    this.rescheduleFrom(Math.min(this.getTotalDuration(), resumeAt + projected), wasPlaying);
   }
 
   /**
@@ -640,7 +775,12 @@ export class PlaybackEngine {
     const output = buildOutputChain(context, schedule);
     output.masterGain.gain.value = this.masterGain;
     this.output = output;
+    this.buildVoices(context, schedule, output);
+  }
 
+  /** Separate from `buildGraph` because `update()` replaces voices while keeping the output chain
+   *  — the chain belongs to the session, the voices belong to the document. */
+  private buildVoices(context: BaseAudioContext, schedule: Schedule, output: OutputChain): void {
     schedule.voices.forEach((voice, index) => {
       if (!isRenderable(voice)) return;
 
@@ -659,6 +799,54 @@ export class PlaybackEngine {
     for (const { nodes } of this.voiceStates) disposeSource(nodes.source, now);
     this.voiceStates = [];
     this.output = null;
+  }
+
+  /**
+   * Fade the current voices out and release them at `when`, leaving the output chain standing.
+   *
+   * The replacements are built silent and faded in by the `rescheduleFrom` that follows, reaching
+   * full level at the same instant these reach zero — so a structural edit crossfades rather than
+   * cutting, which is §4.4's rule applied to the one transition that has to swap nodes. Nothing
+   * disconnects anything: a source that has been stopped releases the whole chain behind it, and a
+   * JS timer waiting to disconnect is exactly what §4.2 keeps out of the audio path.
+   */
+  private retireVoices(when: number): void {
+    const context = this.context;
+    if (!context) return;
+    const now = context.currentTime;
+
+    for (const { nodes } of this.voiceStates) {
+      for (const param of [nodes.gainL.gain, nodes.gainR.gain]) {
+        // Read before cancelling, for the reason `rescheduleFrom` gives.
+        const held = param.value;
+        param.cancelScheduledValues(now);
+        param.setValueAtTime(held, now);
+        param.linearRampToValueAtTime(0, when);
+      }
+      disposeSource(nodes.source, when);
+    }
+
+    this.voiceStates = [];
+  }
+
+  /**
+   * Take on the document's own mute flags, but only where the edit actually changed one.
+   *
+   * Session mute/solo is deliberately separate from `voice.muted` (§3.2): the document seeds it and
+   * runtime toggles override it. Re-seeding wholesale on every edit would undo a listener's solo
+   * every time they dragged a breakpoint; ignoring the document entirely would make the editor's
+   * own mute control do nothing. Comparing against the previous document is what distinguishes an
+   * edit *to* the flag from an edit that merely happened while the flag was set.
+   */
+  private adoptDocumentMutes(previous: Schedule, next: Schedule): void {
+    next.voices.forEach((voice, index) => {
+      if (voice.muted !== previous.voices[index]?.muted) setMembership(this.muted, index, voice.muted);
+    });
+
+    // Indices are the key (§3.4 — ids are not unique), so a shorter document leaves strays behind.
+    for (const set of [this.muted, this.soloed]) {
+      for (const index of [...set]) if (index >= next.voices.length) set.delete(index);
+    }
   }
 
   private applyVoiceGates(): void {
