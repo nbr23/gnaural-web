@@ -13,6 +13,8 @@ export interface ExportPanelProps {
   schedule: Schedule;
   sampleRate: number;
   onSampleRateChange(rate: number): void;
+  /** Whether the app's noise layer is currently audible — see the notice below. */
+  noiseActive?: boolean;
 }
 
 /**
@@ -27,7 +29,12 @@ export interface ExportPanelProps {
  * fit in memory at all. Playback is left running throughout — the render is a separate offline
  * context, and silently pausing someone's program would be a surprise.
  */
-export function ExportPanel({ schedule, sampleRate, onSampleRateChange }: ExportPanelProps) {
+export function ExportPanel({
+  schedule,
+  sampleRate,
+  onSampleRateChange,
+  noiseActive,
+}: ExportPanelProps) {
   const exporter = useExport(schedule, sampleRate);
   const busy = exporter.status !== 'idle';
 
@@ -76,6 +83,15 @@ export function ExportPanel({ schedule, sampleRate, onSampleRateChange }: Export
           The WAV covers one pass. This program{' '}
           {schedule.loops <= 0 ? 'repeats until stopped' : `repeats ${Math.floor(schedule.loops)} times`}{' '}
           when played.
+        </p>
+      )}
+
+      {/* Said here as well as on the control itself, because this is where the omission would come
+          as a surprise: what leaves the app is the document as authored, and the noise layer is
+          this listener's preference rather than part of the program. */}
+      {noiseActive && (
+        <p className="export__notice">
+          The background noise layer is not included — nothing that leaves here carries it.
         </p>
       )}
 

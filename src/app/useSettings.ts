@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { SILENT_NOISE_LAYER } from '../engine/engine';
 import { DEFAULT_EXPORT_SAMPLE_RATE } from '../engine/render';
 import type { Settings } from '../library/storage';
 import { loadSettings, saveSetting } from '../library/storage';
@@ -13,6 +14,13 @@ export const DEFAULT_SETTINGS: Settings = {
   /** Off by default (PLAN.md §5.1) — it burns battery and the common case is a sleep program. */
   wakeLock: false,
   headphoneNoticeSeen: false,
+  /**
+   * **Silent by default (§4.5b), and only a person turns it on.** §3.8 item 6 records the Android
+   * importer forcing noise onto every segment at a hardcoded gain whatever the file said; this is
+   * the same feature and the default is the whole difference.
+   */
+  noiseColour: SILENT_NOISE_LAYER.colour,
+  noiseGain: SILENT_NOISE_LAYER.gain,
 };
 
 export interface SettingsStore {

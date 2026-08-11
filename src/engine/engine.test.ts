@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Entry, Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import { compileVoice, valueAtTime } from './compiler';
+import type { NoiseLayerSettings } from './engine';
 import { CLICK_FREE_RAMP, PlaybackEngine, playSchedule } from './engine';
 
 function makeEntry(partial: Partial<Entry>): Entry {
@@ -994,5 +995,155 @@ describe('update() — live re-scheduling (§6.1)', () => {
 
     expect(engine.getDuration()).toBe(30);
     expect(engine.getCurrentOffset()).toBe(0);
+  });
+});
+
+/** A schedule with a voice that consumes time and makes no sound, so whatever is rendered is the
+ *  app's noise layer and nothing else. */
+function silentSchedule(overrides: Partial<Schedule> = {}): Schedule {
+  return makeSchedule(
+    [makeVoice([makeEntry({ duration: 30, baseFreq: 300, volumeLeft: 0, volumeRight: 0 })])],
+    overrides,
+  );
+}
+
+function rms(samples: Float32Array): number {
+  let sum = 0;
+  for (const sample of samples) sum += sample * sample;
+  return Math.sqrt(sum / samples.length);
+}
+
+describe('the app-level noise layer (§4.5b)', () => {
+  async function renderLayer(
+    schedule: Schedule,
+    settings: NoiseLayerSettings,
+    prepare: (engine: PlaybackEngine) => void = () => undefined,
+  ): Promise<AudioBuffer> {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule);
+    engine.setNoiseLayer(settings);
+    prepare(engine);
+    engine.play();
+    return context.startRendering();
+  }
+
+  it('is silent by default — nothing turns it on but a person (§3.8 item 6)', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(silentSchedule());
+    engine.play();
+    const buffer = await context.startRendering();
+
+    expect(peakAmplitude(buffer.getChannelData(0))).toBe(0);
+    expect(peakAmplitude(buffer.getChannelData(1))).toBe(0);
+  });
+
+  it('mixes a bed at the level a voice of the same volume would sit at', async () => {
+    const buffer = await renderLayer(silentSchedule(), { colour: 'gnaural', gain: 0.5 });
+
+    // NOISE_REFERENCE_RMS × 0.5, measured past the fade-in.
+    const from = Math.round(0.2 * SAMPLE_RATE);
+    expect(rms(buffer.getChannelData(0).subarray(from))).toBeCloseTo(0.145, 2);
+    expect(rms(buffer.getChannelData(1).subarray(from))).toBeCloseTo(0.145, 2);
+  });
+
+  it('is decorrelated across the channels, like every other noise here (§4.5)', async () => {
+    const buffer = await renderLayer(silentSchedule(), { colour: 'white', gain: 0.5 });
+
+    expect(buffer.getChannelData(0).slice(0, 100)).not.toEqual(buffer.getChannelData(1).slice(0, 100));
+  });
+
+  it("ignores the document's own mixing — it is the app's layer, not the file's", async () => {
+    // §4.5b puts it before the master gain, and the only master gain that is the app's to use is
+    // its own: `overallvolume_*` and `stereoswap` describe how the *program* is mixed. A program
+    // that is silent on the left and swapped still hears the same bed in both ears.
+    const buffer = await renderLayer(
+      silentSchedule({ masterVolume: { left: 0, right: 1 }, stereoSwap: true }),
+      { colour: 'gnaural', gain: 0.5 },
+    );
+
+    const from = Math.round(0.2 * SAMPLE_RATE);
+    expect(rms(buffer.getChannelData(0).subarray(from))).toBeCloseTo(0.145, 2);
+    expect(rms(buffer.getChannelData(1).subarray(from))).toBeCloseTo(0.145, 2);
+  });
+
+  it("follows the app's own volume, which is what the slider is for", async () => {
+    const buffer = await renderLayer(silentSchedule(), { colour: 'gnaural', gain: 0.5 }, (engine) =>
+      engine.setMasterGain(0),
+    );
+
+    expect(peakAmplitude(buffer.getChannelData(0))).toBeLessThan(0.01);
+  });
+
+  it('stops with the transport — a bed with nothing under it is just hiss', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(silentSchedule());
+    engine.setNoiseLayer({ colour: 'gnaural', gain: 0.5 });
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, 0.5, () => engine.pause());
+    const left = buffer.getChannelData(0);
+
+    expect(rms(left.subarray(Math.round(0.2 * SAMPLE_RATE), Math.round(0.45 * SAMPLE_RATE)))).toBeGreaterThan(0.1);
+    expect(peakAmplitude(left.subarray(Math.round(0.6 * SAMPLE_RATE)))).toBeLessThan(0.01);
+  });
+
+  it('ends where the schedule does, without waiting to be told', async () => {
+    // Scheduled up front like everything else (§4.2): rAF is not running with the screen off, so
+    // the app's own end-of-schedule stop cannot be what silences it.
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(makeSchedule([makeVoice([makeEntry({ duration: 0.5, volumeLeft: 0, volumeRight: 0 })])]));
+    engine.setNoiseLayer({ colour: 'gnaural', gain: 0.5 });
+    engine.play();
+    const buffer = await context.startRendering();
+
+    expect(peakAmplitude(buffer.getChannelData(0).subarray(Math.round(0.6 * SAMPLE_RATE)))).toBeLessThan(0.01);
+  });
+
+  it('crossfades a colour change rather than dropping out', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(silentSchedule());
+    engine.setNoiseLayer({ colour: 'gnaural', gain: 0.5 });
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, 0.5, () =>
+      engine.setNoiseLayer({ colour: 'white', gain: 0.5 }),
+    );
+    const left = buffer.getChannelData(0);
+
+    // Level holds across the swap — the old sources fade out as the new ones fade in.
+    const across = rms(left.subarray(Math.round(0.49 * SAMPLE_RATE), Math.round(0.53 * SAMPLE_RATE)));
+    expect(across).toBeGreaterThan(0.1);
+    expect(rms(left.subarray(Math.round(0.7 * SAMPLE_RATE)))).toBeCloseTo(0.145, 2);
+  });
+
+  it('is generated by prepare(), before anything is sounding, and stays silent there', async () => {
+    // The setting persists, so "already on before Play" is the common case. Filling the buffers
+    // inside the first `rescheduleFrom` would put tens of milliseconds between reading the clock
+    // and scheduling against it — the anti-click ramp back in the past, which is the bug
+    // `scheduleLookahead` exists for.
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(silentSchedule());
+    engine.setNoiseLayer({ colour: 'gnaural', gain: 0.5 });
+    engine.prepare();
+    const buffer = await context.startRendering();
+
+    expect(peakAmplitude(buffer.getChannelData(0))).toBe(0);
+  });
+
+  it('is absent from the export path, which renders the document as authored', async () => {
+    // `playSchedule` is what `renderSchedule` runs, and it shares `buildOutputChain` with the
+    // engine — so this pins the layer to `PlaybackEngine` rather than to the shared chain, which
+    // is also what keeps §5.3's null test comparing like with like.
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    playSchedule(context, silentSchedule());
+    const buffer = await context.startRendering();
+
+    expect(peakAmplitude(buffer.getChannelData(0))).toBe(0);
   });
 });

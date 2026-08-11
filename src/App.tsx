@@ -49,7 +49,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const player = usePlayer(current?.schedule ?? null, settings.masterGain);
+  // Rebuilt on every render, which `usePlayer` tolerates by depending on the two values.
+  const noise = { colour: settings.noiseColour, gain: settings.noiseGain };
+  const player = usePlayer(current?.schedule ?? null, settings.masterGain, noise);
 
   useMediaSession(player, current?.schedule.title ?? null, current?.subtitle);
   // Held here rather than in `PlayerView`, which unmounts while a program keeps playing.
@@ -186,6 +188,14 @@ function App() {
           player={player}
           masterGain={settings.masterGain}
           onMasterGainChange={(value) => set('masterGain', value)}
+          noise={noise}
+          onNoiseChange={(next) => {
+            set('noiseColour', next.colour);
+            set('noiseGain', next.gain);
+          }}
+          lostAmbientBed={
+            current.route.view === 'program' && findProgram(current.route.id)?.lostAmbientBed
+          }
           exportSampleRate={settings.exportSampleRate}
           onExportSampleRateChange={(rate) => set('exportSampleRate', rate)}
           wakeLock={settings.wakeLock}

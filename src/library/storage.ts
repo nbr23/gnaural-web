@@ -1,6 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { scheduleDuration } from '../document/timing';
 import type { Schedule } from '../document/types';
+import type { NoiseColour } from '../engine/noise';
 
 /**
  * Local-first persistence (PLAN.md §5.1): imported programs and settings, in IndexedDB.
@@ -41,6 +42,12 @@ export interface Settings {
   wakeLock: boolean;
   /** Whether the one-time headphone notice (§4.4) has been dismissed. */
   headphoneNoticeSeen: boolean;
+  /**
+   * The app-level noise layer (§4.5b) — a listening preference that belongs to the person, not to
+   * any program, which is why it lives here rather than with an imported schedule.
+   */
+  noiseColour: NoiseColour;
+  noiseGain: number;
 }
 
 interface GnauralDB extends DBSchema {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Schedule } from '../document/types';
-import { PlaybackEngine } from '../engine/engine';
+import type { NoiseLayerSettings } from '../engine/engine';
+import { PlaybackEngine, SILENT_NOISE_LAYER } from '../engine/engine';
 import { SilentKeepalive } from './keepalive';
 
 /**
@@ -59,10 +60,14 @@ export interface Player {
  * inside a user gesture (§4.4). The silent keepalive that makes lock-screen controls appear is
  * owned the same way, and started in the same gesture.
  *
- * `masterGain` is a *controlled* input rather than state owned here: it is a persisted setting
- * (`useSettings`), and the engine is only its sink.
+ * `masterGain` and `noise` are *controlled* inputs rather than state owned here: both are
+ * persisted settings (`useSettings`), and the engine is only their sink.
  */
-export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
+export function usePlayer(
+  schedule: Schedule | null,
+  masterGain = 1,
+  noise: NoiseLayerSettings = SILENT_NOISE_LAYER,
+): Player {
   const engineRef = useRef<PlaybackEngine | null>(null);
   const keepalive = useRef(new SilentKeepalive());
   const [playing, setPlaying] = useState(false);
@@ -88,10 +93,12 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
     return engineRef.current;
   }, []);
 
-  // Read through a ref so the level carries across a schedule change without a change to it
-  // re-triggering the load below.
+  // Read through refs so the app's own levels carry across a schedule change without a change to
+  // either re-triggering the load below.
   const masterGainRef = useRef(masterGain);
   masterGainRef.current = masterGain;
+  const noiseRef = useRef(noise);
+  noiseRef.current = noise;
 
   // A new schedule tears down and rebuilds the graph; transport state resets with it. Navigating
   // to the library no longer clears the schedule, so this cleanup now runs only when the program
@@ -102,6 +109,7 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
     const instance = engine();
     instance.load(schedule);
     instance.setMasterGain(masterGainRef.current);
+    instance.setNoiseLayer(noiseRef.current);
     setPlaying(false);
     setOffset(0);
     setDuration(instance.getDuration());
@@ -123,6 +131,14 @@ export function usePlayer(schedule: Schedule | null, masterGain = 1): Player {
   useEffect(() => {
     engineRef.current?.setMasterGain(masterGain);
   }, [masterGain]);
+
+  // Same contract as the master gain: the setting is the source, the engine is the sink, and
+  // nothing reaches it before a context exists. Depends on the two values rather than the object,
+  // which the caller is free to rebuild on every render.
+  const { colour: noiseColour, gain: noiseGain } = noise;
+  useEffect(() => {
+    engineRef.current?.setNoiseLayer({ colour: noiseColour, gain: noiseGain });
+  }, [noiseColour, noiseGain]);
 
   useEffect(() => {
     if (!playing) return;

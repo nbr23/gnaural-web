@@ -1,6 +1,15 @@
 import { OfflineAudioContext } from 'node-web-audio-api';
 import { describe, expect, it } from 'vitest';
-import { NOISE_BUFFER_SECONDS, createNoiseBuffer, noiseSeeds } from './noise';
+import type { NoiseColour } from './noise';
+import {
+  LAYER_NOISE_SEEDS,
+  NOISE_BUFFER_SECONDS,
+  NOISE_COLOURS,
+  NOISE_REFERENCE_RMS,
+  createLayerNoiseBuffer,
+  createNoiseBuffer,
+  noiseSeeds,
+} from './noise';
 
 const SAMPLE_RATE = 44100;
 
@@ -91,5 +100,68 @@ describe('createNoiseBuffer', () => {
 
     // The wrap must be no more abrupt than an ordinary sample-to-sample step inside the buffer.
     expect(seamDelta).toBeLessThanOrEqual(maxDelta);
+  });
+});
+
+describe('createLayerNoiseBuffer — the app-level layer (§4.5b)', () => {
+  function layer(colour: NoiseColour, seed = LAYER_NOISE_SEEDS[0]): Float32Array {
+    return createLayerNoiseBuffer(context(), seed, colour).getChannelData(0);
+  }
+
+  it('leaves the file-driven generator alone', () => {
+    // §4.5 keeps the two concerns apart, and this is the one that must not move: every existing
+    // schedule was authored against the voice path's exact sound and level.
+    expect(Array.from(layer('gnaural').subarray(0, 200))).not.toEqual(
+      Array.from(channel(LAYER_NOISE_SEEDS[0]).subarray(0, 200)),
+    );
+  });
+
+  it('levels every colour against each other, so the control means one thing', () => {
+    for (const colour of NOISE_COLOURS) {
+      expect(rms(layer(colour))).toBeCloseTo(NOISE_REFERENCE_RMS, 3);
+    }
+  });
+
+  it("levels them against a file's own noise voice at the same volume", () => {
+    // The reference level is Gnaural's, so the layer at gain g is as loud as a type-1 voice at
+    // volume g. Pinning the constant against the generator it was measured from is what keeps that
+    // claim true if either ever changes.
+    expect(rms(channel(11))).toBeCloseTo(NOISE_REFERENCE_RMS, 1);
+  });
+
+  it('gives each colour a distinct spectrum, hiss through to rumble', () => {
+    // Zero-crossing rate stands in for brightness: white sits at 0.5 by definition and each
+    // rolloff takes it down. Ordering is asserted rather than absolute values, since only the
+    // white case has a closed form.
+    const [white, pink, gnaural, brown] = (['white', 'pink', 'gnaural', 'brown'] as const).map(
+      (colour) => zeroCrossingRate(layer(colour)),
+    );
+
+    expect(white).toBeCloseTo(0.5, 1);
+    expect(pink).toBeLessThan(white);
+    expect(gnaural).toBeLessThan(pink);
+    // −6 dB/octave from DC, against a one-pole that is flat below ~200 Hz.
+    expect(brown).toBeLessThan(gnaural);
+  });
+
+  it('loops without a seam in every colour', () => {
+    for (const colour of NOISE_COLOURS) {
+      const samples = layer(colour);
+
+      let maxDelta = 0;
+      for (let i = 1; i < samples.length; i++) {
+        maxDelta = Math.max(maxDelta, Math.abs(samples[i] - samples[i - 1]));
+      }
+
+      expect(Math.abs(samples[0] - samples[samples.length - 1])).toBeLessThanOrEqual(maxDelta);
+    }
+  });
+
+  it('generates decorrelated channels from its own seed pair', () => {
+    const [seedL, seedR] = LAYER_NOISE_SEEDS;
+
+    expect(Math.abs(correlation(layer('gnaural', seedL), layer('gnaural', seedR)))).toBeLessThan(0.05);
+    // And against a voice's stream, so a bed under a schedule that has noise of its own stays wide.
+    expect(Math.abs(correlation(layer('gnaural', seedL), channel(noiseSeeds(0)[0])))).toBeLessThan(0.05);
   });
 });

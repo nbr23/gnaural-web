@@ -481,6 +481,59 @@ describe('settings', () => {
     await flush();
     expect((root.query('.player__volume input') as HTMLInputElement).value).toBe('0.35');
   });
+
+  it('remembers the noise layer, which belongs to the listener rather than to a program', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    root.act(() => setInputValue(root.query('.noise__level input') as HTMLInputElement, '0.3'));
+    root.act(() => setSelectValue(root.query('.noise__colour select') as HTMLSelectElement, 'brown'));
+    await wait(WRITE_DEBOUNCE);
+
+    root.remount(<App />);
+    await flush();
+    // Not per-program: it is a preference about listening, so it carries to the next one.
+    window.location.hash = '#/p/sleep-smr';
+    await flush();
+
+    expect((root.query('.noise__level input') as HTMLInputElement).value).toBe('0.3');
+    expect((root.query('.noise__colour select') as HTMLSelectElement).value).toBe('brown');
+  });
+});
+
+describe('the app-level noise layer (§4.5b)', () => {
+  it('is off until someone turns it on (§3.8 item 6)', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    expect((root.query('.noise__level input') as HTMLInputElement).value).toBe('0');
+    expect(root.query('.noise')?.textContent).toContain('Off');
+  });
+
+  it('says it is not exported, where the omission would otherwise surprise', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    expect(root.query('.export')?.textContent).not.toContain('background noise layer');
+
+    root.act(() => setInputValue(root.query('.noise__level input') as HTMLInputElement, '0.3'));
+
+    expect(root.query('.export')?.textContent).toContain('background noise layer is not included');
+  });
+
+  it('points the four presets that lost their ambient bed at it, and nothing else', async () => {
+    window.location.hash = '#/p/meditation-unity';
+    root.render(<App />);
+    await flush();
+    expect(root.query('.noise')?.textContent).toContain('originally had an ambient background');
+
+    window.location.hash = '#/p/powernap';
+    await flush();
+    expect(root.query('.noise')?.textContent).not.toContain('originally had an ambient background');
+  });
 });
 
 describe('the warning surface (§3.3, §3.4, §3.7)', () => {

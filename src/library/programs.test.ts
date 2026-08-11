@@ -22,6 +22,18 @@ describe('bundled library', () => {
     expect(categories.flatMap((c) => c.programs)).toHaveLength(19);
   });
 
+  it('knows exactly which four presets lost their ambient bed', () => {
+    // fixtures/presets/README.md: four presets used the ambient ogg loop PLAN.md §4.6 left behind,
+    // and it names the app-level noise layer (§4.5b) as their remedy. The player points at that
+    // control on these four and nowhere else, so the set is pinned rather than inferred.
+    expect(PROGRAMS.filter((program) => program.lostAmbientBed).map((program) => program.id)).toEqual([
+      'healing-morphine',
+      'meditation-unity',
+      'oobe-lucid-dreams-2',
+      'sleep-sleep-induction',
+    ]);
+  });
+
   it('resolves a program by id and rejects an unknown one', async () => {
     expect(findProgram('powernap')?.title).toBe('Power Nap');
     expect(findProgram('nope')).toBeUndefined();

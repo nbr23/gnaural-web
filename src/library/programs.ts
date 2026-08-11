@@ -21,7 +21,20 @@ export interface BundledProgram {
   description: string;
   /** From the manifest, for display in the list before the file is fetched and parsed. */
   durationSeconds: number;
+  /**
+   * Whether this program had a sampled ambient bed on Android that did not survive conversion —
+   * the manifest's `UNITY` background, four presets in all
+   * (`fixtures/presets/README.md`).
+   *
+   * Carried only so the player can point at the app-level noise layer (§4.5b), which that README
+   * names as their remedy. Nothing is enabled on the listener's behalf: §4.6 keeps the app purely
+   * synthetic and §3.8 item 6 is what forcing noise on looks like when it goes wrong.
+   */
+  lostAmbientBed: boolean;
 }
+
+/** The manifest's name for the ambient ogg loop PLAN.md §4.6 deliberately left behind. */
+const AMBIENT_BACKGROUND = 'UNITY';
 
 /**
  * Lazy so each program is its own chunk rather than ~96 KB in the main bundle — the list only
@@ -49,6 +62,7 @@ const GNAURAL_ORIGINALS: BundledProgram[] = [
     author: 'Gnaural',
     description: 'Around 20mn of rest to make it through the day. Put on your headphones and relax!',
     durationSeconds: 1200,
+    lostAmbientBed: false,
   },
   {
     id: 'airplanetravelaid',
@@ -60,6 +74,7 @@ const GNAURAL_ORIGINALS: BundledProgram[] = [
     // 73.5 minutes. PLAN.md §8's fixture table says "~3600 s"; the entries — and the file's own
     // totaltime — say 4410.
     durationSeconds: 4410,
+    lostAmbientBed: false,
   },
 ];
 
@@ -76,6 +91,7 @@ const PRESETS: BundledProgram[] = manifest.map((preset) => ({
   author: preset.author,
   description: preset.description.trim(),
   durationSeconds: preset.durationSeconds,
+  lostAmbientBed: preset.backgrounds.includes(AMBIENT_BACKGROUND),
 }));
 
 export const PROGRAMS: BundledProgram[] = [...GNAURAL_ORIGINALS, ...PRESETS];

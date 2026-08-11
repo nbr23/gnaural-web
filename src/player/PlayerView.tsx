@@ -3,9 +3,11 @@ import { LIBRARY, navigate } from '../app/routing';
 import type { Schedule } from '../document/types';
 import type { ScheduleWarning } from '../document/warnings';
 import { scheduleWarnings } from '../document/warnings';
+import type { NoiseLayerSettings } from '../engine/engine';
 import { ScheduleChart } from '../viz/ScheduleChart';
 import { WarningList } from './WarningList';
 import { ExportPanel } from './ExportPanel';
+import { NoisePanel } from './NoisePanel';
 import { Readout } from './Readout';
 import { Timeline } from './Timeline';
 import { VoiceList } from './VoiceList';
@@ -22,6 +24,10 @@ export interface PlayerViewProps {
   player: Player;
   masterGain: number;
   onMasterGainChange(value: number): void;
+  noise: NoiseLayerSettings;
+  onNoiseChange(noise: NoiseLayerSettings): void;
+  /** True for the four presets that lost their ambient bed — see `NoisePanel`. */
+  lostAmbientBed?: boolean;
   exportSampleRate: number;
   onExportSampleRateChange(rate: number): void;
   wakeLock: boolean;
@@ -37,6 +43,9 @@ export function PlayerView({
   player,
   masterGain,
   onMasterGainChange,
+  noise,
+  onNoiseChange,
+  lostAmbientBed,
   exportSampleRate,
   onExportSampleRateChange,
   wakeLock,
@@ -139,6 +148,8 @@ export function PlayerView({
         />
       </label>
 
+      <NoisePanel noise={noise} onChange={onNoiseChange} lostAmbientBed={lostAmbientBed} />
+
       <label className="player__wake-lock">
         <input
           type="checkbox"
@@ -164,6 +175,7 @@ export function PlayerView({
         schedule={schedule}
         sampleRate={exportSampleRate}
         onSampleRateChange={onExportSampleRateChange}
+        noiseActive={noise.gain > 0}
       />
 
       <p className="player__note">Headphones required — the beat only exists between two ears.</p>

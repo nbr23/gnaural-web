@@ -3,7 +3,8 @@ import type { Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import type { AutomationEvent, AutomationValues } from './compiler';
 import { compileVoice, valueAtTime } from './compiler';
-import { createNoiseBuffer, noiseSeeds } from './noise';
+import type { NoiseColour } from './noise';
+import { LAYER_NOISE_SEEDS, createLayerNoiseBuffer, createNoiseBuffer, noiseSeeds } from './noise';
 
 /** Anti-click gain ramp duration (PLAN.md §4.4 — ~20ms, applied on every transport transition). */
 export const CLICK_FREE_RAMP = 0.02;
@@ -152,6 +153,85 @@ function rampParam(param: AudioParam, value: number, at: number): void {
   param.cancelScheduledValues(at);
   param.setValueAtTime(param.value, at);
   param.linearRampToValueAtTime(value, at + CLICK_FREE_RAMP);
+}
+
+/** The app-level noise layer's settings (§4.5b), app state rather than document state. */
+export interface NoiseLayerSettings {
+  colour: NoiseColour;
+  /**
+   * 0–1, on the same scale a voice's `volume_*` uses: at 0.3 the bed is as loud as a file's own
+   * type-1 voice at volume 0.3.
+   *
+   * **Zero by default, and nothing turns it on but a person.** §3.8 item 6 is the Android
+   * importer forcing white noise onto every segment at a hardcoded gain regardless of file
+   * content; this is that feature with the defect removed, and the difference is the default.
+   */
+  gain: number;
+}
+
+export const SILENT_NOISE_LAYER: NoiseLayerSettings = { colour: 'gnaural', gain: 0 };
+
+interface NoiseLayer {
+  colour: NoiseColour;
+  buffers: [AudioBuffer, AudioBuffer];
+  merger: ChannelMergerNode;
+  gain: GainNode;
+  nodes: AudioBufferSourceNode[];
+}
+
+/**
+ * The app's own noise bed (§4.5b), mixed **into the app's master gain and nothing else**.
+ *
+ * That placement is the whole design. §4.5b says "before the master gain", and the only master
+ * gain that is the app's to use is `output.masterGain` — the file's `overallvolume_*` and its
+ * `stereoswap` both belong to the document, and applying them to a layer the document does not
+ * contain would make the app's preference follow the program's mixing decisions. So a schedule
+ * with a swap, or with silence in one channel, hears exactly the same bed as any other; only the
+ * volume slider, which is the app's own, moves it.
+ *
+ * Its two channels come from independent streams, per §4.5's decorrelation, merged back to stereo
+ * so a single gain node carries the level.
+ */
+function buildNoiseLayer(context: BaseAudioContext, output: OutputChain, colour: NoiseColour): NoiseLayer {
+  const [seedL, seedR] = LAYER_NOISE_SEEDS;
+  const merger = context.createChannelMerger(2);
+  const gain = context.createGain();
+  gain.gain.value = 0; // faded in by the caller, so switching it on is not a step
+
+  merger.connect(gain).connect(output.masterGain);
+  return {
+    colour,
+    buffers: [
+      createLayerNoiseBuffer(context, seedL, colour),
+      createLayerNoiseBuffer(context, seedR, colour),
+    ],
+    merger,
+    gain,
+    nodes: [],
+  };
+}
+
+/**
+ * Start the layer's buffer sources, positioned by schedule time for the same reason a noise
+ * voice's are: `AudioBufferSourceNode`s are single-use, so every transport transition replaces
+ * them, and seeking into the buffer keeps the bed a function of where playback is rather than of
+ * how many times it has been started.
+ */
+function startNoiseLayer(context: BaseAudioContext, layer: NoiseLayer, at: number, offset: number): void {
+  stopNoiseLayer(layer, at);
+  layer.nodes = layer.buffers.map((buffer, channel) => {
+    const node = context.createBufferSource();
+    node.buffer = buffer;
+    node.loop = true;
+    node.connect(layer.merger, 0, channel);
+    node.start(at, offset % buffer.duration);
+    return node;
+  });
+}
+
+function stopNoiseLayer(layer: NoiseLayer, when: number): void {
+  for (const node of layer.nodes) node.stop(when);
+  layer.nodes = [];
 }
 
 /**
@@ -505,6 +585,8 @@ export class PlaybackEngine {
   private duration = 0;
   private passes = 1;
   private masterGain = 1;
+  private noise: NoiseLayerSettings = SILENT_NOISE_LAYER;
+  private noiseLayer: NoiseLayer | null = null;
   private muted = new Set<number>();
   private soloed = new Set<number>();
 
@@ -710,6 +792,26 @@ export class PlaybackEngine {
     return this.masterGain;
   }
 
+  /**
+   * The app's own noise bed (§4.5b) — a listening preference, not part of the loaded document.
+   *
+   * It therefore survives `load()` like the master volume does, follows the transport (a bed with
+   * nothing under it is just hiss), and is **absent from `playSchedule`**, which is the export
+   * path: a WAV is the document as authored, and the same program must export the same bytes
+   * whoever renders it.
+   */
+  setNoiseLayer(settings: NoiseLayerSettings): void {
+    this.noise = { colour: settings.colour, gain: Math.max(0, settings.gain) };
+    if (!this.context) return;
+
+    const at = this.context.currentTime + scheduleLookahead(this.context);
+    this.applyNoiseLayer(at, this.playing && !this.hasEnded());
+  }
+
+  getNoiseLayer(): NoiseLayerSettings {
+    return this.noise;
+  }
+
   setVoiceMuted(index: number, muted: boolean): void {
     setMembership(this.muted, index, muted);
     this.applyVoiceGates();
@@ -776,6 +878,14 @@ export class PlaybackEngine {
     output.masterGain.gain.value = this.masterGain;
     this.output = output;
     this.buildVoices(context, schedule, output);
+
+    // Generated here rather than left to the first transition, for the case that matters most:
+    // the setting persists, so a returning listener has it on before they press Play. Filling two
+    // ten-second buffers is tens of milliseconds of main-thread work, and inside `rescheduleFrom`
+    // that work sits between reading the clock and scheduling against it — long enough to push the
+    // anti-click ramp back into the past, which is exactly the bug `scheduleLookahead` exists for.
+    // `prepare()` runs this inside the user's gesture, before anything is sounding.
+    if (this.noise.gain > 0) this.noiseLayer = buildNoiseLayer(context, output, this.noise.colour);
   }
 
   /** Separate from `buildGraph` because `update()` replaces voices while keeping the output chain
@@ -798,6 +908,10 @@ export class PlaybackEngine {
     const now = this.context?.currentTime ?? 0;
     for (const { nodes } of this.voiceStates) disposeSource(nodes.source, now);
     this.voiceStates = [];
+    // The layer's settings are app state and survive a new program, but its nodes hang off the
+    // output chain this is discarding, so they are rebuilt with the next graph.
+    if (this.noiseLayer) stopNoiseLayer(this.noiseLayer, now);
+    this.noiseLayer = null;
     this.output = null;
   }
 
@@ -847,6 +961,81 @@ export class PlaybackEngine {
     for (const set of [this.muted, this.soloed]) {
       for (const index of [...set]) if (index >= next.voices.length) set.delete(index);
     }
+  }
+
+  /**
+   * Bring the noise layer into line with its settings and the transport, as of context time `at`.
+   *
+   * Called at the end of every `rescheduleFrom` — the choke point §4.3 gives every transition —
+   * and from `setNoiseLayer`, which is a transition for this one node. `sounding` is that
+   * transition's own answer to "is there audio after this", so a seek to the very end silences the
+   * bed with everything else.
+   *
+   * The layer is **built on first use and never before**, so a listener who leaves it off never
+   * pays for a second pair of looping buffer sources. That cost is the one this graph has proved
+   * sensitive to on a phone, and the layer is off by default.
+   */
+  private applyNoiseLayer(at: number, sounding: boolean): void {
+    const context = this.context;
+    const output = this.output;
+    if (!context || !output) return;
+
+    const audible = sounding && this.noise.gain > 0;
+
+    // A colour is a different buffer and so needs different sources. Fade the old ones out and
+    // release them; the replacement below is built silent and fades in over them, so the change is
+    // a crossfade rather than a hole. Nothing disconnects anything — a stopped source releases the
+    // chain behind it, and a JS timer waiting to disconnect is what §4.2 keeps out of the audio
+    // path.
+    if (this.noiseLayer && this.noiseLayer.colour !== this.noise.colour) {
+      this.retireNoiseLayer(at);
+    }
+    if (audible && !this.noiseLayer) {
+      this.noiseLayer = buildNoiseLayer(context, output, this.noise.colour);
+    }
+
+    const layer = this.noiseLayer;
+    if (!layer) return;
+
+    const target = audible ? this.noise.gain : 0;
+    const gain = layer.gain.gain;
+    // Read before cancelling, held flat across the lookahead window, then ramped — the same shape
+    // `rescheduleFrom` uses on every other gain, and for the same reasons.
+    const held = gain.value;
+    gain.cancelScheduledValues(at);
+    gain.setValueAtTime(held, at);
+    gain.linearRampToValueAtTime(target, at + CLICK_FREE_RAMP);
+
+    if (!audible) {
+      stopNoiseLayer(layer, at + CLICK_FREE_RAMP);
+      return;
+    }
+
+    // Only when there are none: a seek does not need to reposition stationary noise, and a slider
+    // dragged across the level should not rebuild a source ten times a second.
+    if (layer.nodes.length === 0) startNoiseLayer(context, layer, at, this.getTotalOffset());
+
+    // The bed ends where the programme does, scheduled up front like everything else (§4.2).
+    // Held flat until then rather than ramped from here, which would fade it out across the whole
+    // schedule.
+    const endsAt = this.anchorContextTime + this.getTotalDuration();
+    if (endsAt > at + CLICK_FREE_RAMP) {
+      gain.setValueAtTime(target, endsAt);
+      gain.linearRampToValueAtTime(0, endsAt + CLICK_FREE_RAMP);
+    }
+  }
+
+  private retireNoiseLayer(at: number): void {
+    const layer = this.noiseLayer;
+    if (!layer) return;
+
+    const gain = layer.gain.gain;
+    const held = gain.value;
+    gain.cancelScheduledValues(at);
+    gain.setValueAtTime(held, at);
+    gain.linearRampToValueAtTime(0, at + CLICK_FREE_RAMP);
+    stopNoiseLayer(layer, at + CLICK_FREE_RAMP);
+    this.noiseLayer = null;
   }
 
   private applyVoiceGates(): void {
@@ -950,6 +1139,9 @@ export class PlaybackEngine {
     this.anchorContextTime = t0;
     this.frozenTotal = total;
     this.playing = playing;
+
+    // Last, so it reads the position and the schedule end this transition has just established.
+    this.applyNoiseLayer(at, audible);
   }
 }
 
