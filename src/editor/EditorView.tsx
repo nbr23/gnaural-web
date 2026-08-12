@@ -1,18 +1,40 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatClock } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
 import { useThrottled } from '../app/useThrottled';
+import type { MoveMode } from '../document/edit';
 import { updateSchedule } from '../document/edit';
 import type { Schedule } from '../document/types';
 import { VolumeSlider } from '../player/Controls';
 import { Readout } from '../player/Readout';
 import { Timeline } from '../player/Timeline';
 import type { Player } from '../player/usePlayer';
-import { ScheduleChart } from '../viz/ScheduleChart';
+import type { LaneId } from '../viz/geometry';
+import { ALL_LANES, DEFAULT_LANES } from '../viz/geometry';
 import { CommittedField } from './CommittedField';
+import { EditSurface } from './EditSurface';
+import { NodePanel } from './NodePanel';
 import { useDraft } from './useDraft';
 import { useEditor } from './useEditor';
 import './EditorView.css';
+
+/**
+ * Lane heights, chosen so four lanes are usable rather than four times a quarter of a fixed box.
+ *
+ * §6.1 asks for independently collapsible lanes and this is why it could not wait for step 8: the
+ * chart divides its total height between however many lanes it is given, so beat, base and both
+ * volumes inside the read-only 280 px leaves about 44 px of plot each — unusable before it is
+ * unzoomable.
+ */
+const LANE_HEIGHT = 116;
+const AXIS_BAND = 30;
+
+const LANE_LABELS: Record<LaneId, string> = {
+  beat: 'Beat',
+  base: 'Base',
+  volumeLeft: 'Volume L',
+  volumeRight: 'Volume R',
+};
 
 export interface EditorViewProps {
   draftId: string;
@@ -51,6 +73,11 @@ export function EditorView({
   const schedule = editor.document;
   const { pending } = useDraft(draftId, schedule);
 
+  // Session state, deliberately outside the history stack: which lanes are open and how a drag
+  // treats the following segment are properties of the person editing, not of the document.
+  const [lanes, setLanes] = useState<readonly LaneId[]>(DEFAULT_LANES);
+  const [mode, setMode] = useState<MoveMode>('squeeze');
+
   const patch = useCallback(
     (label: string, fields: Parameters<typeof updateSchedule>[1]) => {
       editor.commit(updateSchedule(schedule, fields), { label });
@@ -58,7 +85,12 @@ export function EditorView({
     [editor, schedule],
   );
 
-  usePlaybackOfEdits(player, initial, schedule);
+  const commitEdit = useCallback(
+    (next: Schedule, label: string) => editor.commit(next, { label }),
+    [editor],
+  );
+
+  const { preview } = usePlaybackOfEdits(player, initial, schedule);
   useUndoShortcuts(editor.undo, editor.redo);
 
   const title = schedule.title.trim() || 'Untitled program';
@@ -84,11 +116,48 @@ export function EditorView({
 
       <Readout schedule={schedule} offset={player.offset} />
 
-      <ScheduleChart
+      <div className="editor__lanes">
+        <span className="editor__lanes-label">Lanes</span>
+        {ALL_LANES.map((lane) => (
+          <label key={lane} className="editor__check">
+            <input
+              type="checkbox"
+              checked={lanes.includes(lane)}
+              onChange={(event) =>
+                setLanes(
+                  event.target.checked
+                    ? ALL_LANES.filter((id) => id === lane || lanes.includes(id))
+                    : lanes.filter((id) => id !== lane),
+                )
+              }
+            />
+            <span>{LANE_LABELS[lane]}</span>
+          </label>
+        ))}
+
+        {/* There is no modifier key on a phone, so the squeeze/ripple choice is a control rather
+            than a chord. Alt is a momentary override on a keyboard, handled in `EditSurface`. */}
+        <label className="editor__check editor__mode">
+          <input
+            type="checkbox"
+            checked={mode === 'ripple'}
+            onChange={(event) => setMode(event.target.checked ? 'ripple' : 'squeeze')}
+          />
+          <span>Ripple — move everything after the node too</span>
+        </label>
+      </div>
+
+      <EditSurface
         schedule={schedule}
+        lanes={lanes}
+        height={Math.max(1, lanes.length) * LANE_HEIGHT + AXIS_BAND}
         currentTime={player.offset}
+        selected={editor.selection}
+        mode={mode}
+        onSelect={editor.select}
+        onCommit={commitEdit}
+        onPreview={preview}
         onSeek={player.seek}
-        className="editor__chart"
       />
 
       <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
@@ -108,6 +177,8 @@ export function EditorView({
       </div>
 
       <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
+
+      <NodePanel schedule={schedule} selected={editor.selection} mode={mode} onCommit={commitEdit} />
 
       <section className="editor__fields">
         <h2>Program</h2>
@@ -215,7 +286,11 @@ function numberOr(value: string, fallback: number): number {
  * that cancels the previous ramp before it has landed. Held-down undo is the surface here that can
  * outrun it.
  */
-function usePlaybackOfEdits(player: Player, initial: Schedule, schedule: Schedule): void {
+function usePlaybackOfEdits(
+  player: Player,
+  initial: Schedule,
+  schedule: Schedule,
+): { preview: (next: Schedule) => void } {
   const pushed = useRef(initial);
   // Not memoised: `useThrottled` always calls the most recent action it was given, so a pending
   // push cannot reach a player this render has already replaced.
@@ -226,6 +301,24 @@ function usePlaybackOfEdits(player: Player, initial: Schedule, schedule: Schedul
     pushed.current = schedule;
     push(schedule);
   }, [push, schedule]);
+
+  /**
+   * The in-flight document from a gesture. **The only caller of the truncated editing horizon**, and
+   * the reason it is safe: forgetting to opt in costs nothing, and the commit that ends the gesture
+   * goes through the ordinary full-horizon path above — so a forgotten expansion makes the edit not
+   * exist, which is undeniable, rather than making the audio go quiet in sixty seconds.
+   *
+   * Already rate-limited inside `EditSurface`; this only routes it and marks the horizon.
+   */
+  const preview = useCallback(
+    (next: Schedule) => {
+      pushed.current = next;
+      player.update(next, 'gesture');
+    },
+    [player],
+  );
+
+  return { preview };
 }
 
 function affectsAudio(previous: Schedule, next: Schedule): boolean {

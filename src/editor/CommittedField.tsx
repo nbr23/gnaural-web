@@ -6,6 +6,8 @@ export interface CommittedFieldProps {
   value: string;
   multiline?: boolean;
   numeric?: boolean;
+  /** For a derived value that is shown for completeness rather than edited. */
+  readOnly?: boolean;
   /** Shown under the field — what the value means, when the number alone does not say it. */
   hint?: string;
   onCommit(value: string): void;
@@ -28,6 +30,7 @@ export function CommittedField({
   value,
   multiline,
   numeric,
+  readOnly,
   hint,
   onCommit,
 }: CommittedFieldProps) {
@@ -46,6 +49,7 @@ export function CommittedField({
 
   const shared = {
     value: draft,
+    readOnly,
     onFocus: () => {
       editing.current = true;
     },

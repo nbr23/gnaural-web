@@ -116,6 +116,51 @@ export function renderHook<T>(hook: () => T): HookResult<T> {
 }
 
 /**
+ * Give an element a bounding rect, because happy-dom has no layout engine and reports zeros.
+ *
+ * Anything that converts client coordinates into its own pixel space divides by this — `ScheduleChart`
+ * does, so that hit-testing survives a CSS size that disagrees with the width attribute. Without a
+ * rect there is nothing to divide by and a pointer test measures the fallback rather than the maths.
+ * Assigned on the instance, which happy-dom permits.
+ */
+export function stubRect(element: Element, width: number, height: number, left = 0, top = 0): void {
+  element.getBoundingClientRect = () =>
+    ({
+      x: left,
+      y: top,
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      toJSON: () => ({}),
+    }) as DOMRect;
+}
+
+/**
+ * Dispatch a real `PointerEvent` — happy-dom implements the constructor, and `setPointerCapture` is
+ * present and a safe no-op, so the capture path a drag depends on runs unmodified.
+ */
+export function pointer(
+  element: Element,
+  type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
+  position: { x: number; y: number; id?: number; altKey?: boolean },
+): void {
+  act(() => {
+    element.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        clientX: position.x,
+        clientY: position.y,
+        pointerId: position.id ?? 1,
+        altKey: position.altKey ?? false,
+      }),
+    );
+  });
+}
+
+/**
  * Set a controlled input's value the way a user would.
  *
  * Assigning `.value` directly also updates React's internal value tracker, so React concludes

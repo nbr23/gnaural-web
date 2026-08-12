@@ -6,8 +6,17 @@ import { DRAFT_SAVE_DEBOUNCE_MS } from '../editor/useDraft';
 import { encodeSharePayload } from '../files/shareLink';
 import { PROGRAMS } from '../library/programs';
 import { listDrafts, listImported } from '../library/storage';
-import { mediaSession, resetDatabase, resetPlatform, wakeLocks } from '../test-setup';
-import { flush, setCheckbox, setInputValue, setSelectValue, setupRoot, wait } from '../test-utils';
+import { TEST_WIDTH, mediaSession, resetDatabase, resetPlatform, wakeLocks } from '../test-setup';
+import {
+  flush,
+  pointer,
+  setCheckbox,
+  setInputValue,
+  setSelectValue,
+  setupRoot,
+  stubRect,
+  wait,
+} from '../test-utils';
 
 const root = setupRoot();
 
@@ -675,7 +684,10 @@ describe('the editor (§6.1)', () => {
     root.click(root.byText('.button--primary', 'Play'));
     await flush();
 
-    const swap = root.query('.editor__check input') as HTMLInputElement;
+    // By label, not by position: the lane toggles are `.editor__check` too, and now come first.
+    const swap = root
+      .byText('.editor__check', 'Swap left and right')
+      ?.querySelector('input') as HTMLInputElement;
     root.act(() => setCheckbox(swap, true));
     type('Volume left', '0.5');
     await wait(200);
@@ -713,6 +725,90 @@ describe('the editor (§6.1)', () => {
     await flush();
 
     expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * §6.1 asks for four independently collapsible lanes. Collapsing could not wait for step 8's zoom
+   * work: the chart divides its height between the lanes it is given, so four inside the read-only
+   * 280 px would leave about 44 px of plot each.
+   */
+  it('opens and closes the volume lanes', async () => {
+    await openDraftOf();
+
+    const laneToggle = (label: string) =>
+      root.byText('.editor__lanes .editor__check', label)?.querySelector('input') as HTMLInputElement;
+
+    expect(root.text()).not.toContain('Volume left (');
+    expect(laneToggle('Volume L').checked).toBe(false);
+
+    root.act(() => setCheckbox(laneToggle('Volume L'), true));
+    expect(root.queryAll('.schedule-chart__lane-title').map((t) => t.textContent)).toEqual([
+      'Beat frequency (Hz)',
+      'Base frequency (Hz)',
+      'Volume left',
+    ]);
+
+    root.act(() => setCheckbox(laneToggle('Beat'), false));
+    expect(root.queryAll('.schedule-chart__lane-title').map((t) => t.textContent)).toEqual([
+      'Base frequency (Hz)',
+      'Volume left',
+    ]);
+  });
+
+  it('selects a node from the chart and edits it to an exact value', async () => {
+    await openDraftOf();
+
+    const svg = root.query('.editor__chart svg') as SVGSVGElement;
+    stubRect(svg, TEST_WIDTH, 262);
+    expect(root.text()).toContain('Tap a node on the chart');
+
+    const marker = root.queryAll('circle.schedule-chart__node')[2];
+    pointer(svg, 'pointerdown', {
+      x: Number(marker.getAttribute('cx')),
+      y: Number(marker.getAttribute('cy')),
+    });
+    pointer(svg, 'pointerup', {
+      x: Number(marker.getAttribute('cx')),
+      y: Number(marker.getAttribute('cy')),
+    });
+
+    // A tap is a selection and nothing else: no move, so no commit.
+    expect(root.text()).toContain('Node 3 of 12');
+    expect(root.byText('.button', 'Undo')?.hasAttribute('disabled')).toBe(true);
+
+    // §6.1's reason for the panel: a drag cannot reach every value, and typing can.
+    type('Beat (Hz)', '17.5');
+    expect(field('Beat (Hz)').value).toBe('17.5');
+    expect(root.byText('.button', 'Undo')?.textContent).toContain('change beat frequency');
+
+    root.click(root.byText('.button', 'Undo'));
+    // Undo restores the selection the commit was made with, so the obvious next action works.
+    expect(root.text()).toContain('Node 3 of 12');
+  });
+
+  it('drags a node and keeps playing, without reloading the graph', async () => {
+    await openDraftOf();
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+
+    const svg = root.query('.editor__chart svg') as SVGSVGElement;
+    stubRect(svg, TEST_WIDTH, 262);
+    const marker = root.queryAll('circle.schedule-chart__node')[3];
+    const at = { x: Number(marker.getAttribute('cx')), y: Number(marker.getAttribute('cy')) };
+
+    pointer(svg, 'pointerdown', at);
+    pointer(svg, 'pointermove', { x: at.x + 12, y: at.y - 18 });
+    pointer(svg, 'pointermove', { x: at.x + 24, y: at.y - 30 });
+    pointer(svg, 'pointerup', { x: at.x + 24, y: at.y - 30 });
+    await wait(200);
+
+    // The third caller of `player.update`, honouring the same invariant Live mode's test pins:
+    // the `schedule` prop keeps its identity, so `load()` — a teardown — never runs.
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+    expect(root.byText('.button', 'Undo')?.textContent).toContain('move node');
+    // One commit for the whole gesture, not one per move.
+    root.click(root.byText('.button', 'Undo'));
+    expect(root.byText('.button', 'Undo')?.hasAttribute('disabled')).toBe(true);
   });
 });
 

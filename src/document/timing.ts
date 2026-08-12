@@ -12,6 +12,23 @@ export function voiceDuration(voice: Voice): number {
 }
 
 /**
+ * Absolute start time of every entry, by prefix sum over the durations before it.
+ *
+ * Entries store *duration* rather than absolute time (§4.1), which is what makes an insertion a
+ * local edit; a chart's x-axis and an editor's time drag both want the other form, so the
+ * conversion lives here rather than being re-derived at each call site.
+ */
+export function entryStartTimes(voice: Voice): number[] {
+  const starts: number[] = [];
+  let time = 0;
+  for (const entry of voice.entries) {
+    starts.push(time);
+    time += entry.duration;
+  }
+  return starts;
+}
+
+/**
  * How long the schedule actually plays for.
  *
  * The **shortest** voice, not the longest: Gnaural's main loop resets every voice as soon as the

@@ -173,6 +173,62 @@
   stroke-width: 2;
 }
 
+/* --- Editing surface (§6.1). None of this exists on the read-only chart. --- */
+
+/* Without this a phone treats a drag as a page pan and `pointermove` never arrives. */
+.schedule-chart--editing .schedule-chart__plot {
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* The ghost of where things were, while the overlay draws where they are going. */
+.schedule-chart--dragging .schedule-chart__plot :is(.schedule-chart__series, .schedule-chart__node, .schedule-chart__wrap-node) {
+  opacity: 0.3;
+}
+
+.schedule-chart__node {
+  stroke: var(--viz-surface);
+  stroke-width: 1.5;
+}
+
+/* §3.5's wrap point: derived from entry[0] rather than authored, so it is drawn hollow and is not
+   a hit target. The segment leading to it is dashed for the same reason. */
+.schedule-chart__wrap-node {
+  fill: var(--viz-surface);
+  stroke-width: 1.5;
+}
+
+.schedule-chart__series--wrap {
+  stroke-dasharray: 5 4;
+}
+
+.schedule-chart__selected {
+  fill: none;
+  stroke-width: 2;
+}
+
+.schedule-chart__overlay-series {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.schedule-chart__overlay-node {
+  stroke: var(--viz-surface);
+  stroke-width: 1.5;
+}
+
+.schedule-chart__overlay-label {
+  fill: var(--viz-ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: var(--viz-surface);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
 .schedule-chart__tooltip {
   position: absolute;
   top: 0;

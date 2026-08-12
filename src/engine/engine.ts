@@ -43,6 +43,14 @@ const LOOP_HORIZON_SECONDS = 12 * 60 * 60;
 const MAX_LOOP_PASSES = 1000;
 
 /**
+ * How many passes an `update()` made *during a gesture* schedules: the current one and the next.
+ *
+ * Two rather than one because a pass boundary can fall inside the throttle interval, and audio that
+ * has run out of automation before the next push arrives would hold a stale value across the seam.
+ */
+const GESTURE_HORIZON_PASSES = 2;
+
+/**
  * How many times the schedule plays through (§3.2).
  *
  * `loops` counts passes, so 1 plays once. Zero and negatives repeat forever and are bounded here.
@@ -154,6 +162,15 @@ function rampParam(param: AudioParam, value: number, at: number): void {
   param.setValueAtTime(param.value, at);
   param.linearRampToValueAtTime(value, at + CLICK_FREE_RAMP);
 }
+
+/**
+ * How far ahead an `update()` schedules automation.
+ *
+ * `'full'` is every remaining pass, which is what every transport verb does and what a committed
+ * edit does. `'gesture'` is the current pass and one more, for the duration of a drag — see
+ * `PlaybackEngine.update` for the measurement that makes the distinction necessary.
+ */
+export type Horizon = 'full' | 'gesture';
 
 /** The app-level noise layer's settings (§4.5b), app state rather than document state. */
 export interface NoiseLayerSettings {
@@ -625,8 +642,17 @@ export class PlaybackEngine {
    * Two paths, indistinguishable from outside: values are written into the voices that already
    * exist, and only a change of voice count, `type` or `mono` builds new nodes (see
    * `requiresVoiceRebuild`) — a crossfade, not a cut.
+   *
+   * **`horizon` is an opt-in, and the default is the safe one.** `rescheduleFrom` schedules every
+   * remaining pass up front (§4.2 — no JS timer may touch audio), which is free for a programme that
+   * plays once and ruinous for a short loop under a finger: measured here, a 60-second looping draft
+   * with 45 entries costs 132,480 param events and **68 ms of main thread per call**, ten times a
+   * second. `'gesture'` schedules the current pass and the next instead, ~0.4 ms, and is for the
+   * duration of a drag only. Forgetting to opt *in* is safe; the expansion back to `'full'` is the
+   * same call that commits the edit, so forgetting *that* makes the edit not exist rather than
+   * making the audio go quiet.
    */
-  update(schedule: Schedule): void {
+  update(schedule: Schedule, horizon: Horizon = 'full'): void {
     const previous = this.schedule;
     if (!previous) {
       this.load(schedule);
@@ -674,7 +700,7 @@ export class PlaybackEngine {
     }
 
     const projected = wasPlaying ? lookahead + CLICK_FREE_RAMP : 0;
-    this.rescheduleFrom(Math.min(this.getTotalDuration(), resumeAt + projected), wasPlaying);
+    this.rescheduleFrom(Math.min(this.getTotalDuration(), resumeAt + projected), wasPlaying, horizon);
   }
 
   /**
@@ -1058,8 +1084,13 @@ export class PlaybackEngine {
    * `total` counts across passes, so for a looping schedule this schedules the remainder of the
    * current pass and then every pass after it, in full and up front — no JS timer touches audio
    * (§4.2), which is the whole reason playback survives a screen-off phone.
+   *
+   * A `'gesture'` horizon stops after `GESTURE_HORIZON_PASSES` and **skips the end-of-schedule
+   * fade**: scheduling that fade at the truncated end would silence a looping programme mid-drag,
+   * which is the one failure this whole arrangement exists to make impossible. Past a truncated
+   * horizon a param simply holds its last value — a drone until the next push lands, never silence.
    */
-  private rescheduleFrom(total: number, playing: boolean): void {
+  private rescheduleFrom(total: number, playing: boolean, horizon: Horizon = 'full'): void {
     const context = this.context;
     if (!context) return;
 
@@ -1078,7 +1109,12 @@ export class PlaybackEngine {
     const audible = playing && total < totalDuration;
     const offset = this.duration > 0 ? total % this.duration : 0;
     const firstPass = this.duration > 0 ? Math.floor(total / this.duration) : 0;
-    const lastPassStart = (this.passes - 1) * this.duration;
+    const lastPass =
+      horizon === 'full'
+        ? this.passes - 1
+        : Math.min(this.passes - 1, firstPass + GESTURE_HORIZON_PASSES - 1);
+    const reachesEnd = lastPass >= this.passes - 1;
+    const lastPassStart = lastPass * this.duration;
 
     for (const { events, nodes } of this.voiceStates) {
       // Read before cancelling: `cancelScheduledValues` drops a ramp in progress and leaves the
@@ -1108,7 +1144,7 @@ export class PlaybackEngine {
       if (audible) {
         const truncated = outlastsSchedule(events, this.duration);
 
-        for (let pass = firstPass; pass < this.passes; pass++) {
+        for (let pass = firstPass; pass <= lastPass; pass++) {
           const passStart = pass * this.duration;
           // Only a voice §3.7 cuts short needs anything at the seam; for one as long as the
           // schedule, §3.5's wrap has already brought it back to entry[0].
@@ -1127,7 +1163,7 @@ export class PlaybackEngine {
           }
         }
 
-        scheduleEnding(events, t0 + lastPassStart, this.duration, nodes);
+        if (reachesEnd) scheduleEnding(events, t0 + lastPassStart, this.duration, nodes);
         startSource(context, nodes.source, t0, total);
       } else {
         // Pausing or stopping: buffer sources can't be gated back on, so they are released once

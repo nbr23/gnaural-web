@@ -108,6 +108,42 @@
   font-size: 14px;
 }
 
+.editor__lanes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.editor__lanes-label {
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+/* The mode control belongs with the lanes but is a different kind of choice, so it breaks to its
+   own line on a phone rather than reading as a fifth lane. */
+.editor__mode {
+  flex-basis: 100%;
+}
+
+@media (min-width: 620px) {
+  .editor__mode {
+    flex-basis: auto;
+    margin-inline-start: auto;
+  }
+}
+
+.editor__hint {
+  max-width: 62ch;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.editor__field input[readonly] {
+  color: var(--text);
+  background: transparent;
+}
+
 .editor__publish-note {
   max-width: 62ch;
   font-size: 14px;

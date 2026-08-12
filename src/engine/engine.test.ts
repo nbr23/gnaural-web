@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Entry, Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import { compileVoice, valueAtTime } from './compiler';
-import type { NoiseLayerSettings } from './engine';
+import { updateSchedule } from '../document/edit';
+import type { Horizon, NoiseLayerSettings } from './engine';
 import { CLICK_FREE_RAMP, PlaybackEngine, playSchedule } from './engine';
 
 function makeEntry(partial: Partial<Entry>): Entry {
@@ -995,6 +996,107 @@ describe('update() — live re-scheduling (§6.1)', () => {
 
     expect(engine.getDuration()).toBe(30);
     expect(engine.getCurrentOffset()).toBe(0);
+  });
+});
+
+/**
+ * The editing horizon (§6.1, PROGRESS's step 5).
+ *
+ * `rescheduleFrom` schedules every remaining pass up front, which is right for a transport action
+ * and ruinous under a finger: a 60-second looping draft with 45 entries costs 132,480 param events
+ * and 68 ms of main thread per call, ten times a second. No bundled programme can show this — all
+ * 19 are `loops = 1`, so their horizon is one pass either way — which is exactly why it is pinned
+ * here against a synthetic short loop.
+ */
+describe('the editing horizon', () => {
+  /** Four passes of a half-second envelope: loud for the first half, silent for the second. */
+  const PASS = 0.5;
+  function shortLoop(): Schedule {
+    return makeSchedule(
+      [
+        makeVoice([
+          makeEntry({ duration: PASS / 2, baseFreq: 400, beatFreq: 0, volumeLeft: 1, volumeRight: 1 }),
+          makeEntry({ duration: PASS / 2, baseFreq: 400, beatFreq: 0, volumeLeft: 0, volumeRight: 0 }),
+        ]),
+      ],
+      { loops: 4 },
+    );
+  }
+
+  /**
+   * The edit is applied before the render rather than suspended into the middle of one. What is
+   * under test is how far `update()` schedules, and `rescheduleFrom` cancels and rewrites every
+   * param either way — so the mid-render machinery would add nothing but its own documented
+   * `suspend()` race, four more times.
+   */
+  async function renderHorizon(schedule: Schedule, horizon?: Horizon): Promise<Float32Array> {
+    const context = new OfflineAudioContext(2, Math.round(2.2 * SAMPLE_RATE), SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(schedule);
+    engine.play();
+    engine.update(updateSchedule(schedule, { title: 'edited' }), horizon);
+
+    return (await context.startRendering()).getChannelData(0);
+  }
+
+  // The update re-anchors schedule-time zero onto context-time zero exactly: it resumes at the
+  // offset `play()` had reached plus the window it projects forward, and lays that same window back
+  // down in front of it. Measured, not assumed — the troughs land at 0.25 s and 0.75 s.
+  const at = (t: number) => Math.round(t * SAMPLE_RATE);
+
+  /** The trough in the middle of a pass: §3.5's wrap takes the volume 1 -> 0 -> 1 across each one. */
+  const trough = (pass: number) => [at(pass * PASS + 0.24), at(pass * PASS + 0.26)] as const;
+
+  it('schedules every pass by default, so a committed edit is complete', async () => {
+    const left = await renderHorizon(shortLoop());
+
+    // The envelope is still dipping in the third and fourth passes.
+    expect(peakAmplitude(left.subarray(...trough(2)))).toBeLessThan(0.1);
+    expect(peakAmplitude(left.subarray(...trough(3)))).toBeLessThan(0.1);
+    // And it ends where it should rather than running on.
+    expect(peakAmplitude(left.subarray(at(4 * PASS + CLICK_FREE_RAMP)))).toBe(0);
+  });
+
+  it('stops at the current pass and the next when the caller asks for a gesture horizon', async () => {
+    const left = await renderHorizon(shortLoop(), 'gesture');
+
+    // Passes 0 and 1 carry their envelope, as always.
+    expect(peakAmplitude(left.subarray(...trough(0)))).toBeLessThan(0.1);
+    expect(peakAmplitude(left.subarray(...trough(1)))).toBeLessThan(0.1);
+    // Past the horizon each param holds its last scheduled value, which §3.5's wrap put back at
+    // entry[0]. So pass 2 drones at full level instead of dipping: audible and obviously wrong,
+    // rather than silent and indistinguishable from a bug.
+    expect(peakAmplitude(left.subarray(...trough(2)))).toBeGreaterThan(0.5);
+  });
+
+  /**
+   * The failure mode the whole arrangement exists to make impossible. Scheduling the end-of-schedule
+   * fade at a *truncated* horizon would silence a looping programme mid-drag, and it would look like
+   * an engine bug rather than a forgotten expansion.
+   */
+  it('does not schedule the end-of-schedule fade at a truncated horizon', async () => {
+    // A flat, always-audible pass, so anything silent after the horizon is the fade and nothing else.
+    const flat = makeSchedule(
+      [makeVoice([makeEntry({ duration: PASS, baseFreq: 400, beatFreq: 0, volumeLeft: 1, volumeRight: 1 })])],
+      { loops: 4 },
+    );
+    const left = await renderHorizon(flat, 'gesture');
+
+    expect(peakAmplitude(left.subarray(at(2 * PASS), at(2 * PASS + 0.2)))).toBeGreaterThan(0.5);
+    expect(peakAmplitude(left.subarray(at(3 * PASS), at(3 * PASS + 0.2)))).toBeGreaterThan(0.5);
+  });
+
+  /** Every bundled programme takes this path, so the opt-in must cost them nothing. */
+  it('is a no-op for a schedule that plays once', async () => {
+    const once = makeSchedule(
+      [makeVoice([makeEntry({ duration: 0.6, baseFreq: 400, beatFreq: 0, volumeLeft: 1, volumeRight: 1 })])],
+      { loops: 1 },
+    );
+    const left = await renderHorizon(once, 'gesture');
+
+    expect(peakAmplitude(left.subarray(at(0.3), at(0.55)))).toBeGreaterThan(0.5);
+    // The fade still lands at the true end, because the horizon reached it.
+    expect(peakAmplitude(left.subarray(at(0.6 + CLICK_FREE_RAMP)))).toBe(0);
   });
 });
 

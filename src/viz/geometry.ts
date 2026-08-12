@@ -8,6 +8,8 @@
  * through DOM events on individual marks.
  */
 
+import { formatHz } from '../app/format';
+import type { EntryPatch } from '../document/edit';
 import { DURATION_EPSILON, scheduleDuration, voiceDuration } from '../document/timing';
 import type { Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
@@ -16,17 +18,76 @@ import { compileVoice, eventBaseFreq, eventBeatFreq } from '../engine/compiler';
 import type { Scale } from './scales';
 import { linearScale } from './scales';
 
-export type LaneId = 'beat' | 'base';
+export type LaneId = 'beat' | 'base' | 'volumeLeft' | 'volumeRight';
 
 export const DEFAULT_LANES: readonly LaneId[] = ['beat', 'base'];
 
-const LANE_DEFINITIONS: Record<LaneId, { title: string; unit: string; valueOf(e: AutomationEvent): number }> = {
-  beat: { title: 'Beat frequency', unit: 'Hz', valueOf: eventBeatFreq },
-  base: { title: 'Base frequency', unit: 'Hz', valueOf: eventBaseFreq },
+/** Every lane §6.1 asks for, top to bottom, for a caller offering the whole set. */
+export const ALL_LANES: readonly LaneId[] = ['beat', 'base', 'volumeLeft', 'volumeRight'];
+
+interface LaneDefinition {
+  title: string;
+  /** Empty for a dimensionless lane; volume is a bare 0–1 fraction. */
+  unit: string;
+  /** The `Entry` field a value drag in this lane writes. The inverse of `valueOf`, per voice. */
+  field: keyof EntryPatch;
+  valueOf(event: AutomationEvent): number;
+  domainOf(values: number[], padding: number): [number, number];
+  format(value: number): string;
+}
+
+/** Headroom above and below a fitted lane's data, as a fraction of its value range. */
+export const DOMAIN_PADDING = 0.1;
+
+/**
+ * Headroom for a lane that is being dragged in.
+ *
+ * A drag can only reach what is on screen, so 10% around the data would let a beat curve spanning
+ * 4–12 Hz be dragged no further than 3.2–12.8 Hz. Wider is more useful and still bounded; anything
+ * outside it is what §6.1 asks for a numeric panel for ("dragging is imprecise and people want
+ * exact values"), and a manual axis override is step 8's.
+ */
+export const EDITOR_DOMAIN_PADDING = 0.35;
+
+const LANE_DEFINITIONS: Record<LaneId, LaneDefinition> = {
+  beat: {
+    title: 'Beat frequency',
+    unit: 'Hz',
+    field: 'beatFreq',
+    valueOf: eventBeatFreq,
+    domainOf: paddedDomain,
+    format: formatHz,
+  },
+  base: {
+    title: 'Base frequency',
+    unit: 'Hz',
+    field: 'baseFreq',
+    valueOf: eventBaseFreq,
+    domainOf: paddedDomain,
+    format: formatHz,
+  },
+  volumeLeft: {
+    title: 'Volume left',
+    unit: '',
+    field: 'volumeLeft',
+    valueOf: (event) => event.leftGain,
+    domainOf: volumeDomain,
+    format: formatVolume,
+  },
+  volumeRight: {
+    title: 'Volume right',
+    unit: '',
+    field: 'volumeRight',
+    valueOf: (event) => event.rightGain,
+    domainOf: volumeDomain,
+    format: formatVolume,
+  },
 };
 
-/** Headroom above and below a lane's data, as a fraction of its value range. */
-const DOMAIN_PADDING = 0.1;
+/** Which `Entry` field a value drag in this lane writes. */
+export function laneField(id: LaneId): keyof EntryPatch {
+  return LANE_DEFINITIONS[id].field;
+}
 
 export interface VoiceIdentity {
   voiceId: number;
@@ -55,6 +116,8 @@ export interface LaneModel {
   title: string;
   unit: string;
   domain: [number, number];
+  /** Tick and readout formatting — Hz reads differently from a 0–1 fraction. */
+  format(value: number): string;
   series: VoiceSeries[];
 }
 
@@ -76,13 +139,30 @@ function voiceLabel(voice: Voice): string {
   return voice.description.trim() || `Voice ${voice.id}`;
 }
 
-function paddedDomain(values: number[]): [number, number] {
+function paddedDomain(values: number[], padding: number): [number, number] {
   if (values.length === 0) return [0, 1];
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const pad = (max - min) * DOMAIN_PADDING;
+  const pad = (max - min) * padding;
   // Frequencies are never negative; don't spend lane height below the axis floor.
   return [Math.max(0, min - pad), max + pad];
+}
+
+/**
+ * Volume is bounded and its endpoints mean something, so the lane is **not** fitted to its data:
+ * a program running 0.50–0.52 would otherwise read as a dramatic swing, and two voices at quite
+ * different levels would draw identically.
+ *
+ * Values above 1 are not clamped. §3.4 says real files are dirty, and an out-of-range volume has to
+ * be visibly out of range for step 7's validation to have anything to point at.
+ */
+function volumeDomain(values: number[]): [number, number] {
+  const max = values.length > 0 ? Math.max(...values) : 1;
+  return [0, max > 1 ? max * 1.05 : 1];
+}
+
+function formatVolume(value: number): string {
+  return value.toFixed(2);
 }
 
 /**
@@ -100,6 +180,7 @@ function paddedDomain(values: number[]): [number, number] {
 export function buildChartModel(
   schedule: Schedule,
   laneIds: readonly LaneId[] = DEFAULT_LANES,
+  domainPadding = DOMAIN_PADDING,
 ): ChartModel {
   const compiled: { identity: VoiceIdentity; events: AutomationEvent[] }[] = [];
 
@@ -135,7 +216,8 @@ export function buildChartModel(
       id,
       title: definition.title,
       unit: definition.unit,
-      domain: paddedDomain(series.flatMap((s) => s.points.map((p) => p.value))),
+      domain: definition.domainOf(series.flatMap((s) => s.points.map((p) => p.value)), domainPadding),
+      format: definition.format,
       series,
     };
   });
@@ -259,14 +341,33 @@ export function timeAtPixel(layout: ChartLayout, pixelX: number): number {
 export interface BreakpointHit {
   series: VoiceSeries;
   point: SeriesPoint;
+  /** Index into `series.points`. */
   index: number;
+  /** Index into `schedule.voices` — the same keying `NodeRef` and the engine's mute gates use. */
+  voice: number;
+  /**
+   * Index into that voice's entries, or **null at the terminal point**.
+   *
+   * `compileVoice` emits one event per entry plus §3.5's unconditional wrap back to entry[0], so
+   * every point but the last addresses an entry and the last one addresses nothing: its value is
+   * entry[0]'s and its time is the sum of the durations. It is derived, not authored.
+   */
+  entry: number | null;
   distance: number;
+}
+
+/** Whether a point in a compiled series is §3.5's derived wrap rather than an authored entry. */
+export function isTerminalPoint(series: VoiceSeries, index: number): boolean {
+  return index === series.points.length - 1;
 }
 
 /**
  * Closest authored breakpoint to a pixel position within `maxDistance`, across every series in
- * the lane. Read-only mode uses this to surface where a voice's entries actually sit; Phase 1
+ * the lane. Read-only mode uses this to surface where a voice's entries actually sit; the editor
  * uses the same call to decide what a drag grabs.
+ *
+ * `entriesOnly` excludes the terminal point, which the editor does because that point is not
+ * editable: a pointer there is then an ordinary miss rather than a tap that visibly does nothing.
  */
 export function nearestBreakpoint(
   lane: LaneLayout,
@@ -274,17 +375,21 @@ export function nearestBreakpoint(
   pixelX: number,
   pixelY: number,
   maxDistance: number,
+  entriesOnly = false,
 ): BreakpointHit | null {
   let best: BreakpointHit | null = null;
 
   for (const series of lane.model.series) {
     for (let index = 0; index < series.points.length; index++) {
+      const terminal = isTerminalPoint(series, index);
+      if (terminal && entriesOnly) continue;
+
       const point = series.points[index];
       const dx = timeScale.toPixel(point.time) - pixelX;
       const dy = lane.valueScale.toPixel(point.value) - pixelY;
       const distance = Math.hypot(dx, dy);
       if (distance <= maxDistance && (best === null || distance < best.distance)) {
-        best = { series, point, index, distance };
+        best = { series, point, index, voice: series.slot, entry: terminal ? null : index, distance };
       }
     }
   }

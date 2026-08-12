@@ -252,3 +252,90 @@ describe('polylinePath', () => {
     expect(polylinePath([], layout.timeScale, layout.lanes[0].valueScale)).toBe('');
   });
 });
+
+describe('the volume lanes (§6.1)', () => {
+  const voice = makeVoice({
+    id: 0,
+    entries: [
+      makeEntry({ duration: 10, baseFreq: 200, beatFreq: 8, volumeLeft: 0.5, volumeRight: 0.2 }),
+      makeEntry({ duration: 10, baseFreq: 200, beatFreq: 8, volumeLeft: 0.52, volumeRight: 0.2 }),
+    ],
+  });
+
+  it('plots each channel separately, from the compiled gains', () => {
+    const { lanes } = buildChartModel(makeSchedule([voice]), ['volumeLeft', 'volumeRight']);
+
+    expect(lanes[0].series[0].points.slice(0, 2).map((p) => p.value)).toEqual([0.5, 0.52]);
+    expect(lanes[1].series[0].points.slice(0, 2).map((p) => p.value)).toEqual([0.2, 0.2]);
+  });
+
+  /**
+   * Volume is bounded and its endpoints mean something, unlike a frequency. Fitted to its data, the
+   * 0.50–0.52 curve above would read as a dramatic swing and the 0.2 curve would look identical to
+   * it — and across all 19 bundled programs, all 354 entries, volume left and right are equal, so
+   * two fitted lanes would routinely disagree about a picture of the same numbers.
+   */
+  it('is a fixed 0-1 domain rather than one fitted to the data', () => {
+    const { lanes } = buildChartModel(makeSchedule([voice]), ['volumeLeft', 'volumeRight']);
+    expect(lanes[0].domain).toEqual([0, 1]);
+    expect(lanes[1].domain).toEqual([0, 1]);
+  });
+
+  /** §3.4: real files are dirty, and an out-of-range volume has to be visibly out of range. */
+  it('grows above 1 rather than clamping a value the file actually carries', () => {
+    const loud = makeVoice({
+      id: 0,
+      entries: [makeEntry({ duration: 10, volumeLeft: 1.4, volumeRight: 1 })],
+    });
+    const { lanes } = buildChartModel(makeSchedule([loud]), ['volumeLeft']);
+
+    expect(lanes[0].domain[0]).toBe(0);
+    expect(lanes[0].domain[1]).toBeGreaterThan(1.4);
+  });
+
+  it('formats a fraction as a fraction and a frequency as Hz', () => {
+    const { lanes } = buildChartModel(makeSchedule([voice]), ['beat', 'volumeLeft']);
+    expect(lanes[0].format(8)).toBe('8');
+    expect(lanes[0].unit).toBe('Hz');
+    expect(lanes[1].format(0.5)).toBe('0.50');
+    expect(lanes[1].unit).toBe('');
+  });
+});
+
+describe('hit-testing for the editor', () => {
+  const layout = layoutChart(buildChartModel(makeSchedule([twoEntryVoice])), 640, 280);
+  const beat = layout.lanes[0];
+  const points = beat.model.series[0].points;
+
+  function hitAt(index: number, entriesOnly: boolean) {
+    const point = points[index];
+    return nearestBreakpoint(
+      beat,
+      layout.timeScale,
+      layout.timeScale.toPixel(point.time),
+      beat.valueScale.toPixel(point.value),
+      12,
+      entriesOnly,
+    );
+  }
+
+  it('reports the voice and entry a document edit would address', () => {
+    const hit = hitAt(1, true);
+    // Keyed by index into `schedule.voices`, since §3.4's ids are not unique.
+    expect(hit?.voice).toBe(0);
+    expect(hit?.entry).toBe(1);
+  });
+
+  /**
+   * `compileVoice` emits one event per entry plus §3.5's unconditional wrap, so the final point is
+   * derived: its value is entry[0]'s and its time is the sum of the durations. The read-only chart
+   * still highlights it on hover; the editor excludes it, so a pointer there is an ordinary miss
+   * rather than a tap on something that cannot move.
+   */
+  it('marks the wrap point as no entry, and excludes it when asked', () => {
+    const terminal = points.length - 1;
+    expect(hitAt(terminal, false)?.entry).toBeNull();
+    expect(hitAt(terminal, false)?.index).toBe(terminal);
+    expect(hitAt(terminal, true)).toBeNull();
+  });
+});

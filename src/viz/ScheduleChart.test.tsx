@@ -1,10 +1,11 @@
 import { act } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseSchedule } from '../document/parser';
 import { loadFixture } from '../document/test-fixtures';
 import type { Entry, Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
-import { setupRoot } from '../test-utils';
+import { TEST_WIDTH } from '../test-setup';
+import { pointer, setupRoot, stubRect } from '../test-utils';
 import { ScheduleChart } from './ScheduleChart';
 
 const testRoot = setupRoot();
@@ -150,5 +151,27 @@ describe('ScheduleChart', () => {
     expect(seriesPaths()).toHaveLength(2);
     expect(testRoot.query('.schedule-chart__playhead')).not.toBeNull();
     expect(testRoot.text()).toContain('20:00');
+  });
+
+  /**
+   * The editing surface is opt-in, so the player's chart must be exactly what it was. Both halves of
+   * that matter: no node markers (45 of them in one `airplanetravelaid` voice would be noise where
+   * none can be touched), and a drag still scrubs rather than being reserved for a gesture.
+   */
+  it('stays read-only without an interaction prop', () => {
+    const onSeek = vi.fn();
+    render(<ScheduleChart schedule={makeSchedule([makeVoice({ id: 0 })])} onSeek={onSeek} />);
+
+    const svg = testRoot.query('svg')!;
+    stubRect(svg, TEST_WIDTH, 280);
+
+    expect(testRoot.queryAll('circle.schedule-chart__node')).toHaveLength(0);
+    expect(testRoot.queryAll('path.schedule-chart__series--wrap')).toHaveLength(0);
+    expect(testRoot.query('.schedule-chart--editing')).toBeNull();
+
+    pointer(svg, 'pointerdown', { x: 200, y: 60 });
+    pointer(svg, 'pointermove', { x: 320, y: 60 });
+    expect(onSeek).toHaveBeenCalledTimes(2);
+    expect(onSeek.mock.calls[1][0]).toBeGreaterThan(onSeek.mock.calls[0][0]);
   });
 });

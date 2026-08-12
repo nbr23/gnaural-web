@@ -1,12 +1,25 @@
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { formatClock, formatHz } from '../app/format';
+import { formatClock } from '../app/format';
 import type { Schedule } from '../document/types';
 import { VoiceType } from '../document/types';
 import { EEG_BANDS } from './bands';
-import type { BreakpointHit, ChartLayout, LaneId, LaneLayout, VoiceIdentity } from './geometry';
+import type {
+  BreakpointHit,
+  ChartLayout,
+  LaneId,
+  LaneLayout,
+  SeriesPoint,
+  VoiceIdentity,
+  VoiceSeries,
+} from './geometry';
 import {
   DEFAULT_LANES,
+  DOMAIN_PADDING,
   buildChartModel,
   layoutChart,
   nearestBreakpoint,
@@ -17,6 +30,44 @@ import {
 import { seriesColor } from './palette';
 import { niceTicks, timeTicks } from './scales';
 import './ScheduleChart.css';
+
+/** A pointer position, resolved into everything an editing caller needs to decide what it grabbed. */
+export interface ChartPointer {
+  layout: ChartLayout;
+  /** In the layout's own pixel space, already scaled out of client coordinates. */
+  x: number;
+  y: number;
+  time: number;
+  lane: LaneLayout | null;
+  /** The nearest authored entry within the hit radius, or null for a miss. Never the wrap point. */
+  hit: BreakpointHit | null;
+  event: ReactPointerEvent<SVGSVGElement>;
+}
+
+/**
+ * Turns the read-only plot into §6.1's editing surface, without teaching it what a document edit is.
+ *
+ * The chart resolves pointer coordinates, hit-tests, and draws the nodes; the caller decides what a
+ * grab means and draws the moving part into `overlay`. **The caller must not push its in-flight
+ * document back in through `schedule`** — that would invalidate `buildChartModel`, `layoutChart`
+ * and `StaticPlot` on every `pointermove`, which is the measured defect those memos exist to
+ * prevent. During a gesture `schedule` holds still and the overlay is what moves.
+ */
+export interface ChartInteraction {
+  /** Wider than the read-only default, so a value drag can reach past the data. */
+  domainPadding?: number;
+  /** Drawn with a ring. Addressed the way the document is (§3.4): indices, not ids. */
+  selected?: { voice: number; entry: number } | null;
+  /** A gesture is in flight: the static curves become a ghost and the crosshair gets out of the way. */
+  dragging?: boolean;
+  /** Rendered above the static plot in the layout's pixel space. Keep it O(1) — it runs per move. */
+  overlay?(layout: ChartLayout): ReactNode;
+  onPointerDown?(pointer: ChartPointer): void;
+  onPointerMove?(pointer: ChartPointer): void;
+  onPointerUp?(pointer: ChartPointer): void;
+  /** Return true to claim the key; anything unclaimed falls through to the crosshair readout. */
+  onKeyDown?(event: ReactKeyboardEvent<SVGSVGElement>, layout: ChartLayout): boolean;
+}
 
 export interface ScheduleChartProps {
   schedule: Schedule;
@@ -29,8 +80,13 @@ export interface ScheduleChartProps {
   /**
    * Seek handler. When supplied the plot becomes draggable to scrub — transport, not document
    * editing, so the component stays read-only in the sense Phase 1 cares about.
+   *
+   * Ignored when `interaction` is supplied: there the same pointer has to select and drag, and a
+   * gesture cannot be both. See `EditSurface`, which seeks on a miss and reserves the drag.
    */
   onSeek?: (time: number) => void;
+  /** Supply this and the plot becomes editable. Absent, the component is exactly what it was. */
+  interaction?: ChartInteraction;
   className?: string;
 }
 
@@ -111,13 +167,19 @@ export function ScheduleChart({
   lanes = DEFAULT_LANES,
   height = DEFAULT_HEIGHT,
   onSeek,
+  interaction,
   className,
 }: ScheduleChartProps) {
   const [containerRef, width] = useElementWidth<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
 
-  const model = useMemo(() => buildChartModel(schedule, lanes), [schedule, lanes]);
+  const editing = interaction !== undefined;
+  const padding = interaction?.domainPadding ?? DOMAIN_PADDING;
+  const model = useMemo(
+    () => buildChartModel(schedule, lanes, padding),
+    [schedule, lanes, padding],
+  );
   const layout = useMemo(
     () => (width > 0 ? layoutChart(model, width, height) : null),
     [model, width, height],
@@ -139,18 +201,49 @@ export function ScheduleChart({
       if (!svg || !layout) return null;
 
       // Scale client coordinates into the SVG's own system, so hit-testing stays correct even if
-      // CSS ever renders the element at a different size than its width attribute.
+      // CSS ever renders the element at a different size than its width attribute. A rect with no
+      // extent — a detached or hidden element, and every element under a DOM with no layout engine
+      // — scales 1:1 rather than dividing by zero.
       const rect = svg.getBoundingClientRect();
       return {
-        x: (event.clientX - rect.left) * (layout.width / rect.width),
-        y: (event.clientY - rect.top) * (layout.height / rect.height),
+        x: (event.clientX - rect.left) * (rect.width > 0 ? layout.width / rect.width : 1),
+        y: (event.clientY - rect.top) * (rect.height > 0 ? layout.height / rect.height : 1),
       };
     },
     [layout],
   );
 
+  /** Resolve a raw pointer event into what the caller decides on: a lane, a time, and a node. */
+  const resolvePointer = useCallback(
+    (event: ReactPointerEvent<SVGSVGElement>): ChartPointer | null => {
+      const position = pointerPosition(event);
+      if (!position || !layout) return null;
+
+      const lane =
+        layout.lanes.find((l) => position.y >= l.y && position.y <= l.y + l.height) ?? null;
+      return {
+        layout,
+        x: position.x,
+        y: position.y,
+        time: timeAtPixel(layout, position.x),
+        lane,
+        hit: lane
+          ? nearestBreakpoint(lane, layout.timeScale, position.x, position.y, BREAKPOINT_HIT_RADIUS, true)
+          : null,
+        event,
+      };
+    },
+    [layout, pointerPosition],
+  );
+
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
+      if (interaction) {
+        const pointer = resolvePointer(event);
+        if (pointer) interaction.onPointerMove?.(pointer);
+        return;
+      }
+
       const position = pointerPosition(event);
       if (!position || !layout) return;
 
@@ -158,11 +251,21 @@ export function ScheduleChart({
       setHover({ time, pixelY: position.y });
       if (scrubbing.current) onSeek?.(time);
     },
-    [layout, onSeek, pointerPosition],
+    [interaction, layout, onSeek, pointerPosition, resolvePointer],
   );
 
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
+      if (interaction) {
+        const pointer = resolvePointer(event);
+        if (!pointer) return;
+        // Captured unconditionally: a finger that leaves the plot mid-drag must still finish its
+        // gesture, and a miss releases it on the pointerup that follows.
+        event.currentTarget.setPointerCapture(event.pointerId);
+        interaction.onPointerDown?.(pointer);
+        return;
+      }
+
       const position = pointerPosition(event);
       if (!onSeek || !position || !layout) return;
 
@@ -170,7 +273,19 @@ export function ScheduleChart({
       event.currentTarget.setPointerCapture(event.pointerId);
       onSeek(timeAtPixel(layout, position.x));
     },
-    [layout, onSeek, pointerPosition],
+    [interaction, layout, onSeek, pointerPosition, resolvePointer],
+  );
+
+  const handlePointerUp = useCallback(
+    (event: ReactPointerEvent<SVGSVGElement>) => {
+      if (interaction) {
+        const pointer = resolvePointer(event);
+        if (pointer) interaction.onPointerUp?.(pointer);
+        return;
+      }
+      scrubbing.current = false;
+    },
+    [interaction, resolvePointer],
   );
 
   const endScrub = useCallback(() => {
@@ -180,6 +295,10 @@ export function ScheduleChart({
   const stepHover = useCallback(
     (event: ReactKeyboardEvent<SVGSVGElement>) => {
       if (!layout) return;
+      // An editing caller gets first refusal on every key: with a node selected the arrows move
+      // between nodes, and only what it does not claim falls through to the crosshair readout.
+      if (interaction?.onKeyDown?.(event, layout)) return;
+
       const { duration } = layout.model;
       const current = hover?.time ?? 0;
       let next: number;
@@ -207,12 +326,12 @@ export function ScheduleChart({
       event.preventDefault();
       setHover({ time: Math.min(duration, Math.max(0, next)), pixelY: null });
     },
-    [layout, hover],
+    [interaction, layout, hover],
   );
 
   if (model.voices.length === 0) {
     return (
-      <div className={containerClass(className)} ref={containerRef}>
+      <div className={containerClass(className, editing, false)} ref={containerRef}>
         <p className="schedule-chart__empty">This schedule has no visible voices to plot.</p>
       </div>
     );
@@ -220,7 +339,7 @@ export function ScheduleChart({
 
   if (!layout) {
     // First paint, before the container has been measured. Reserve the height so nothing jumps.
-    return <div className={containerClass(className)} ref={containerRef} style={{ height }} />;
+    return <div className={containerClass(className, editing, false)} ref={containerRef} style={{ height }} />;
   }
 
   const hoverX = hover ? layout.timeScale.toPixel(hover.time) : null;
@@ -234,8 +353,11 @@ export function ScheduleChart({
       ? nearestBreakpoint(hoveredLane, layout.timeScale, hoverX, pixelY, BREAKPOINT_HIT_RADIUS)
       : null;
 
+  const dragging = interaction?.dragging ?? false;
+  const showCrosshair = hover && hoverX !== null && !dragging;
+
   return (
-    <div className={containerClass(className)} ref={containerRef}>
+    <div className={containerClass(className, editing, dragging)} ref={containerRef}>
       {model.voices.length > 1 && <Legend voices={model.voices} />}
 
       <svg
@@ -246,10 +368,11 @@ export function ScheduleChart({
         role="img"
         aria-label={chartLabel(schedule, model.voices.length, model.duration)}
         tabIndex={0}
-        style={onSeek ? { cursor: 'pointer' } : undefined}
+        style={onSeek && !editing ? { cursor: 'pointer' } : undefined}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
-        onPointerUp={endScrub}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onLostPointerCapture={endScrub}
         onPointerLeave={() => {
           endScrub();
@@ -258,9 +381,11 @@ export function ScheduleChart({
         onKeyDown={stepHover}
         onBlur={() => setHover(null)}
       >
-        <StaticPlot layout={layout} xTicks={xTicks} />
+        <StaticPlot layout={layout} xTicks={xTicks} nodes={editing} />
 
-        {hover && hoverX !== null && (
+        {interaction?.selected && <SelectionRing layout={layout} selected={interaction.selected} />}
+
+        {showCrosshair && (
           <Crosshair
             layout={layout}
             time={hover.time}
@@ -270,18 +395,26 @@ export function ScheduleChart({
           />
         )}
 
+        {interaction?.overlay?.(layout)}
+
         {currentTime !== undefined && currentTime >= 0 && currentTime <= model.duration && (
           <Playhead layout={layout} x={layout.timeScale.toPixel(currentTime)} />
         )}
       </svg>
 
-      {hover && hoverX !== null && <Tooltip layout={layout} time={hover.time} x={hoverX} />}
+      {showCrosshair && <Tooltip layout={layout} time={hover.time} x={hoverX} />}
     </div>
   );
 }
 
-function containerClass(className: string | undefined): string {
-  return className ? `schedule-chart ${className}` : 'schedule-chart';
+function containerClass(className: string | undefined, editing: boolean, dragging: boolean): string {
+  const names = ['schedule-chart'];
+  // `touch-action: none` hangs off this one: without it a phone pans the page instead of
+  // delivering `pointermove`, and the drag never happens at all.
+  if (editing) names.push('schedule-chart--editing');
+  if (dragging) names.push('schedule-chart--dragging');
+  if (className) names.push(className);
+  return names.join(' ');
 }
 
 function chartLabel(schedule: Schedule, voiceCount: number, duration: number): string {
@@ -302,14 +435,17 @@ function chartLabel(schedule: Schedule, voiceCount: number, duration: number): s
 const StaticPlot = memo(function StaticPlot({
   layout,
   xTicks,
+  nodes,
 }: {
   layout: ChartLayout;
   xTicks: number[];
+  /** Draw a marker on every entry. Editing only — see the note on "deliberately not drawn" below. */
+  nodes: boolean;
 }) {
   return (
     <>
       {layout.lanes.map((lane) => (
-        <Lane key={lane.model.id} lane={lane} layout={layout} xTicks={xTicks} />
+        <Lane key={lane.model.id} lane={lane} layout={layout} xTicks={xTicks} nodes={nodes} />
       ))}
 
       <TimeAxis layout={layout} xTicks={xTicks} />
@@ -336,14 +472,24 @@ const Legend = memo(function Legend({ voices }: { voices: VoiceIdentity[] }) {
   );
 });
 
-function Lane({ lane, layout, xTicks }: { lane: LaneLayout; layout: ChartLayout; xTicks: number[] }) {
+function Lane({
+  lane,
+  layout,
+  xTicks,
+  nodes,
+}: {
+  lane: LaneLayout;
+  layout: ChartLayout;
+  xTicks: number[];
+  nodes: boolean;
+}) {
   const right = lane.x + lane.width;
   const bottom = lane.y + lane.height;
 
   return (
     <g>
       <text className="schedule-chart__lane-title" x={lane.x} y={lane.y - 7}>
-        {lane.model.title} ({lane.model.unit})
+        {lane.model.unit ? `${lane.model.title} (${lane.model.unit})` : lane.model.title}
       </text>
 
       {lane.model.id === 'beat' && <BandLayer lane={lane} />}
@@ -354,7 +500,7 @@ function Lane({ lane, layout, xTicks }: { lane: LaneLayout; layout: ChartLayout;
           <g key={tick}>
             <line className="schedule-chart__grid" x1={lane.x} y1={y} x2={right} y2={y} />
             <text className="schedule-chart__tick" x={lane.x - 8} y={y + 4} textAnchor="end">
-              {formatHz(tick)}
+              {lane.model.format(tick)}
             </text>
           </g>
         );
@@ -368,13 +514,137 @@ function Lane({ lane, layout, xTicks }: { lane: LaneLayout; layout: ChartLayout;
       <line className="schedule-chart__axis" x1={lane.x} y1={bottom} x2={right} y2={bottom} />
 
       {lane.model.series.map((series) => (
-        <path
-          key={series.voiceId}
-          className="schedule-chart__series"
-          d={polylinePath(series.points, layout.timeScale, lane.valueScale)}
-          style={{ stroke: seriesColor(series.slot) }}
-        />
+        <Series key={series.voiceId} series={series} lane={lane} layout={layout} split={nodes} />
       ))}
+
+      {nodes && lane.model.series.map((series) => (
+        <Nodes key={series.voiceId} series={series} lane={lane} layout={layout} />
+      ))}
+    </g>
+  );
+}
+
+/**
+ * A voice's curve in one lane.
+ *
+ * `split` draws the final segment dashed, because it is not authored: §3.5's unconditional wrap
+ * makes the last entry glide back to entry[0]'s values whether or not the schedule loops, and the
+ * editor is where somebody needs to be told that the stretch they cannot edit is generated. The
+ * read-only chart keeps drawing one continuous line, which is the truth about what is heard.
+ */
+function Series({
+  series,
+  lane,
+  layout,
+  split,
+}: {
+  series: VoiceSeries;
+  lane: LaneLayout;
+  layout: ChartLayout;
+  split: boolean;
+}) {
+  const colour = seriesColor(series.slot);
+  if (!split || series.points.length < 2) {
+    return (
+      <path
+        className="schedule-chart__series"
+        d={polylinePath(series.points, layout.timeScale, lane.valueScale)}
+        style={{ stroke: colour }}
+      />
+    );
+  }
+
+  const cut = series.points.length - 1;
+  return (
+    <>
+      <path
+        className="schedule-chart__series"
+        d={polylinePath(series.points.slice(0, cut), layout.timeScale, lane.valueScale)}
+        style={{ stroke: colour }}
+      />
+      <path
+        className="schedule-chart__series schedule-chart__series--wrap"
+        d={polylinePath(series.points.slice(cut - 1), layout.timeScale, lane.valueScale)}
+        style={{ stroke: colour }}
+      />
+    </>
+  );
+}
+
+/**
+ * One marker per entry, plus a hollow ring on §3.5's wrap point.
+ *
+ * The read-only chart deliberately marks only the hovered breakpoint — `airplanetravelaid` has 45
+ * entries in one voice and marking all of them is noise when none of them can be touched. In the
+ * editor they are the thing being touched, so they are all drawn, and the difference between a
+ * filled node and the hollow ring is the difference between an entry and a derived point.
+ */
+function Nodes({
+  series,
+  lane,
+  layout,
+}: {
+  series: VoiceSeries;
+  lane: LaneLayout;
+  layout: ChartLayout;
+}) {
+  const colour = seriesColor(series.slot);
+  const last = series.points.length - 1;
+
+  return (
+    <g>
+      {series.points.map((point, index) =>
+        index === last ? (
+          <circle
+            className="schedule-chart__wrap-node"
+            key={index}
+            cx={layout.timeScale.toPixel(point.time)}
+            cy={lane.valueScale.toPixel(point.value)}
+            r={3.5}
+            style={{ stroke: colour }}
+          >
+            <title>Wraps back to the start of the voice (§3.5) — not editable</title>
+          </circle>
+        ) : (
+          <circle
+            className="schedule-chart__node"
+            key={index}
+            cx={layout.timeScale.toPixel(point.time)}
+            cy={lane.valueScale.toPixel(point.value)}
+            r={3.5}
+            style={{ fill: colour }}
+          />
+        ),
+      )}
+    </g>
+  );
+}
+
+/** The selected node, marked in every lane it appears in — one entry, several parameters. */
+function SelectionRing({
+  layout,
+  selected,
+}: {
+  layout: ChartLayout;
+  selected: { voice: number; entry: number };
+}) {
+  return (
+    <g className="schedule-chart__selection">
+      {layout.lanes.map((lane) => {
+        const series = lane.model.series.find((s) => s.slot === selected.voice);
+        const point: SeriesPoint | undefined = series?.points[selected.entry];
+        if (!series || !point) return null;
+        return (
+          <circle
+            key={lane.model.id}
+            className="schedule-chart__selected"
+            cx={layout.timeScale.toPixel(point.time)}
+            cy={lane.valueScale.toPixel(point.value)}
+            r={7}
+            style={{ stroke: seriesColor(series.slot) }}
+          />
+        );
+      })}
     </g>
   );
 }
@@ -564,7 +834,7 @@ function Tooltip({ layout, time, x }: { layout: ChartLayout; time: number; x: nu
             return (
               <div className="schedule-chart__tooltip-row" key={series.voiceId}>
                 <span className="schedule-chart__tooltip-value">
-                  {value === null ? '—' : `${formatHz(value)} ${lane.model.unit}`}
+                  {value === null ? '—' : `${lane.model.format(value)} ${lane.model.unit}`.trim()}
                 </span>
                 {!single && (
                   <>

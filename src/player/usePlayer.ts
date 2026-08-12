@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Schedule } from '../document/types';
-import type { NoiseLayerSettings } from '../engine/engine';
+import type { Horizon, NoiseLayerSettings } from '../engine/engine';
 import { PlaybackEngine, SILENT_NOISE_LAYER } from '../engine/engine';
 import { SilentKeepalive } from './keepalive';
 
@@ -50,8 +50,11 @@ export interface Player {
    * new document in through the prop instead of through here would rebuild the graph on every
    * change. The two are different verbs for different events: a different program, and an edit to
    * the one already loaded.
+   *
+   * `horizon` is passed straight through. Leave it out everywhere except a drag's throttled push:
+   * see `PlaybackEngine.update` for why the default is the one that cannot be got wrong.
    */
-  update(schedule: Schedule): void;
+  update(schedule: Schedule, horizon?: Horizon): void;
   toggleMute(index: number): void;
   toggleSolo(index: number): void;
 }
@@ -241,10 +244,10 @@ export function usePlayer(
    * `duration` and `passCount` are re-read because an edit can change how long the schedule is
    * (§3.7). Live mode never does, but a caller that does must not have to know to refresh them.
    */
-  const update = useCallback((next: Schedule) => {
+  const update = useCallback((next: Schedule, horizon?: Horizon) => {
     const instance = engineRef.current;
     if (!instance) return;
-    instance.update(next);
+    instance.update(next, horizon);
     setDuration(instance.getDuration());
     setPassCount(instance.getPassCount());
   }, []);
