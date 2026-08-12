@@ -695,6 +695,52 @@ describe('the editor (§6.1)', () => {
     expect(root.byText('.button--primary', 'Pause')).toBeDefined();
   });
 
+  /**
+   * The same invariant again, against the edits that change the *shape* of the graph — adding a
+   * voice is `update()`'s crossfade path, which until step 6 had no caller at all.
+   */
+  it('keeps playing through a structural edit, and undoes it', async () => {
+    await openDraftOf();
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(1);
+
+    root.click(root.byText('button', 'Add noise voice'));
+    await wait(200);
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(2);
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+
+    root.click(root.byText('.button', 'Undo add voice'));
+    await wait(200);
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(1);
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+  });
+
+  /**
+   * The gates are derived per voice, and the editor deliberately never re-hands `usePlayer` its
+   * `schedule` prop — so anything reading that prop for a voice count is reading the document as it
+   * was when the draft opened, not as it is.
+   */
+  it('keeps a solo on the voice a structural edit added', async () => {
+    await openDraftOf();
+    root.click(root.byText('button', 'Add noise voice'));
+    await flush();
+
+    const rows = root.queryAll('.voice-rows__row');
+    expect(rows).toHaveLength(2);
+
+    const solo = [...rows[1].querySelectorAll('button')].find((b) => b.textContent === 'Solo');
+    root.click(solo);
+    await flush();
+
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(2);
+    const after = root.queryAll('.voice-rows__row')[1].querySelectorAll('button');
+    expect([...after].find((b) => b.textContent === 'Solo')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+  });
+
   it('saves a draft to the library by the same path an import takes', async () => {
     await openDraftOf();
     type('Title', 'Ready to share');

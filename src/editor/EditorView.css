@@ -148,3 +148,98 @@
   max-width: 62ch;
   font-size: 14px;
 }
+
+/* The one warning this step can newly cause. Same amber `WarningList` uses, so it reads as the same
+   kind of statement; the full inline surface is step 7's. */
+.editor__hint--warn {
+  padding-inline-start: 10px;
+  border-left: 3px solid var(--warn);
+  color: var(--text-h);
+}
+
+/* One voice per block rather than per line: six controls and a name field do not fit across 390px,
+   and stacking them keeps every target at a thumb's size instead of shrinking them to fit. */
+.voice-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.voice-rows__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.voice-rows__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.voice-rows__identity .editor__field {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The same key the chart draws this voice with, so identity carries across the two views. */
+.voice-rows__key {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentcolor;
+  flex: none;
+}
+
+.voice-rows__meta {
+  font-size: 13px;
+  color: var(--text);
+  padding-inline-start: 24px;
+}
+
+.voice-rows__badge {
+  color: var(--text-h);
+  margin-inline-end: 8px;
+}
+
+.voice-rows__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-inline-start: 24px;
+}
+
+.voice-rows__toggle {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  min-height: 36px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+
+  &.is-active {
+    color: var(--accent);
+    background: var(--accent-bg);
+    border-color: var(--accent-border);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.node-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

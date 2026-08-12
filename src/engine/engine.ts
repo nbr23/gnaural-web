@@ -1,6 +1,8 @@
 import { scheduleDuration } from '../document/timing';
 import type { Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
+import type { VoiceMap } from '../document/voiceMap';
+import { invertVoiceMap, remapIndices } from '../document/voiceMap';
 import type { AutomationEvent, AutomationValues } from './compiler';
 import { compileVoice, valueAtTime } from './compiler';
 import type { NoiseColour } from './noise';
@@ -651,8 +653,15 @@ export class PlaybackEngine {
    * duration of a drag only. Forgetting to opt *in* is safe; the expansion back to `'full'` is the
    * same call that commits the edit, so forgetting *that* makes the edit not exist rather than
    * making the audio go quiet.
+   *
+   * **`voiceMap` is how a structural edit keeps the session gates on the right voices.** Mute and
+   * solo are keyed by index into `schedule.voices` (§3.4 — ids are not unique in real files), so an
+   * insert, a delete or a reorder silently reassigns another voice's gates without one. The map says
+   * where each voice of the *previous* document ended up. A drag never *makes* one — it moves no
+   * voice — but it can inherit one from a structural edit whose throttled push it interrupted, so
+   * the two parameters are independent rather than mutually exclusive.
    */
-  update(schedule: Schedule, horizon: Horizon = 'full'): void {
+  update(schedule: Schedule, horizon: Horizon = 'full', voiceMap?: VoiceMap): void {
     const previous = this.schedule;
     if (!previous) {
       this.load(schedule);
@@ -666,7 +675,14 @@ export class PlaybackEngine {
     const pass = this.getPass();
     const offset = this.getCurrentOffset();
 
-    this.adoptDocumentMutes(previous, schedule);
+    // Carry the gates across before anything reads them: `adoptDocumentMutes` compares against the
+    // previous document, and `buildVoices` seeds each new node from `isVoiceAudible`.
+    if (voiceMap) {
+      this.muted = remapIndices(this.muted, voiceMap);
+      this.soloed = remapIndices(this.soloed, voiceMap);
+    }
+
+    this.adoptDocumentMutes(previous, schedule, voiceMap);
     this.schedule = schedule;
     this.duration = scheduleDuration(schedule);
     this.passes = passCount(schedule, this.duration);
@@ -977,10 +993,17 @@ export class PlaybackEngine {
    * every time they dragged a breakpoint; ignoring the document entirely would make the editor's
    * own mute control do nothing. Comparing against the previous document is what distinguishes an
    * edit *to* the flag from an edit that merely happened while the flag was set.
+   *
+   * **That comparison is by index, so a structural edit has to say what moved.** Without the map a
+   * reorder compares every voice against a different one and adopts flags nobody touched. A voice
+   * the edit created has no previous state at all, and its own flag is then the whole truth.
    */
-  private adoptDocumentMutes(previous: Schedule, next: Schedule): void {
+  private adoptDocumentMutes(previous: Schedule, next: Schedule, voiceMap?: VoiceMap): void {
+    const cameFrom = voiceMap ? invertVoiceMap(voiceMap, next.voices.length) : null;
+
     next.voices.forEach((voice, index) => {
-      if (voice.muted !== previous.voices[index]?.muted) setMembership(this.muted, index, voice.muted);
+      const before = previous.voices[cameFrom ? cameFrom[index] : index];
+      if (!before || voice.muted !== before.muted) setMembership(this.muted, index, voice.muted);
     });
 
     // Indices are the key (§3.4 — ids are not unique), so a shorter document leaves strays behind.

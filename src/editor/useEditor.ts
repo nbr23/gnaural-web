@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
 import type { Schedule } from '../document/types';
+import type { VoiceMap } from '../document/voiceMap';
+import { invertVoiceMap } from '../document/voiceMap';
 import type { CommitMeta, NodeRef } from './history';
 import { HistoryStack } from './history';
 
@@ -24,6 +26,16 @@ export interface Editor {
    * when it was made; the caller does not supply it.
    */
   commit(schedule: Schedule, meta: CommitMeta): void;
+  /**
+   * Where each voice of the previously published document ended up in this one, or null when
+   * nothing moved.
+   *
+   * The one thing a consumer cannot work out for itself: the engine keys session mute and solo by
+   * voice index, and two documents do not say which voice became which. Set by a structural commit,
+   * **inverted** on undo and taken as-is on redo — the same transition-not-state reading the
+   * selection restore below documents.
+   */
+  voiceMap: VoiceMap | null;
   /** The selected node, or null. Session state: changing it never pushes a commit. */
   selection: NodeRef | null;
   select(node: NodeRef | null): void;
@@ -61,10 +73,18 @@ export function useEditor(initial: Schedule): Editor {
     () => stack.version,
   );
 
+  // Not state: it is read once by the effect that pushes the document at the engine, in the same
+  // render the document changed. Making it state would be a second re-render for a value no view
+  // displays.
+  const voiceMap = useRef<VoiceMap | null>(null);
+
   const commit = useCallback(
     (schedule: Schedule, meta: CommitMeta) => {
       const node = selectionRef.current;
+      const before = stack.present;
       stack.commit(schedule, { selection: node ? [node] : undefined, ...meta });
+      // Only if it was taken: `commit` ignores a document that is already present.
+      if (stack.present !== before) voiceMap.current = meta.voiceMap ?? null;
     },
     [stack],
   );
@@ -84,19 +104,31 @@ export function useEditor(initial: Schedule): Editor {
   const undo = useCallback(() => {
     if (!stack.canUndo) return;
     const crossed = stack.presentMeta;
+    const undone = stack.present;
     stack.undo();
-    setSelection(crossed?.selection?.[0] ?? null);
+    voiceMap.current = crossed?.voiceMap
+      ? invertVoiceMap(crossed.voiceMap, undone.voices.length)
+      : null;
+    setSelection(inRange(crossed?.selection?.[0], stack.present));
   }, [stack]);
 
+  /**
+   * Redo restores the selection that commit was made *with*, which is a pre-edit selection landing
+   * in a post-edit document — so unlike undo it has to be carried across the transition. A voice the
+   * commit deleted has nowhere to land and the selection goes.
+   */
   const redo = useCallback(() => {
     if (!stack.canRedo) return;
     stack.redo();
-    setSelection(stack.presentMeta?.selection?.[0] ?? null);
+    const meta = stack.presentMeta;
+    voiceMap.current = meta?.voiceMap ?? null;
+    setSelection(inRange(moveRef(meta?.selection?.[0], meta?.voiceMap), stack.present));
   }, [stack]);
 
   return {
     document: stack.present,
     commit,
+    voiceMap: voiceMap.current,
     selection,
     select,
     undo,
@@ -106,4 +138,31 @@ export function useEditor(initial: Schedule): Editor {
     undoLabel: stack.undoLabel,
     redoLabel: stack.redoLabel,
   };
+}
+
+/** Follow a selection across a structural transition. A deleted voice takes it with it. */
+function moveRef(node: NodeRef | undefined, map: VoiceMap | undefined): NodeRef | null {
+  if (!node) return null;
+  if (!map) return node;
+
+  const voice = map[node.voice];
+  return voice === undefined || voice < 0 ? null : { voice, entry: node.entry };
+}
+
+/**
+ * Keep a restored selection pointing at something that exists.
+ *
+ * A `NodeRef` is a pair of indices and a history move can land on a document with fewer of either,
+ * so this is the backstop that keeps a stale one out of the views. The entry is clamped rather than
+ * dropped: after undoing a delete the node one along is the useful place to be, and losing the
+ * selection is what step 5's own selection defect felt like.
+ */
+function inRange(node: NodeRef | null | undefined, schedule: Schedule): NodeRef | null {
+  if (!node) return null;
+
+  const voice = schedule.voices[node.voice];
+  if (!voice || voice.entries.length === 0) return null;
+
+  const entry = Math.min(Math.max(0, node.entry), voice.entries.length - 1);
+  return entry === node.entry ? node : { voice: node.voice, entry };
 }

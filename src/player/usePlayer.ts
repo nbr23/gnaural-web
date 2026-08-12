@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Schedule } from '../document/types';
+import type { VoiceMap } from '../document/voiceMap';
 import type { Horizon, NoiseLayerSettings } from '../engine/engine';
 import { PlaybackEngine, SILENT_NOISE_LAYER } from '../engine/engine';
 import { SilentKeepalive } from './keepalive';
@@ -53,8 +54,12 @@ export interface Player {
    *
    * `horizon` is passed straight through. Leave it out everywhere except a drag's throttled push:
    * see `PlaybackEngine.update` for why the default is the one that cannot be got wrong.
+   *
+   * `voiceMap` is required of a structural edit and of nothing else — without it the engine's
+   * session mute/solo gates stay on the slots they were, which after a reorder or a delete is a
+   * different voice.
    */
-  update(schedule: Schedule, horizon?: Horizon): void;
+  update(schedule: Schedule, horizon?: Horizon, voiceMap?: VoiceMap): void;
   toggleMute(index: number): void;
   toggleSolo(index: number): void;
 }
@@ -106,6 +111,14 @@ export function usePlayer(
     return engineRef.current;
   }, []);
 
+  /**
+   * The document the engine is actually holding, which after an edit is **not** the `schedule`
+   * prop: a caller using `update` keeps that prop identity-stable, because the load effect below
+   * keys a teardown on it. Anything derived per voice has to come from here, or a structural edit
+   * that added a voice would lose it again the next time a gate was toggled.
+   */
+  const loaded = useRef(schedule);
+
   // Read through refs so the app's own levels carry across a schedule change without a change to
   // either re-triggering the load below.
   const masterGainRef = useRef(masterGain);
@@ -120,6 +133,7 @@ export function usePlayer(
     if (!schedule) return;
 
     const instance = engine();
+    loaded.current = schedule;
     instance.load(schedule);
     instance.setMasterGain(masterGainRef.current);
     instance.setNoiseLayer(noiseRef.current);
@@ -243,27 +257,35 @@ export function usePlayer(
    *
    * `duration` and `passCount` are re-read because an edit can change how long the schedule is
    * (§3.7). Live mode never does, but a caller that does must not have to know to refresh them.
+   * `voiceGates` is re-read for the same reason: a structural edit changes how many there are and,
+   * through `voiceMap`, which voice each one belongs to.
    */
-  const update = useCallback((next: Schedule, horizon?: Horizon) => {
-    const instance = engineRef.current;
-    if (!instance) return;
-    instance.update(next, horizon);
-    setDuration(instance.getDuration());
-    setPassCount(instance.getPassCount());
-  }, []);
+  const update = useCallback(
+    (next: Schedule, horizon?: Horizon, voiceMap?: VoiceMap) => {
+      const instance = engineRef.current;
+      if (!instance) return;
+      loaded.current = next;
+      instance.update(next, horizon, voiceMap);
+      setDuration(instance.getDuration());
+      setPassCount(instance.getPassCount());
+      setVoiceGates(readGates(instance, next));
+    },
+    [readGates],
+  );
 
   const toggleGate = useCallback(
     (index: number, apply: (instance: PlaybackEngine, gate: VoiceGate) => void) => {
-      if (!schedule) return;
+      const current = loaded.current;
+      if (!current) return;
       const instance = engine();
       apply(instance, {
         muted: instance.isVoiceMuted(index),
         soloed: instance.isVoiceSoloed(index),
         audible: instance.isVoiceAudible(index),
       });
-      setVoiceGates(readGates(instance, schedule));
+      setVoiceGates(readGates(instance, current));
     },
-    [engine, readGates, schedule],
+    [engine, readGates],
   );
 
   const toggleMute = useCallback(

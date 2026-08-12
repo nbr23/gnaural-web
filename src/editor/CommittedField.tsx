@@ -3,6 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 
 export interface CommittedFieldProps {
   label: string;
+  /**
+   * Keep the label as the field's accessible name but take it off the screen — for a row of
+   * identical fields, where repeating "Name" down a voice list is noise rather than help.
+   */
+  labelHidden?: boolean;
   value: string;
   multiline?: boolean;
   numeric?: boolean;
@@ -27,6 +32,7 @@ export interface CommittedFieldProps {
  */
 export function CommittedField({
   label,
+  labelHidden,
   value,
   multiline,
   numeric,
@@ -60,7 +66,7 @@ export function CommittedField({
 
   return (
     <label className="editor__field">
-      <span className="editor__field-label">{label}</span>
+      <span className={labelHidden ? 'visually-hidden' : 'editor__field-label'}>{label}</span>
       {multiline ? (
         <textarea rows={3} {...shared} />
       ) : (

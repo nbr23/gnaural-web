@@ -64,6 +64,8 @@ const testRoot = setupRoot();
 
 interface Harness {
   commits: { schedule: Schedule; label: string }[];
+  /** Commits that also say where the selection should land — an insert or a delete. */
+  commitsAt: { schedule: Schedule; label: string; selection: NodeRef | null }[];
   previews: Schedule[];
   selections: (NodeRef | null)[];
   seeks: number[];
@@ -74,7 +76,7 @@ function mount(
   selected: NodeRef | null = null,
   lanes: LaneId[] = ['beat', 'base'],
 ) {
-  const harness: Harness = { commits: [], previews: [], selections: [], seeks: [] };
+  const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
 
   testRoot.render(
     <EditSurface
@@ -85,6 +87,7 @@ function mount(
       mode="squeeze"
       onSelect={(node) => harness.selections.push(node)}
       onCommit={(next, label) => harness.commits.push({ schedule: next, label })}
+      onCommitAt={(next, label, selection) => harness.commitsAt.push({ schedule: next, label, selection })}
       onPreview={(next) => harness.previews.push(next)}
       onSeek={(time) => harness.seeks.push(time)}
     />,
@@ -366,11 +369,40 @@ describe('EditSurface by keyboard', () => {
 
   it('clamps at the ends rather than wrapping to another voice', () => {
     const schedule = fourNodes();
-    const harness: Harness = { commits: [], previews: [], selections: [], seeks: [] };
+    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
     testRoot.render(surfaceWith(schedule, { voice: 0, entry: 0 }, harness));
 
     key(testRoot.query('svg')!, 'ArrowLeft');
     expect(harness.selections.at(-1)).toEqual({ voice: 0, entry: 0 });
+  });
+
+  /** §6.1's "select and delete". Backspace too, since that is the key half the world reaches for. */
+  it('deletes the selected node and leaves the neighbour selected, so a second press repeats', () => {
+    const schedule = fourNodes();
+    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
+    testRoot.render(surfaceWith(schedule, { voice: 0, entry: 2 }, harness));
+
+    key(testRoot.query('svg')!, 'Delete');
+
+    expect(harness.commitsAt).toHaveLength(1);
+    expect(harness.commitsAt[0].label).toBe('Delete node');
+    expect(harness.commitsAt[0].schedule.voices[0].entries).toHaveLength(3);
+    expect(harness.commitsAt[0].selection).toEqual({ voice: 0, entry: 1 });
+
+    testRoot.render(surfaceWith(schedule, { voice: 0, entry: 1 }, harness));
+    key(testRoot.query('svg')!, 'Backspace');
+    expect(harness.commitsAt).toHaveLength(2);
+  });
+
+  /** Silently, because there is no control here to grey out; the panel says why on the node. */
+  it('does nothing when the selected node is the only one in its voice', () => {
+    const schedule = fourNodes();
+    schedule.voices = [makeVoice([makeEntry({})], 0)];
+    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
+    testRoot.render(surfaceWith(schedule, { voice: 0, entry: 0 }, harness));
+
+    key(testRoot.query('svg')!, 'Delete');
+    expect(harness.commitsAt).toHaveLength(0);
   });
 
   /** With nothing selected the read-only crosshair readout is what the arrows still do. */
@@ -391,6 +423,7 @@ function surfaceWith(schedule: Schedule, selected: NodeRef | null, harness: Harn
       mode="squeeze"
       onSelect={(node) => harness.selections.push(node)}
       onCommit={(next, label) => harness.commits.push({ schedule: next, label })}
+      onCommitAt={(next, label, selection) => harness.commitsAt.push({ schedule: next, label, selection })}
       onPreview={(next) => harness.previews.push(next)}
       onSeek={(time) => harness.seeks.push(time)}
     />

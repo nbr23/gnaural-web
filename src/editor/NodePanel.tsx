@@ -1,6 +1,6 @@
 import { formatClock } from '../app/format';
 import type { MoveMode } from '../document/edit';
-import { moveEntry, updateEntry } from '../document/edit';
+import { insertEntry, moveEntry, removeEntry, updateEntry } from '../document/edit';
 import { entryStartTimes } from '../document/timing';
 import type { Schedule } from '../document/types';
 import { CommittedField } from './CommittedField';
@@ -11,6 +11,8 @@ export interface NodePanelProps {
   selected: NodeRef | null;
   mode: MoveMode;
   onCommit(schedule: Schedule, label: string): void;
+  /** An edit that moves the node indices, so it says where the selection should land. */
+  onCommitAt(schedule: Schedule, label: string, selection: NodeRef | null): void;
 }
 
 /**
@@ -27,7 +29,7 @@ export interface NodePanelProps {
  * Committed on blur, by reusing the header's own field: per-keystroke commits would make undo walk
  * back through a number one digit at a time, and would push a document at the engine per keystroke.
  */
-export function NodePanel({ schedule, selected, mode, onCommit }: NodePanelProps) {
+export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: NodePanelProps) {
   const voice = selected ? schedule.voices[selected.voice] : undefined;
   const entry = selected && voice ? voice.entries[selected.entry] : undefined;
 
@@ -46,6 +48,10 @@ export function NodePanel({ schedule, selected, mode, onCommit }: NodePanelProps
   const start = starts[selected.entry];
   const isFirst = selected.entry === 0;
   const isLast = selected.entry === voice.entries.length - 1;
+  // Refused, not warned: Gnaural groups entries into voices by their `parent` attribute and takes
+  // each voice's properties by document order, so a voice contributing no entry does not merely
+  // vanish on reopen — every voice after it takes the wrong slot's name, type and flags.
+  const isOnly = voice.entries.length === 1;
   const label = voice.description.trim() || `Voice ${voice.id}`;
 
   const patch = (commitLabel: string, next: Schedule) => onCommit(next, commitLabel);
@@ -55,6 +61,46 @@ export function NodePanel({ schedule, selected, mode, onCommit }: NodePanelProps
       <h2>
         Node {selected.entry + 1} of {voice.entries.length} — {label}
       </h2>
+
+      {/* §6.1 asks for a click on empty space to insert. That gesture is not available: step 5 gave
+          a pointer that misses a node to seeking and reserved the move for a marquee, and — the
+          larger reason — empty space cannot say *which* voice it means, and 12 of the 19 bundled
+          programs have more than one. So insert is a command on the node you already picked. */}
+      <div className="node-panel__actions">
+        <button
+          type="button"
+          className="button"
+          onClick={() =>
+            onCommitAt(
+              insertEntry(schedule, { voice: selected.voice, after: selected.entry }),
+              'Insert node',
+              { voice: selected.voice, entry: selected.entry + 1 },
+            )
+          }
+        >
+          Insert node after
+        </button>
+        <button
+          type="button"
+          className="button"
+          disabled={isOnly}
+          onClick={() =>
+            onCommitAt(
+              removeEntry(schedule, { voice: selected.voice, entry: selected.entry }),
+              'Delete node',
+              { voice: selected.voice, entry: Math.max(0, selected.entry - 1) },
+            )
+          }
+        >
+          Delete node
+        </button>
+      </div>
+
+      <p className="editor__hint">
+        {isOnly
+          ? 'A voice needs at least one node. Delete the voice itself to remove it.'
+          : 'Inserting splits the segment after this node, leaving the curve and the length exactly as they are. Deleting gives the time back to the neighbouring node.'}
+      </p>
 
       <div className="editor__row">
         <CommittedField

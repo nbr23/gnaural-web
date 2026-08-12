@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatClock } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
 import { useThrottled } from '../app/useThrottled';
-import type { MoveMode } from '../document/edit';
+import type { MoveMode, VoiceEdit } from '../document/edit';
 import { updateSchedule } from '../document/edit';
 import type { Schedule } from '../document/types';
+import type { VoiceMap } from '../document/voiceMap';
+import { composeVoiceMaps } from '../document/voiceMap';
 import { VolumeSlider } from '../player/Controls';
 import { Readout } from '../player/Readout';
 import { Timeline } from '../player/Timeline';
@@ -14,6 +16,8 @@ import { ALL_LANES, DEFAULT_LANES } from '../viz/geometry';
 import { CommittedField } from './CommittedField';
 import { EditSurface } from './EditSurface';
 import { NodePanel } from './NodePanel';
+import { VoiceRows } from './VoiceRows';
+import type { NodeRef } from './history';
 import { useDraft } from './useDraft';
 import { useEditor } from './useEditor';
 import './EditorView.css';
@@ -90,7 +94,36 @@ export function EditorView({
     [editor],
   );
 
-  const { preview } = usePlaybackOfEdits(player, initial, schedule);
+  /**
+   * An edit that shifts entry indices. The commit records the selection it *had* (undo restores
+   * that); this sets where the selection lands *after* it, which only the command knows.
+   */
+  const commitEditAt = useCallback(
+    (next: Schedule, label: string, selection: NodeRef | null) => {
+      editor.commit(next, { label });
+      editor.select(selection);
+    },
+    [editor],
+  );
+
+  /**
+   * An edit that moves voices, which is the only kind that owes a map.
+   *
+   * With no explicit selection the current one is carried across the edit's own map, so reordering
+   * one voice cannot pull the selection off a node in another — and deleting the voice it was in
+   * drops it, because the map says the voice went nowhere.
+   */
+  const commitStructure = useCallback(
+    (edit: VoiceEdit, label: string, selection?: NodeRef | null) => {
+      const current = editor.selection;
+      editor.commit(edit.schedule, { label, voiceMap: edit.voiceMap });
+      if (selection !== undefined) editor.select(selection);
+      else if (current) editor.select(followVoice(current, edit.voiceMap));
+    },
+    [editor],
+  );
+
+  const { preview } = usePlaybackOfEdits(player, initial, schedule, editor.voiceMap);
   useUndoShortcuts(editor.undo, editor.redo);
 
   const title = schedule.title.trim() || 'Untitled program';
@@ -156,6 +189,7 @@ export function EditorView({
         mode={mode}
         onSelect={editor.select}
         onCommit={commitEdit}
+        onCommitAt={commitEditAt}
         onPreview={preview}
         onSeek={player.seek}
       />
@@ -178,7 +212,21 @@ export function EditorView({
 
       <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
 
-      <NodePanel schedule={schedule} selected={editor.selection} mode={mode} onCommit={commitEdit} />
+      <VoiceRows
+        schedule={schedule}
+        gates={player.voiceGates}
+        onCommit={commitEdit}
+        onStructural={commitStructure}
+        onToggleSolo={player.toggleSolo}
+      />
+
+      <NodePanel
+        schedule={schedule}
+        selected={editor.selection}
+        mode={mode}
+        onCommit={commitEdit}
+        onCommitAt={commitEditAt}
+      />
 
       <section className="editor__fields">
         <h2>Program</h2>
@@ -290,17 +338,38 @@ function usePlaybackOfEdits(
   player: Player,
   initial: Schedule,
   schedule: Schedule,
+  voiceMap: VoiceMap | null,
 ): { preview: (next: Schedule) => void } {
   const pushed = useRef(initial);
+  /**
+   * The map from the document last actually pushed to the one about to be.
+   *
+   * **It has to accumulate**, because the throttle below keeps only the most recent action: two
+   * structural commits inside one interval — held-down undo across a reorder is the obvious way —
+   * deliver one document, and a map that described only the second half of that journey would put
+   * the session gates on the wrong voices. Null while nothing structural is outstanding, so the
+   * ordinary case allocates nothing.
+   */
+  const pending = useRef<VoiceMap | null>(null);
+
   // Not memoised: `useThrottled` always calls the most recent action it was given, so a pending
   // push cannot reach a player this render has already replaced.
-  const push = useThrottled((next: Schedule) => player.update(next));
+  const push = useThrottled((next: Schedule) => {
+    const map = pending.current;
+    pending.current = null;
+    player.update(next, undefined, map ?? undefined);
+  });
 
   useEffect(() => {
     if (!affectsAudio(pushed.current, schedule)) return;
+    if (voiceMap) {
+      pending.current = pending.current
+        ? composeVoiceMaps(pending.current, voiceMap)
+        : voiceMap;
+    }
     pushed.current = schedule;
     push(schedule);
-  }, [push, schedule]);
+  }, [push, schedule, voiceMap]);
 
   /**
    * The in-flight document from a gesture. **The only caller of the truncated editing horizon**, and
@@ -309,16 +378,29 @@ function usePlaybackOfEdits(
    * exist, which is undeniable, rather than making the audio go quiet in sixty seconds.
    *
    * Already rate-limited inside `EditSurface`; this only routes it and marks the horizon.
+   *
+   * A drag can move no voice, so it never *makes* a map — but it can begin inside the throttle
+   * window of a structural commit that has not gone out yet, and pushing past an outstanding map
+   * would apply this document to gates the previous edit has not finished moving. So it carries and
+   * clears one if there is one, which is the whole of what "never lose a map" requires here.
    */
   const preview = useCallback(
     (next: Schedule) => {
+      const map = pending.current;
+      pending.current = null;
       pushed.current = next;
-      player.update(next, 'gesture');
+      player.update(next, 'gesture', map ?? undefined);
     },
     [player],
   );
 
   return { preview };
+}
+
+/** Where a node's voice ended up. A voice the edit deleted takes the selection with it. */
+function followVoice(node: NodeRef, map: VoiceMap): NodeRef | null {
+  const voice = map[node.voice];
+  return voice === undefined || voice < 0 ? null : { voice, entry: node.entry };
 }
 
 function affectsAudio(previous: Schedule, next: Schedule): boolean {

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Entry, Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import { compileVoice, valueAtTime } from './compiler';
-import { updateSchedule } from '../document/edit';
+import { moveVoice, removeVoice, updateSchedule } from '../document/edit';
 import type { Horizon, NoiseLayerSettings } from './engine';
 import { CLICK_FREE_RAMP, PlaybackEngine, playSchedule } from './engine';
 
@@ -955,6 +955,123 @@ describe('update() — live re-scheduling (§6.1)', () => {
     engine.setVoiceMuted(0, false);
     engine.update(steadySchedule(410, 1, 2));
     expect(engine.isVoiceMuted(0)).toBe(false);
+  });
+
+  /**
+   * The other half of the crossfade, and the one a real caller only got in step 6: adding a voice.
+   * A different frequency rather than a second copy of the same one, so the two sum to a level that
+   * does not depend on their relative phase.
+   */
+  it('crossfades a new voice in when an edit adds one', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    const first = makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0, volumeLeft: 0.5, volumeRight: 0.5 })]);
+    const second = makeVoice(
+      [makeEntry({ duration: 30, baseFreq: 700, beatFreq: 0, volumeLeft: 0.5, volumeRight: 0.5 })],
+      { id: 1 },
+    );
+
+    engine.load(makeSchedule([first]));
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
+      engine.update(makeSchedule([first, second]), 'full', [0]),
+    );
+    const left = buffer.getChannelData(0);
+
+    expect(peakAmplitude(windowOf(left, 0.1, 0.4))).toBeCloseTo(0.5, 1);
+    expect(peakAmplitude(windowOf(left, 0.6, 0.9))).toBeGreaterThan(0.85);
+    // Built silent and ramped in over CLICK_FREE_RAMP; appearing at full level would step.
+    expect(maxStep(windowOf(left, 0.45, 0.6))).toBeLessThan(0.2);
+  });
+
+  /**
+   * Session gates are keyed by index into `schedule.voices` (§3.4 — ids are not unique), so a
+   * structural edit has to say what moved or the gates stay on slots that now hold other voices.
+   */
+  it('carries session gates across a reorder, given the voice map', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    const before = steadySchedule(300, 1, 3);
+    engine.load(before);
+    engine.play();
+    engine.setVoiceSoloed(2, true);
+
+    const edit = moveVoice(before, { from: 2, to: 0 });
+    engine.update(edit.schedule, 'full', edit.voiceMap);
+
+    expect(engine.isVoiceSoloed(0)).toBe(true);
+    expect(engine.isVoiceSoloed(2)).toBe(false);
+    expect(engine.isVoiceAudible(0)).toBe(true);
+    expect(engine.isVoiceAudible(1)).toBe(false);
+  });
+
+  /** The failure the map exists to prevent, asserted from the other side so it cannot be dropped. */
+  it('leaves a gate on the wrong voice when a reorder arrives without its map', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    const before = steadySchedule(300, 1, 3);
+    engine.load(before);
+    engine.play();
+    engine.setVoiceSoloed(2, true);
+
+    engine.update(moveVoice(before, { from: 2, to: 0 }).schedule);
+
+    expect(engine.isVoiceSoloed(2)).toBe(true);
+  });
+
+  it('closes the gap in the gates when a voice is deleted', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    const before = steadySchedule(300, 1, 3);
+    engine.load(before);
+    engine.play();
+    engine.setVoiceMuted(2, true);
+
+    const edit = removeVoice(before, 0);
+    engine.update(edit.schedule, 'full', edit.voiceMap);
+
+    expect(engine.isVoiceMuted(1)).toBe(true);
+    expect(engine.isVoiceMuted(2)).toBe(false);
+  });
+
+  /**
+   * A reorder compares every voice against a different one, so without the map the document's own
+   * mute flags read as flags the edit changed. Here neither voice's flag moved relative to itself.
+   */
+  it('does not adopt a document mute that only appears to have changed', () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    const before = steadySchedule(300, 1, 3);
+    before.voices[0] = { ...before.voices[0], muted: true };
+    engine.load(before);
+    engine.play();
+    // A listener overrides the document: they want to hear voice 0 after all.
+    engine.setVoiceMuted(0, false);
+
+    const edit = moveVoice(before, { from: 0, to: 2 });
+    engine.update(edit.schedule, 'full', edit.voiceMap);
+
+    expect(engine.isVoiceMuted(2)).toBe(false);
+    expect(engine.isVoiceMuted(0)).toBe(false);
+  });
+
+  /** Deleting the last voice is an allowed state (9a already warns for it), not a crash. */
+  it('goes silent without throwing when an edit leaves no voices at all', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    const before = steadySchedule(300, 1, 1);
+    engine.load(before);
+    engine.play();
+
+    const edit = removeVoice(before, 0);
+    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
+      engine.update(edit.schedule, 'full', edit.voiceMap),
+    );
+
+    expect(engine.getDuration()).toBe(0);
+    expect(engine.getCurrentOffset()).toBe(0);
+    expect(peakAmplitude(windowOf(buffer.getChannelData(0), 0.7, 0.95))).toBeLessThan(0.01);
   });
 
   it('stays paused, and where it was, when edited while paused', () => {

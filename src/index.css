@@ -115,6 +115,19 @@ p {
   }
 }
 
+/* Off the screen, still in the accessibility tree — for a control whose visible context already
+   names it but whose accessible name would otherwise be nothing. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* "← Library", from any view that has one to go back to. */
 .back-link {
   font: inherit;

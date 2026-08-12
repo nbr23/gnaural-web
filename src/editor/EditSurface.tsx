@@ -2,7 +2,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useThrottled } from '../app/useThrottled';
 import type { MoveMode } from '../document/edit';
-import { moveEntry, updateEntry } from '../document/edit';
+import { moveEntry, removeEntry, updateEntry } from '../document/edit';
 import type { Schedule } from '../document/types';
 import type { ChartInteraction, ChartPointer } from '../viz/ScheduleChart';
 import { ScheduleChart } from '../viz/ScheduleChart';
@@ -24,6 +24,8 @@ export interface EditSurfaceProps {
   onSelect(node: NodeRef | null): void;
   /** One commit per gesture, at the end of it. */
   onCommit(schedule: Schedule, label: string): void;
+  /** An edit that shifts the entry indices, so it says where the selection should land. */
+  onCommitAt(schedule: Schedule, label: string, selection: NodeRef | null): void;
   /** The in-flight document, already rate-limited. Reaches the engine and nothing else. */
   onPreview(schedule: Schedule): void;
   /** A pointer that hit no node. Transport, not editing. */
@@ -72,6 +74,7 @@ export function EditSurface({
   mode,
   onSelect,
   onCommit,
+  onCommitAt,
   onPreview,
   onSeek,
 }: EditSurfaceProps) {
@@ -201,6 +204,11 @@ export function EditSurface({
    * there is nothing in a selection that says which; the numeric panel is a set of ordinary form
    * fields that is already keyboard-operable and already the answer §6.1 gives for exact values.
    *
+   * Delete and Backspace remove the selected node — §6.1's "select and delete" — and leave the
+   * neighbour selected so a second press repeats rather than needing a re-select. There is no
+   * keyboard shortcut for the inverse: `Insert` does not exist on a Mac or a phone, and the panel's
+   * button is reachable everywhere.
+   *
    * With nothing selected the arrows keep the read-only chart's crosshair readout, which is what a
    * caller with no interest in editing gets.
    */
@@ -209,6 +217,20 @@ export function EditSurface({
       const voices = schedule.voices;
       if (event.key === 'Escape' && selected) {
         onSelect(null);
+        return true;
+      }
+
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selected) {
+        event.preventDefault();
+        // A refusal is silent here rather than disabled — there is no control to grey out — and the
+        // panel says why on the node it applies to.
+        const next = removeEntry(schedule, { voice: selected.voice, entry: selected.entry });
+        if (next !== schedule) {
+          onCommitAt(next, 'Delete node', {
+            voice: selected.voice,
+            entry: Math.max(0, selected.entry - 1),
+          });
+        }
         return true;
       }
 
@@ -232,7 +254,7 @@ export function EditSurface({
       onSelect({ voice, entry: clamp(selected.entry + step.entry, 0, entries - 1) });
       return true;
     },
-    [onSelect, schedule, selected],
+    [onCommitAt, onSelect, schedule, selected],
   );
 
   const interaction = useMemo<ChartInteraction>(

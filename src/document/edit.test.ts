@@ -1,11 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { moveEntry, updateEntry, updateSchedule } from './edit';
+import { compileVoice, eventBaseFreq, eventBeatFreq, valueAtTime } from '../engine/compiler';
+import { DEFAULT_LIVE_VALUES } from '../live/liveSchedule';
+import {
+  NEW_VOICE_SECONDS,
+  insertEntry,
+  insertVoice,
+  moveEntry,
+  moveVoice,
+  removeEntry,
+  removeVoice,
+  updateEntry,
+  updateSchedule,
+  updateVoice,
+} from './edit';
 import { parseSchedule } from './parser';
 import { serializeSchedule } from './serializer';
 import { loadFixture } from './test-fixtures';
-import { entryStartTimes, voiceDuration } from './timing';
+import { entryStartTimes, scheduleDuration, voiceDuration } from './timing';
 import type { Entry, Schedule, Voice } from './types';
 import { VoiceType } from './types';
+import { REMOVED } from './voiceMap';
 
 /** A real multi-voice document, so the structural-sharing assertions have something to share. */
 function fixture() {
@@ -236,5 +250,342 @@ describe('moveEntry', () => {
 
     expect(entryStartTimes(reparsed.voices[0])[3]).toBeCloseTo(target, 3);
     expect(reparsed.voices[0].entries[0].preserved).toEqual(before.voices[0].entries[0].preserved);
+  });
+});
+
+describe('updateVoice', () => {
+  it('patches one voice and keeps the identity of the rest', () => {
+    const before = fixture();
+    const after = updateVoice(before, 1, { description: 'Carrier', muted: true });
+
+    expect(after.voices[1].description).toBe('Carrier');
+    expect(after.voices[1].muted).toBe(true);
+    expect(after.voices[1].entries).toBe(before.voices[1].entries);
+    expect(after.voices[0]).toBe(before.voices[0]);
+    expect(after.voices[2]).toBe(before.voices[2]);
+  });
+
+  it('returns the same object when nothing changes', () => {
+    const before = fixture();
+
+    expect(updateVoice(before, 0, {})).toBe(before);
+    expect(updateVoice(before, 0, { hidden: before.voices[0].hidden })).toBe(before);
+    expect(updateVoice(before, 9, { muted: true })).toBe(before);
+  });
+
+  /** Step 4 put `hidden` inside the history stack because it is in the file and it serializes. */
+  it('writes both document flags through the serializer', () => {
+    const before = fixture();
+    const after = updateVoice(updateVoice(before, 0, { muted: true }), 0, { hidden: true });
+    const reparsed = parseSchedule(serializeSchedule(after));
+
+    expect(reparsed.voices[0].muted).toBe(true);
+    expect(reparsed.voices[0].hidden).toBe(true);
+  });
+});
+
+describe('insertEntry', () => {
+  it('splits the segment in two without changing the voice length', () => {
+    const before = ramp([10, 20, 30]);
+    const after = insertEntry(before, { voice: 0, after: 1 });
+
+    expect(starts(after)).toEqual([0, 10, 20, 30]);
+    expect(after.voices[0].entries.map((e) => e.duration)).toEqual([10, 10, 10, 30]);
+    expect(voiceDuration(after.voices[0])).toBe(voiceDuration(before.voices[0]));
+  });
+
+  it('splits at an explicit time, clamped to the segment it was asked to split', () => {
+    const before = ramp([10, 20, 30]);
+
+    expect(starts(insertEntry(before, { voice: 0, after: 1, time: 12 }))).toEqual([0, 10, 12, 30]);
+    expect(starts(insertEntry(before, { voice: 0, after: 1, time: -50 }))).toEqual([0, 10, 10, 30]);
+    expect(starts(insertEntry(before, { voice: 0, after: 1, time: 999 }))).toEqual([0, 10, 30, 30]);
+  });
+
+  /**
+   * The property that makes an insert a handle rather than an edit: the curve through the new node
+   * is the curve that was already there.
+   */
+  it('puts the new node exactly on the existing curve', () => {
+    const before = fixture();
+    const voice = before.voices[0];
+    const at = entryStartTimes(voice)[3] + voice.entries[3].duration / 2;
+    const inserted = insertEntry(before, { voice: 0, after: 3 }).voices[0].entries[4];
+
+    const onCurve = valueAtTime(compileVoice(voice), at);
+    expect(inserted.baseFreq).toBeCloseTo(eventBaseFreq(onCurve), 9);
+    expect(inserted.beatFreq).toBeCloseTo(eventBeatFreq(onCurve), 9);
+    expect(inserted.volumeLeft).toBeCloseTo(onCurve.leftGain, 9);
+    expect(inserted.volumeRight).toBeCloseTo(onCurve.rightGain, 9);
+  });
+
+  /**
+   * §3.5's unconditional wrap *is* the last entry's segment, so splitting it is the ordinary
+   * operation rather than a special case — and the value at the split is on the way back to
+   * entry[0], not a hold at the last entry's own value.
+   */
+  it('splits the final segment, where the curve is heading back to entry 0', () => {
+    const before = ramp([10, 20, 30]);
+    const after = insertEntry(before, { voice: 0, after: 2 });
+    const entries = after.voices[0].entries;
+
+    expect(entries).toHaveLength(4);
+    expect(entries.map((e) => e.duration)).toEqual([10, 20, 15, 15]);
+    expect(voiceDuration(after.voices[0])).toBe(60);
+    // Halfway from entry[2] (180 Hz) back to entry[0] (200 Hz).
+    expect(entries[3].baseFreq).toBeCloseTo(190, 9);
+  });
+
+  it('splits a one-entry voice, whose single segment is a constant hold', () => {
+    const before = ramp([600]);
+    const after = insertEntry(before, { voice: 0, after: 0 });
+
+    expect(after.voices[0].entries.map((e) => e.duration)).toEqual([300, 300]);
+    expect(after.voices[0].entries[1].baseFreq).toBe(200);
+    expect(voiceDuration(after.voices[0])).toBe(600);
+  });
+
+  /** An imported file can carry one; §3.7 says the repair is the length the rest of it plays to. */
+  it('gives an empty voice its first entry rather than splitting nothing', () => {
+    const before = ramp([10, 20, 30]);
+    const emptied: Schedule = {
+      ...before,
+      voices: [before.voices[0], { ...before.voices[1], entries: [] }],
+    };
+    const after = insertEntry(emptied, { voice: 1, after: 0 });
+
+    expect(after.voices[1].entries).toHaveLength(1);
+    expect(voiceDuration(after.voices[1])).toBe(60);
+  });
+
+  it('keeps the identity of every voice and untouched entry', () => {
+    const before = fixture();
+    const after = insertEntry(before, { voice: 1, after: 4 });
+
+    expect(after.voices[0]).toBe(before.voices[0]);
+    expect(after.voices[2]).toBe(before.voices[2]);
+    expect(after.voices[1].entries[0]).toBe(before.voices[1].entries[0]);
+    expect(after.voices[1].entries[6]).toBe(before.voices[1].entries[5]);
+  });
+
+  it('carries no preserved data, so the serializer writes the owning voice id as the parent', () => {
+    const before = fixture();
+    const after = insertEntry(before, { voice: 2, after: 0 });
+    const xml = serializeSchedule(after);
+    const reparsed = parseSchedule(xml);
+
+    expect(after.voices[2].entries[1].preserved).toEqual({});
+    expect(reparsed.voices[2].entries[1].preserved.parent).toBe(String(before.voices[2].id));
+    expect(reparsed.voices[2].entries).toHaveLength(before.voices[2].entries.length + 1);
+  });
+
+  it('returns the same object for a voice that is not there', () => {
+    const before = ramp([10, 20, 30]);
+    expect(insertEntry(before, { voice: 9, after: 0 })).toBe(before);
+  });
+});
+
+describe('removeEntry', () => {
+  it('gives the removed duration to the entry before it, keeping the voice length', () => {
+    const before = ramp([10, 20, 30]);
+    const after = removeEntry(before, { voice: 0, entry: 1 });
+
+    expect(after.voices[0].entries.map((e) => e.duration)).toEqual([30, 30]);
+    expect(voiceDuration(after.voices[0])).toBe(60);
+  });
+
+  it('gives it to the entry after, when the first one goes', () => {
+    const before = ramp([10, 20, 30]);
+    const after = removeEntry(before, { voice: 0, entry: 0 });
+
+    expect(after.voices[0].entries.map((e) => e.duration)).toEqual([30, 30]);
+    expect(after.voices[0].entries[0].baseFreq).toBe(190);
+    expect(voiceDuration(after.voices[0])).toBe(60);
+  });
+
+  /** The property that makes the pair honest: an insert you did not want costs nothing to take back. */
+  it('is the exact inverse of an insert', () => {
+    const before = ramp([10, 20, 30]);
+    const round = removeEntry(insertEntry(before, { voice: 0, after: 1, time: 17 }), {
+      voice: 0,
+      entry: 2,
+    });
+
+    expect(round.voices[0].entries.map((e) => e.duration)).toEqual([10, 20, 30]);
+    expect(round.voices[0].entries[1].baseFreq).toBe(before.voices[0].entries[1].baseFreq);
+  });
+
+  /**
+   * Refused rather than warned. Gnaural groups entries into voices by the `parent` attribute and
+   * takes voice properties by document order, so a voice with no entries does not merely vanish on
+   * reopen — every voice after it takes the wrong slot's description, type and flags.
+   */
+  it('refuses to empty a voice', () => {
+    const single = ramp([600]);
+    expect(removeEntry(single, { voice: 0, entry: 0 })).toBe(single);
+  });
+
+  it('returns the same object for an entry or voice that is not there', () => {
+    const before = ramp([10, 20, 30]);
+    expect(removeEntry(before, { voice: 0, entry: 9 })).toBe(before);
+    expect(removeEntry(before, { voice: 0, entry: -1 })).toBe(before);
+    expect(removeEntry(before, { voice: 9, entry: 0 })).toBe(before);
+  });
+
+  it('keeps the identity of every voice and untouched entry', () => {
+    const before = fixture();
+    const after = removeEntry(before, { voice: 1, entry: 4 });
+
+    expect(after.voices[0]).toBe(before.voices[0]);
+    expect(after.voices[2]).toBe(before.voices[2]);
+    expect(after.voices[1].entries[0]).toBe(before.voices[1].entries[0]);
+    expect(after.voices[1].entries[5]).toBe(before.voices[1].entries[6]);
+  });
+});
+
+describe('insertVoice', () => {
+  it('appends a one-entry voice spanning exactly what the schedule already plays', () => {
+    const before = fixture();
+    const { schedule: after, voiceMap } = insertVoice(before, { kind: 'tone' });
+    const added = after.voices[3];
+
+    expect(after.voices).toHaveLength(4);
+    expect(added.entries).toHaveLength(1);
+    expect(voiceDuration(added)).toBe(scheduleDuration(before));
+    expect(scheduleDuration(after)).toBe(scheduleDuration(before));
+    expect(voiceMap).toEqual([0, 1, 2]);
+  });
+
+  it('takes its tone values from the same defaults Live mode uses', () => {
+    const { schedule } = insertVoice(fixture(), { kind: 'tone' });
+    const entry = schedule.voices[3].entries[0];
+
+    expect(entry.baseFreq).toBe(DEFAULT_LIVE_VALUES.baseFreq);
+    expect(entry.beatFreq).toBe(DEFAULT_LIVE_VALUES.beatFreq);
+    // Deliberately not 1.0 — a new voice at full scale on top of a programme already near it clips.
+    expect(entry.volumeLeft).toBe(0.5);
+    expect(entry.volumeRight).toBe(0.5);
+    expect(schedule.voices[3].type).toBe(VoiceType.Binaural);
+  });
+
+  /** All nine noise voices in the bundled library are exactly this. */
+  it('takes its noise values from the corpus convention', () => {
+    const { schedule } = insertVoice(fixture(), { kind: 'noise' });
+    const voice = schedule.voices[3];
+
+    expect(voice.type).toBe(VoiceType.PinkNoise);
+    expect(voice.description).toBe('Background noise');
+    expect(voice.entries[0].baseFreq).toBe(100);
+    expect(voice.entries[0].beatFreq).toBe(0);
+  });
+
+  it('inserts in the middle and reports where everything went', () => {
+    const before = fixture();
+    const { schedule: after, voiceMap } = insertVoice(before, { kind: 'tone', at: 1 });
+
+    expect(after.voices[0]).toBe(before.voices[0]);
+    expect(after.voices[2]).toBe(before.voices[1]);
+    expect(after.voices[3]).toBe(before.voices[2]);
+    expect(voiceMap).toEqual([0, 2, 3]);
+  });
+
+  it('numbers a new voice past every existing id and renumbers nothing', () => {
+    const before = fixture();
+    const once = insertVoice(before, { kind: 'tone' }).schedule;
+    const twice = insertVoice(once, { kind: 'noise' }).schedule;
+
+    expect(twice.voices.map((voice) => voice.id)).toEqual([0, 1, 2, 3, 4]);
+    expect(twice.voices[0].id).toBe(before.voices[0].id);
+  });
+
+  it('falls back to a session-length voice when there is nothing to match', () => {
+    const empty: Schedule = { ...fixture(), voices: [] };
+    const { schedule, voiceMap } = insertVoice(empty, { kind: 'tone' });
+
+    expect(voiceDuration(schedule.voices[0])).toBe(NEW_VOICE_SECONDS);
+    expect(schedule.voices[0].id).toBe(0);
+    expect(voiceMap).toEqual([]);
+  });
+
+  /** §6.3: what this editor writes has to reopen in Gnaural desktop, which groups by `parent`. */
+  it('round-trips through the serializer with the parent attribute written', () => {
+    const { schedule } = insertVoice(fixture(), { kind: 'noise' });
+    const reparsed = parseSchedule(serializeSchedule(schedule));
+    const added = reparsed.voices[3];
+
+    expect(added.entries[0].preserved.parent).toBe(String(schedule.voices[3].id));
+    expect(added.type).toBe(VoiceType.PinkNoise);
+    expect(voiceDuration(added)).toBeCloseTo(voiceDuration(schedule.voices[3]), 6);
+  });
+});
+
+describe('removeVoice', () => {
+  it('drops the voice and reports the gap it closed', () => {
+    const before = fixture();
+    const { schedule: after, voiceMap } = removeVoice(before, 1);
+
+    expect(after.voices).toHaveLength(2);
+    expect(after.voices[0]).toBe(before.voices[0]);
+    expect(after.voices[1]).toBe(before.voices[2]);
+    expect(voiceMap).toEqual([0, REMOVED, 1]);
+  });
+
+  /** An accepted state, not a refused one: 9a already warns for it and already disables Play. */
+  it('allows the last voice to go', () => {
+    const single: Schedule = { ...fixture(), voices: [fixture().voices[0]] };
+    const { schedule: after, voiceMap } = removeVoice(single, 0);
+
+    expect(after.voices).toEqual([]);
+    expect(scheduleDuration(after)).toBe(0);
+    expect(voiceMap).toEqual([REMOVED]);
+  });
+
+  it('returns the same object and an identity map for a voice that is not there', () => {
+    const before = fixture();
+    const { schedule: after, voiceMap } = removeVoice(before, 9);
+
+    expect(after).toBe(before);
+    expect(voiceMap).toEqual([0, 1, 2]);
+  });
+});
+
+describe('moveVoice', () => {
+  it('reorders and reuses every voice object, allocating only the array', () => {
+    const before = fixture();
+    const { schedule: after, voiceMap } = moveVoice(before, { from: 0, to: 2 });
+
+    expect(after.voices).toEqual([before.voices[1], before.voices[2], before.voices[0]]);
+    expect(after.voices[0]).toBe(before.voices[1]);
+    expect(after.voices[2]).toBe(before.voices[0]);
+    expect(voiceMap).toEqual([2, 0, 1]);
+  });
+
+  it('moves in both directions', () => {
+    const before = fixture();
+    const up = moveVoice(before, { from: 2, to: 0 });
+
+    expect(up.schedule.voices[0]).toBe(before.voices[2]);
+    expect(up.voiceMap).toEqual([1, 2, 0]);
+  });
+
+  it('returns the same object for a move that goes nowhere', () => {
+    const before = fixture();
+
+    expect(moveVoice(before, { from: 1, to: 1 }).schedule).toBe(before);
+    expect(moveVoice(before, { from: 9, to: 0 }).schedule).toBe(before);
+    // Clamped rather than refused, so a button at the end of the list is a no-op not a crash.
+    expect(moveVoice(before, { from: 2, to: 5 }).schedule).toBe(before);
+  });
+
+  it('changes nothing audible about the document except the order', () => {
+    const before = fixture();
+    const { schedule: after } = moveVoice(before, { from: 0, to: 1 });
+
+    expect(scheduleDuration(after)).toBe(scheduleDuration(before));
+    expect(parseSchedule(serializeSchedule(after)).voices.map((v) => v.description)).toEqual([
+      before.voices[1].description,
+      before.voices[0].description,
+      before.voices[2].description,
+    ]);
   });
 });
