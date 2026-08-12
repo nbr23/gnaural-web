@@ -181,12 +181,16 @@ describe('VoiceRows', () => {
     expect(harness.structural[1].edit.schedule.voices[2].type).toBe(VoiceType.PinkNoise);
   });
 
-  /** The one warning this step can newly cause, worded by the shared producer rather than here. */
-  it('says so when the last voice has been deleted', () => {
-    mount(twoVoices());
-    expect(testRoot.query('.editor__hint--warn')).toBeNull();
-
+  /**
+   * Step 6 put a nothing-to-play line here, scoped to the one state it could newly create.
+   * `ValidationPanel` carries it now, so this component must not say it a second time — two
+   * surfaces wording the same fact is exactly what taking it from the shared producer avoided.
+   */
+  it('leaves the empty-schedule message to the validation panel', () => {
     mount({ ...twoVoices(), voices: [] });
-    expect(testRoot.query('.editor__hint--warn')?.textContent).toContain('no voices');
+
+    expect(rows()).toHaveLength(0);
+    expect(testRoot.query('.editor__hint--warn')).toBeNull();
+    expect(testRoot.container.textContent).not.toContain('no voices');
   });
 });

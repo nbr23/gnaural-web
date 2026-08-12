@@ -6,7 +6,7 @@ import { moveEntry, removeEntry, updateEntry } from '../document/edit';
 import type { Schedule } from '../document/types';
 import type { ChartInteraction, ChartPointer } from '../viz/ScheduleChart';
 import { ScheduleChart } from '../viz/ScheduleChart';
-import type { ChartLayout, LaneId } from '../viz/geometry';
+import type { ChartLayout, ChartMark, LaneId } from '../viz/geometry';
 import { EDITOR_DOMAIN_PADDING, laneField } from '../viz/geometry';
 import { seriesColor } from '../viz/palette';
 import type { DragAnchors } from './dragGeometry';
@@ -21,6 +21,8 @@ export interface EditSurfaceProps {
   currentTime?: number;
   selected: NodeRef | null;
   mode: MoveMode;
+  /** Validation marks, derived from the committed document. Identity-stable between commits. */
+  marks?: readonly ChartMark[];
   onSelect(node: NodeRef | null): void;
   /** One commit per gesture, at the end of it. */
   onCommit(schedule: Schedule, label: string): void;
@@ -72,6 +74,7 @@ export function EditSurface({
   currentTime,
   selected,
   mode,
+  marks,
   onSelect,
   onCommit,
   onCommitAt,
@@ -262,13 +265,14 @@ export function EditSurface({
       domainPadding: EDITOR_DOMAIN_PADDING,
       selected,
       dragging: drag !== null && drag.moved,
+      marks,
       onPointerDown: begin,
       onPointerMove: move,
       onPointerUp: end,
       onKeyDown,
       overlay: (layout) => (drag ? <DragOverlay drag={drag} layout={layout} /> : null),
     }),
-    [begin, drag, end, move, onKeyDown, selected],
+    [begin, drag, end, marks, move, onKeyDown, selected],
   );
 
   return (

@@ -4,7 +4,7 @@ import type { Entry, Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import { TEST_WIDTH } from '../test-setup';
 import { pointer, setupRoot, stubRect, wait } from '../test-utils';
-import type { LaneId } from '../viz/geometry';
+import type { ChartMark, LaneId } from '../viz/geometry';
 import { EditSurface } from './EditSurface';
 import type { NodeRef } from './history';
 
@@ -75,6 +75,7 @@ function mount(
   schedule: Schedule,
   selected: NodeRef | null = null,
   lanes: LaneId[] = ['beat', 'base'],
+  marks: ChartMark[] = [],
 ) {
   const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
 
@@ -85,6 +86,7 @@ function mount(
       height={HEIGHT}
       selected={selected}
       mode="squeeze"
+      marks={marks}
       onSelect={(node) => harness.selections.push(node)}
       onCommit={(next, label) => harness.commits.push({ schedule: next, label })}
       onCommitAt={(next, label, selection) => harness.commitsAt.push({ schedule: next, label, selection })}
@@ -116,6 +118,13 @@ function beatNodes(): { x: number; y: number }[] {
 
 function seriesPaths(): (string | null)[] {
   return testRoot.queryAll('path.schedule-chart__series').map((path) => path.getAttribute('d'));
+}
+
+/** Every validation mark, as the position it was drawn at (§6.1). */
+function markPositions(): string[] {
+  return testRoot
+    .queryAll('circle.schedule-chart__mark')
+    .map((mark) => `${mark.getAttribute('cx')},${mark.getAttribute('cy')}`);
 }
 
 describe('EditSurface', () => {
@@ -173,6 +182,46 @@ describe('EditSurface', () => {
     expect(seriesPaths()).toEqual(before);
     // What moves instead is the overlay, which is a fixed handful of marks per lane.
     expect(testRoot.queryAll('path.schedule-chart__overlay-series').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * §6.1's validation marks are held to the same rule, and for the same reason: they are derived
+   * from the committed document, so a drag that has committed nothing must not move them. The layer
+   * is `memo`'d exactly as `StaticPlot` is, and this is what says so.
+   */
+  it('does not redraw the validation marks while a finger is down either', () => {
+    const marks: ChartMark[] = [{ voice: 0, entry: 2, lanes: ['beat'], label: 'Beat is too high' }];
+    const { svg } = mount(fourNodes(), null, ['beat', 'base'], marks);
+    const node = beatNodes()[1];
+    const before = markPositions();
+
+    expect(before).toHaveLength(1);
+
+    pointer(svg, 'pointerdown', node);
+    pointer(svg, 'pointermove', { x: node.x + 30, y: node.y - 20 });
+    expect(markPositions()).toEqual(before);
+    pointer(svg, 'pointermove', { x: node.x + 60, y: node.y - 40 });
+    expect(markPositions()).toEqual(before);
+  });
+
+  it('marks a node in every lane when the rule is not about one of them', () => {
+    mount(fourNodes(), null, ['beat', 'base'], [
+      { voice: 0, entry: 1, lanes: null, label: 'Negative duration' },
+    ]);
+
+    expect(markPositions()).toHaveLength(2);
+  });
+
+  /**
+   * Lanes are collapsible session state, so a mark whose own lane is closed would be a warning
+   * nobody ever sees. It falls back to the lanes that are open rather than vanishing.
+   */
+  it('draws a mark whose lane is closed in the lanes that are open', () => {
+    mount(fourNodes(), null, ['beat', 'base'], [
+      { voice: 0, entry: 1, lanes: ['volumeLeft', 'volumeRight'], label: 'Volume out of range' },
+    ]);
+
+    expect(markPositions()).toHaveLength(2);
   });
 
   it('pushes the in-flight document at the engine, rate-limited, and always the last value', async () => {

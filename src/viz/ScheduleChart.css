@@ -207,6 +207,16 @@
   stroke-width: 2;
 }
 
+/* A validation mark (§6.1). Wider than the selection ring and in the app's warning colour rather
+   than the voice's, because it says something about the value rather than about which voice it is
+   in — so the two can be worn by the same node without either being ambiguous. */
+.schedule-chart__mark {
+  fill: none;
+  stroke: var(--warn, #fbbf24);
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+}
+
 .schedule-chart__overlay-series {
   fill: none;
   stroke-width: 2;

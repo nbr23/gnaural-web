@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatClock } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
 import { useThrottled } from '../app/useThrottled';
@@ -7,15 +7,18 @@ import { updateSchedule } from '../document/edit';
 import type { Schedule } from '../document/types';
 import type { VoiceMap } from '../document/voiceMap';
 import { composeVoiceMaps } from '../document/voiceMap';
+import type { EntryWarning, WarningKind } from '../document/warnings';
+import { entryWarnings, scheduleWarnings } from '../document/warnings';
 import { VolumeSlider } from '../player/Controls';
 import { Readout } from '../player/Readout';
 import { Timeline } from '../player/Timeline';
 import type { Player } from '../player/usePlayer';
-import type { LaneId } from '../viz/geometry';
+import type { ChartMark, LaneId } from '../viz/geometry';
 import { ALL_LANES, DEFAULT_LANES } from '../viz/geometry';
 import { CommittedField } from './CommittedField';
 import { EditSurface } from './EditSurface';
 import { NodePanel } from './NodePanel';
+import { ValidationPanel } from './ValidationPanel';
 import { VoiceRows } from './VoiceRows';
 import type { NodeRef } from './history';
 import { useDraft } from './useDraft';
@@ -126,6 +129,19 @@ export function EditorView({
   const { preview } = usePlaybackOfEdits(player, initial, schedule, editor.voiceMap);
   useUndoShortcuts(editor.undo, editor.redo);
 
+  /**
+   * §6.1's validation, over the **committed** document.
+   *
+   * That is not a discipline anyone has to keep: the in-flight document of a drag never leaves
+   * `EditSurface`, so `schedule` here is by construction the last thing decided, and these memos
+   * hold for the whole of a gesture. `marks` in particular must, because the chart draws them from a
+   * `memo`'d layer.
+   */
+  const warnings = useMemo(() => scheduleWarnings(schedule), [schedule]);
+  const issues = useMemo(() => entryWarnings(schedule), [schedule]);
+  const marks = useMemo(() => chartMarks(issues), [issues]);
+  const silent = warnings.some((warning) => warning.kind === 'nothing-to-play');
+
   const title = schedule.title.trim() || 'Untitled program';
 
   return (
@@ -187,6 +203,7 @@ export function EditorView({
         currentTime={player.offset}
         selected={editor.selection}
         mode={mode}
+        marks={marks}
         onSelect={editor.select}
         onCommit={commitEdit}
         onCommitAt={commitEditAt}
@@ -194,12 +211,20 @@ export function EditorView({
         onSeek={player.seek}
       />
 
+      {/* Under the chart rather than above it, which is where the player puts the same statement:
+          the marks these rows explain are on the chart, and a list that grew above it would shift
+          the chart itself downwards at the instant a drag commits. */}
+      <ValidationPanel schedule={warnings} entries={issues} onSelect={editor.select} />
+
       <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
 
       <div className="editor__transport">
+        {/* Disabled for the same reason the player disables it: twenty minutes of silence with no
+            explanation is worse than a button that says it cannot help. The panel above says why. */}
         <button
           type="button"
           className="button button--primary"
+          disabled={silent}
           onClick={() => (player.playing ? player.pause() : player.play())}
         >
           {player.playing ? 'Pause' : 'Play'}
@@ -320,6 +345,38 @@ export function EditorView({
 function numberOr(value: string, fallback: number): number {
   const parsed = Number(value.trim());
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Which lane each rule is about. `null` is "no particular lane" — a duration is not a value in one
+ * of them — and a kind that is absent here is not drawn on the chart at all.
+ *
+ * A presentation decision, so it lives here rather than in `src/document/`, which knows nothing
+ * about lanes.
+ */
+const MARKED_LANES: Partial<Record<WarningKind, readonly LaneId[] | null>> = {
+  'negative-duration': null,
+  'base-too-low': ['base'],
+  'beat-exceeds-base': ['beat'],
+  // Either channel can be the offender and the rule does not say which, so both lanes carry it.
+  'volume-out-of-range': ['volumeLeft', 'volumeRight'],
+};
+
+/**
+ * Marks for the chart — **warnings only**.
+ *
+ * A notice is the document being unusual and playing exactly as written, and four of the nineteen
+ * bundled programmes carry one: `beat-above-band`, at fifteen entries between them. Marking those
+ * would put dots over most of a gamma-band voice for something nobody needs to fix. They keep their
+ * row in the panel, which is where a notice belongs.
+ */
+function chartMarks(issues: EntryWarning[]): ChartMark[] {
+  return issues.flatMap((issue) => {
+    if (issue.severity !== 'warning' || !(issue.kind in MARKED_LANES)) return [];
+
+    const lanes = MARKED_LANES[issue.kind] ?? null;
+    return issue.nodes.map((node) => ({ ...node, lanes, label: issue.message }));
+  });
 }
 
 /**

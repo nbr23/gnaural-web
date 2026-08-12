@@ -832,6 +832,50 @@ describe('the editor (§6.1)', () => {
     expect(root.text()).toContain('Node 3 of 12');
   });
 
+  /**
+   * §6.1's inline validation, end to end: an edit that is legal in the format and wrong for a
+   * person raises a row under the chart, a mark on the node it happened at, and no obstacle of any
+   * kind — §6.1 says warnings, not hard errors, so Save goes on working.
+   */
+  it('validates a committed edit, marks the node, and blocks nothing', async () => {
+    await openDraftOf();
+
+    const svg = root.query('.editor__chart svg') as SVGSVGElement;
+    stubRect(svg, TEST_WIDTH, 262);
+    expect(root.query('.validation')).toBeNull();
+
+    const marker = root.queryAll('circle.schedule-chart__node')[2];
+    const at = { x: Number(marker.getAttribute('cx')), y: Number(marker.getAttribute('cy')) };
+    pointer(svg, 'pointerdown', at);
+    pointer(svg, 'pointerup', at);
+
+    // Step 5 left volumes unclamped on purpose, so that this has something to point at.
+    type('Volume left', '2.5');
+
+    expect(root.query('.validation [role="alert"]')?.textContent).toContain('outside 0–1');
+    expect(root.queryAll('circle.schedule-chart__mark').length).toBeGreaterThan(0);
+    expect(root.byText('.button', 'Save to library')?.hasAttribute('disabled')).toBe(false);
+
+    root.click(root.byText('.button', 'Undo change node volume'));
+    expect(root.query('.validation')).toBeNull();
+    expect(root.queryAll('circle.schedule-chart__mark')).toHaveLength(0);
+  });
+
+  /**
+   * A schedule with no voices is an allowed state (step 6), not a refusal — but it is silence, and
+   * the player already disables Play for it. The editor now says the same thing in the same words.
+   */
+  it('disables Play once the last voice is gone, and says why', async () => {
+    await openDraftOf();
+
+    const del = [...root.queryAll('.voice-rows__row button')].find((b) => b.textContent === 'Delete');
+    root.click(del);
+
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(0);
+    expect(root.query('.validation [role="alert"]')?.textContent).toContain('nothing to play');
+    expect(root.byText('.button--primary', 'Play')?.hasAttribute('disabled')).toBe(true);
+  });
+
   it('drags a node and keeps playing, without reloading the graph', async () => {
     await openDraftOf();
     root.click(root.byText('.button--primary', 'Play'));

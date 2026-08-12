@@ -11,6 +11,7 @@ import { EEG_BANDS } from './bands';
 import type {
   BreakpointHit,
   ChartLayout,
+  ChartMark,
   LaneId,
   LaneLayout,
   SeriesPoint,
@@ -60,6 +61,12 @@ export interface ChartInteraction {
   selected?: { voice: number; entry: number } | null;
   /** A gesture is in flight: the static curves become a ghost and the crosshair gets out of the way. */
   dragging?: boolean;
+  /**
+   * Nodes to mark as needing attention. **Must be identity-stable while a gesture runs** — they are
+   * drawn by a `memo`'d layer, exactly like `StaticPlot`, so a fresh array per `pointermove` would
+   * rebuild them per move for a document that has not changed.
+   */
+  marks?: readonly ChartMark[];
   /** Rendered above the static plot in the layout's pixel space. Keep it O(1) — it runs per move. */
   overlay?(layout: ChartLayout): ReactNode;
   onPointerDown?(pointer: ChartPointer): void;
@@ -383,6 +390,10 @@ export function ScheduleChart({
       >
         <StaticPlot layout={layout} xTicks={xTicks} nodes={editing} />
 
+        {interaction?.marks && interaction.marks.length > 0 && (
+          <IssueMarks layout={layout} marks={interaction.marks} />
+        )}
+
         {interaction?.selected && <SelectionRing layout={layout} selected={interaction.selected} />}
 
         {showCrosshair && (
@@ -619,6 +630,53 @@ function Nodes({
     </g>
   );
 }
+
+/**
+ * Nodes §6.1's validation has something to say about.
+ *
+ * **Memoised for the same reason `StaticPlot` is**, and on the same terms: it is derived from the
+ * committed document, so it must not be rebuilt on every `pointermove` of a drag that has not
+ * committed anything. The ring is deliberately larger than `SelectionRing`'s and takes no voice
+ * colour — a mark is a statement about the value, not another way of saying which voice it is in.
+ */
+const IssueMarks = memo(function IssueMarks({
+  layout,
+  marks,
+}: {
+  layout: ChartLayout;
+  marks: readonly ChartMark[];
+}) {
+  return (
+    <g className="schedule-chart__marks">
+      {marks.flatMap((mark, index) => {
+        // A mark belongs to the lane its rule is about — but lanes are collapsible session state,
+        // and a warning that disappears because the volume lanes happen to be closed is a warning
+        // nobody sees. So a mark with nowhere of its own to go is drawn in every open lane; the
+        // node is the same node in all of them, and the label says which value is meant.
+        const own = layout.lanes.filter((lane) => mark.lanes?.includes(lane.model.id) ?? false);
+        const lanes = own.length > 0 ? own : layout.lanes;
+
+        return lanes.flatMap((lane) => {
+          const series = lane.model.series.find((s) => s.slot === mark.voice);
+          const point: SeriesPoint | undefined = series?.points[mark.entry];
+          if (!point) return [];
+
+          return [
+            <circle
+              key={`${index}-${lane.model.id}`}
+              className="schedule-chart__mark"
+              cx={layout.timeScale.toPixel(point.time)}
+              cy={lane.valueScale.toPixel(point.value)}
+              r={9.5}
+            >
+              <title>{mark.label}</title>
+            </circle>,
+          ];
+        });
+      })}
+    </g>
+  );
+});
 
 /** The selected node, marked in every lane it appears in — one entry, several parameters. */
 function SelectionRing({

@@ -4,7 +4,6 @@ import { insertVoice, moveVoice, removeVoice, updateVoice } from '../document/ed
 import { DURATION_EPSILON, scheduleDuration, voiceDuration } from '../document/timing';
 import type { Schedule } from '../document/types';
 import { VoiceType } from '../document/types';
-import { scheduleWarnings } from '../document/warnings';
 import type { VoiceGate } from '../player/usePlayer';
 import { seriesColor } from '../viz/palette';
 import { CommittedField } from './CommittedField';
@@ -56,10 +55,6 @@ export function VoiceRows({
 }: VoiceRowsProps) {
   const voices = schedule.voices;
   const playback = scheduleDuration(schedule);
-  // The one message this step can newly cause. Taken from the shared producer rather than written
-  // here, so the editor and the player cannot come to word it differently. Step 7's inline
-  // validation is where the rest of the surface arrives.
-  const empty = scheduleWarnings(schedule).find((warning) => warning.kind === 'nothing-to-play');
 
   const add = (kind: VoiceKind) => {
     const edit = insertVoice(schedule, { kind });
@@ -73,8 +68,6 @@ export function VoiceRows({
         Mute and hide are saved with the program. Solo is just for listening and is never written to
         the file.
       </p>
-
-      {empty && <p className="editor__hint editor__hint--warn">{empty.message}</p>}
 
       <ul className="voice-rows">
         {voices.map((voice, index) => {

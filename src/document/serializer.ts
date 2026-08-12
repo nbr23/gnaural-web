@@ -91,9 +91,21 @@ function serializeVoice(voice: Voice): string {
   return `<voice>${parts.join('')}</voice>`;
 }
 
+/**
+ * The `parent` attribute an entry will be written with.
+ *
+ * Real files always carry one, so in practice it round-trips from `preserved`; the owning voice's
+ * id is the fallback for an entry this app created. Exported because it is not merely a detail of
+ * serialization: Gnaural rebuilds its voices from this value and nothing else (`SG_RestoreBackupData`,
+ * ScheduleGUI.c:2213), so `warnings.ts` has to read exactly what will be written.
+ */
+export function entryParent(entry: Entry, voiceId: number): string {
+  return entry.preserved.parent ?? String(voiceId);
+}
+
 function serializeEntry(entry: Entry, voiceId: number): string {
   const attrs: [string, string][] = [
-    ['parent', entry.preserved.parent ?? String(voiceId)],
+    ['parent', entryParent(entry, voiceId)],
     ['duration', formatNum(entry.duration)],
     ['volume_left', formatNum(entry.volumeLeft)],
     ['volume_right', formatNum(entry.volumeRight)],

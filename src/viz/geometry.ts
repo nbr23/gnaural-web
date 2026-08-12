@@ -107,6 +107,21 @@ export interface SeriesPoint {
   value: number;
 }
 
+/**
+ * A node the caller wants drawn attention to — §6.1's inline validation, marked where it happened.
+ *
+ * Addressed like everything else here, by index into `schedule.voices` and into that voice's
+ * entries. `lanes: null` means it belongs to no particular lane; a list means those lanes, and a
+ * lane that is closed is not a place a mark can hide (see `IssueMarks`).
+ */
+export interface ChartMark {
+  voice: number;
+  entry: number;
+  lanes: readonly LaneId[] | null;
+  /** Shown on hover and to a screen reader. Usually the warning's own sentence. */
+  label: string;
+}
+
 export interface VoiceSeries extends VoiceIdentity {
   points: SeriesPoint[];
 }
