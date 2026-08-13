@@ -1,0 +1,209 @@
+import { formatDuration } from '../app/format';
+import type { Route } from '../app/routing';
+import { formatHash } from '../app/routing';
+import type { BundledProgram } from './programs';
+import { PROGRAMS, programsByCategory } from './programs';
+import type { Draft, ImportedProgram } from './storage';
+
+/**
+ * The library's section model (PLAN.md §5.1's program list, grown up).
+ *
+ * Pure, and deliberately outside the view: what belongs in which section, what a search matches,
+ * how a favourite is keyed and which disclaimer a program owes are all rules rather than markup,
+ * and all four are easier to get wrong than to render. The view walks whatever comes back.
+ */
+
+/** Where a program came from, which is the library's colour key and its top-level grouping. */
+export type Origin = 'draft' | 'mine' | 'imported' | 'android';
+
+export const ORIGIN_LABELS: Record<Origin, string> = {
+  draft: 'Draft',
+  mine: 'Made here',
+  imported: 'Imported',
+  android: 'Android',
+};
+
+export interface LibraryItem {
+  /** `formatHash(route)` — the row's React key, its favourite key, and where it navigates. */
+  key: string;
+  route: Route;
+  title: string;
+  /** Length and credit, as one line: "20 min · Gnaural". */
+  meta: string;
+  origin: Origin;
+  /** Free text this program is searched on beyond its title — its credit and description. */
+  searchText: string;
+  /** A disclaimer that applies to this program alone. */
+  note?: string;
+  /** What removing this row means. Absent for a bundled program, which cannot be removed. */
+  removable?: 'imported' | 'draft';
+}
+
+export interface LibrarySection {
+  /** Stable across renders and searches — the rail scrolls to it and the settings remember it. */
+  id: string;
+  label: string;
+  /** A disclaimer that applies to everything in the section. */
+  note?: string;
+  items: LibraryItem[];
+  /** A leading package or file name in `label`, set as typed rather than uppercased like prose. */
+  code?: string;
+  /** Sub-sections, which is how the Android library keeps its own categories. */
+  children?: LibrarySection[];
+}
+
+export interface CatalogInput {
+  /** Null while IndexedDB is still being read; the section holds off rather than flashing empty. */
+  imported: ImportedProgram[] | null;
+  drafts: Draft[] | null;
+  favourites: readonly string[];
+  /** Free-text filter. Empty shows everything. */
+  query?: string;
+  bundled?: BundledProgram[];
+}
+
+/**
+ * What the whole bundled library is: the Android app's built-in programs.
+ *
+ * The attribution used to sit at the bottom of the page, where it described everything above it
+ * without saying so. It belongs on the group it is about — and §2's no-medical-claims rule is met
+ * by whose words these are, which is only clear if the words and the credit are in the same place.
+ */
+export const ANDROID_PACKAGE = 'com.ihunda.android.binauralbeat';
+
+const ANDROID_NOTE =
+  "From the Android app this one replaces. The titles and descriptions are their original " +
+  "authors' words, not claims made by this app; the converted presets play the frequencies they " +
+  'always did, without their ambient backgrounds or the old player’s fades between periods.';
+
+/** `fixtures/presets/README.md`: four presets used a sampled ambient loop that was left behind. */
+const LOST_BED_NOTE = 'Ambient background not carried over — the app’s noise layer stands in for it.';
+
+export function buildCatalog({
+  imported,
+  drafts,
+  favourites,
+  query = '',
+  bundled = PROGRAMS,
+}: CatalogInput): LibrarySection[] {
+  const draftItems = (drafts ?? []).map(draftItem);
+  const importedItems = imported ?? [];
+  const mine = importedItems.filter((program) => program.origin === 'authored').map(importedItem);
+  const brought = importedItems.filter((program) => program.origin !== 'authored').map(importedItem);
+
+  const android: LibrarySection = {
+    // The id is persisted in `Settings.collapsed`, so it outlives whatever the label says.
+    id: 'android',
+    label: `${ANDROID_PACKAGE} imports`,
+    code: ANDROID_PACKAGE,
+    note: ANDROID_NOTE,
+    items: [],
+    children: programsByCategory(bundled).map((group) => ({
+      id: `android-${group.category.toLowerCase()}`,
+      label: group.label,
+      items: group.programs.map(bundledItem),
+    })),
+  };
+
+  const sections: LibrarySection[] = [
+    { id: 'drafts', label: 'Drafts', items: draftItems },
+    { id: 'mine', label: 'Made here', items: mine },
+    { id: 'imported', label: 'Imported', items: brought },
+    android,
+  ];
+
+  // Favourites lead, and are a *view* of the sections below rather than a place a program moves to:
+  // starring something must not take it out of the group it belongs to, or unstarring it would look
+  // like a deletion. The order is the one the user starred them in.
+  const byKey = new Map(allItems(sections).map((item) => [item.key, item]));
+  const starred = favourites
+    .map((key) => byKey.get(key))
+    .filter((item): item is LibraryItem => item !== undefined);
+
+  if (starred.length > 0) {
+    sections.unshift({ id: 'favourites', label: 'Favourites', items: starred });
+  }
+
+  // A heading reading "Drafts 0" is a heading in the way: on a fresh install three of these are
+  // empty, which is 150 px of nothing above the first program and three dead entries in the rail.
+  return filterSections(sections, query.trim().toLowerCase()).filter(nonEmpty);
+}
+
+function nonEmpty(section: LibrarySection): boolean {
+  return section.items.length > 0 || (section.children ?? []).some(nonEmpty);
+}
+
+/** Every item in a section tree, in reading order. */
+export function allItems(sections: readonly LibrarySection[]): LibraryItem[] {
+  return sections.flatMap((section) => [...section.items, ...allItems(section.children ?? [])]);
+}
+
+/**
+ * Drop what does not match, then drop whatever is left empty — including a parent whose every child
+ * emptied, so the rail can be built from the same tree and cannot offer a section that is not
+ * there. An empty query returns the tree unchanged, identity and all.
+ */
+function filterSections(sections: LibrarySection[], query: string): LibrarySection[] {
+  if (!query) return sections;
+
+  return sections.flatMap((section) => {
+    const items = section.items.filter((item) => matches(item, query));
+    const children = filterSections(section.children ?? [], query);
+    if (items.length === 0 && children.length === 0) return [];
+
+    return [{ ...section, items, children: section.children ? children : undefined }];
+  });
+}
+
+function matches(item: LibraryItem, query: string): boolean {
+  return (
+    item.title.toLowerCase().includes(query) || item.searchText.toLowerCase().includes(query)
+  );
+}
+
+function bundledItem(program: BundledProgram): LibraryItem {
+  const route: Route = { view: 'program', id: program.id };
+  return {
+    key: formatHash(route),
+    route,
+    title: program.title,
+    meta: metaLine(program.durationSeconds, program.author),
+    origin: 'android',
+    searchText: `${program.author} ${program.description}`,
+    note: program.lostAmbientBed ? LOST_BED_NOTE : undefined,
+  };
+}
+
+function importedItem(program: ImportedProgram): LibraryItem {
+  const route: Route = { view: 'imported', id: program.id };
+  return {
+    key: formatHash(route),
+    route,
+    title: program.title,
+    // The file it came from, since an imported program often has no author of its own.
+    meta: metaLine(program.durationSeconds, program.author || program.sourceName),
+    origin: program.origin === 'authored' ? 'mine' : 'imported',
+    searchText: `${program.author} ${program.sourceName} ${program.description}`,
+    removable: 'imported',
+  };
+}
+
+function draftItem(draft: Draft): LibraryItem {
+  const route: Route = { view: 'editor', id: draft.id };
+  return {
+    key: formatHash(route),
+    route,
+    title: draft.title,
+    // Where it was forked from. A draft has no author until someone gives it one.
+    meta: metaLine(draft.durationSeconds, `from ${draft.sourceName}`),
+    origin: 'draft',
+    searchText: draft.sourceName,
+    removable: 'draft',
+  };
+}
+
+function metaLine(durationSeconds: number, credit: string): string {
+  // One bundled preset is uncredited upstream; the rest carry a credit that must not be dropped
+  // (fixtures/presets/README.md).
+  return credit ? `${formatDuration(durationSeconds)} · ${credit}` : formatDuration(durationSeconds);
+}

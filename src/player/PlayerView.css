@@ -1,14 +1,43 @@
-.player {
+/* Two regions: what you listen with, and what the program is. Below the wide breakpoint they are
+   one column in that order; above it the listening half stays put while the rest scrolls. The
+   breakpoint is stated twice — here and in `useMediaQuery`'s `WIDE_LAYOUT`, which the chart's
+   height depends on — and the two must agree. */
+.player,
+.editor {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+}
+
+.player__stage,
+.player__aside,
+.editor__stage,
+.editor__aside {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (min-width: 1100px) {
+  .player,
+  .editor {
+    grid-template-columns: minmax(0, 1.5fr) minmax(340px, 1fr);
+    gap: 28px;
+  }
+
+  .player__stage,
+  .editor__stage {
+    position: sticky;
+    top: 16px;
+  }
 }
 
 .player__header {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 4px;
 }
 
 .player__title {
@@ -55,10 +84,48 @@
   gap: 8px;
 }
 
-.player__transport {
+.player__transport,
+.editor__transport {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+
+.player__elapsed,
+.editor__elapsed {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+}
+
+/* Pinned to the bottom of the viewport on a phone, where the panels below run several screens
+   long: the control that stops the sound must never be somewhere you have to scroll to.
+   Above the two-column breakpoint the whole stage is sticky, so this is redundant there.
+
+   Fixed rather than sticky, and this is the difference that matters: sticky would hold only while
+   the stage itself is on screen, and let go the moment you scrolled into the panels — which is
+   exactly when the transport is furthest away. Same shape and the same alignment as the
+   now-playing bar, which the two views never show at the same time as this. */
+@media (max-width: 1099px) {
+  .player,
+  .editor {
+    padding-bottom: 88px;
+  }
+
+  .player__transport,
+  .editor__transport {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 5;
+    padding-block: 10px calc(10px + env(safe-area-inset-bottom));
+    padding-inline: max(16px, calc((100% - 1248px) / 2));
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
 }
 
 .export {

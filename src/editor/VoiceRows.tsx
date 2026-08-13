@@ -63,7 +63,6 @@ export function VoiceRows({
 
   return (
     <section className="editor__fields">
-      <h2>Voices</h2>
       <p className="editor__hint">
         Mute and hide are saved with the program. Solo is just for listening and is never written to
         the file.

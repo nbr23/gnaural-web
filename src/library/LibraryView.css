@@ -1,128 +1,95 @@
-/* Room for the fixed now-playing bar, so the last card is never trapped underneath it. */
+/* Room for the fixed now-playing bar, so the last row is never trapped underneath it. */
 .library {
   padding-bottom: 96px;
 }
 
+/* Kept short on purpose: the measurement that matters here is how far down the page the first
+   program is, and every line of preamble is a line of scrolling before anything can be pressed. */
 .library__header {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 32px;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.library__header h1 {
+  font-size: 24px;
 }
 
 .library__lede {
   max-width: 52ch;
-}
-
-.library__group {
-  margin-bottom: 28px;
-}
-
-.library__category {
-  margin-bottom: 10px;
-}
-
-.library__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.library__attribution {
-  max-width: 52ch;
-  margin-bottom: 8px;
-  font-size: 13px;
-  opacity: 0.7;
-}
-
-.library__build {
-  font: 12px var(--mono);
-  opacity: 0.6;
-}
-
-@media (min-width: 700px) {
-  .library__list {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-
-/* The remove control overlays the card's top-right corner rather than sitting beside it, so an
-   imported row is the same width and shape as a bundled one. */
-.library__imported {
-  position: relative;
-
-  & .program-card {
-    padding-right: 48px;
-  }
-}
-
-.library__remove {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 32px;
-  height: 32px;
-  font: inherit;
-  font-size: 20px;
-  line-height: 1;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--text);
-  cursor: pointer;
-
-  &:hover,
-  &:focus-visible {
-    color: var(--text-h);
-    background: var(--bg);
-  }
-}
-
-/* Shaped like a card so it reads as another way in, tinted so it does not read as a 20th program. */
-.library__live {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  padding: 14px 16px;
-  margin-bottom: 28px;
-  border-radius: 10px;
-  border: 1px solid var(--accent-border);
-  background: var(--accent-bg);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.library__live-title {
-  color: var(--accent);
-  font-weight: 600;
-  font-size: 17px;
-}
-
-.library__live-description {
   font-size: 14px;
 }
 
-.program-card {
+.library__actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   width: 100%;
-  height: 100%;
-  text-align: left;
+}
+
+.library__search {
+  flex: 1 1 220px;
+  min-width: 0;
   font: inherit;
-  padding: 14px 16px;
-  border-radius: 10px;
+  font-size: 15px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-h);
+
+  &::placeholder {
+    color: var(--text);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent-border);
+    outline-offset: 1px;
+  }
+}
+
+.library__body {
+  display: grid;
+  gap: 16px;
+}
+
+.library__sections {
+  min-width: 0;
+}
+
+/* The rail. On a phone it is a sticky strip of chips that scrolls sideways; from 1000px it moves
+   beside the list and stays put, which is where a jump list is worth having. */
+.library__rail {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 8px 0;
+  margin-bottom: 4px;
+  background: var(--bg);
+}
+
+.library__rail-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: none;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-h);
   cursor: pointer;
+  white-space: nowrap;
 
   &:hover,
   &:focus-visible {
@@ -130,23 +97,254 @@
   }
 }
 
-.program-card__title {
-  color: var(--text-h);
-  font-weight: 600;
-  font-size: 17px;
+.library__rail-count {
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
-.program-card__meta {
+.library__section {
+  margin-bottom: 14px;
+}
+
+.library__section--child {
+  margin: 8px 0 8px 10px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.library__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.library__category {
+  font-size: 14px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-h);
+}
+
+/* A package name is an identifier, not a heading: uppercasing and letter-spacing it would make it
+   harder to read and harder to type back into a store search. */
+.library__package {
+  font-family: var(--mono);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.library__count {
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Full width, because it is a caption for the rows below it: measured any narrower it reads as a
+   column beside them rather than as something they belong to. */
+.library__note {
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.library__empty {
+  max-width: 62ch;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.library__build {
+  margin-top: 24px;
+  font: 12px var(--mono);
+  opacity: 0.6;
+}
+
+.library__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+/* One row per program: press the title to open it, star it, remove it. Everything the old card
+   said still fits, on one line from 560px and two below it. */
+.program-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 10px;
+  border: 1px solid var(--border);
+  /* The origin key. Paired with the badge below, always — the colour is a second signal, never
+     the only one. */
+  border-left: 3px solid var(--origin, var(--border));
+  border-radius: 8px;
+  background: var(--surface);
+
+  &:hover,
+  &:focus-within {
+    border-color: var(--accent-border);
+    border-left-color: var(--origin, var(--accent-border));
+  }
+}
+
+.program-row--draft {
+  --origin: var(--origin-draft);
+}
+.program-row--mine {
+  --origin: var(--origin-mine);
+}
+.program-row--imported {
+  --origin: var(--origin-imported);
+}
+.program-row--android {
+  --origin: var(--origin-android);
+}
+
+.program-row__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  font: inherit;
+  text-align: left;
+  padding: 10px 6px;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.program-row__title {
+  color: var(--text-h);
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.program-row__meta {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
-.program-card__description {
-  font-size: 14px;
-  /* Descriptions run long; clamp rather than truncating mid-word with an ellipsis span. */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  overflow: hidden;
+/* A per-program disclaimer — today, the four presets whose ambient bed was left behind. Its own
+   line, because it is a sentence rather than a field. */
+.program-row__note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.program-row__badge {
+  flex: none;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--origin, var(--text));
+}
+
+.program-row__star,
+.library__remove,
+.program-row__action {
+  flex: none;
+  font: inherit;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-h);
+  }
+}
+
+.program-row__star {
+  width: 40px;
+  min-height: 44px;
+  font-size: 17px;
+  line-height: 1;
+
+  &.is-active {
+    color: var(--accent);
+  }
+}
+
+.library__remove {
+  width: 40px;
+  min-height: 44px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+/* Two words instead of a modal. Deliberately not styled as a danger button: the question is the
+   safeguard, and the answer should be readable rather than alarming. */
+.program-row__confirm {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.program-row__action {
+  font-size: 13px;
+  padding: 6px 10px;
+  min-height: 36px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text-h);
+}
+
+@media (max-width: 559px) {
+  .program-row__badge {
+    display: none;
+  }
+  /* The badge is the first thing to go on a narrow phone, where the title needs the width — the
+     colour bar and the section the row sits in both still say where it came from. */
+  .program-row__open {
+    flex-basis: 100%;
+  }
+}
+
+@media (min-width: 1000px) {
+  .library__body {
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+  }
+
+  .library__rail {
+    position: sticky;
+    top: 16px;
+    flex-direction: column;
+    align-items: stretch;
+    overflow: visible;
+    padding: 0;
+    background: none;
+  }
+
+  /* The column is 210px and one label is a package name, so wrapping is the only way it fits —
+     unlike the phone strip above, where a chip has the whole page to scroll sideways in. */
+  .library__rail-link {
+    justify-content: space-between;
+    border-radius: 8px;
+    border-color: transparent;
+    background: none;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .library__rail-link--child {
+    margin-left: 12px;
+    font-size: 12px;
+    color: var(--text);
+  }
 }

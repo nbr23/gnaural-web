@@ -24,6 +24,14 @@
   --warn-bg: rgba(251, 191, 36, 0.1);
   --shadow: rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
 
+  /* Where a program came from, as the library's colour key. Deliberately **not** `--warn`: amber
+     means "this file has a problem" everywhere else in the app, and an origin is not a problem.
+     Every use pairs the colour with the word, so nothing here depends on telling hues apart. */
+  --origin-draft: #c084fc;
+  --origin-mine: #34d399;
+  --origin-imported: #60a5fa;
+  --origin-android: #94a3b8;
+
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
@@ -49,6 +57,10 @@
     --accent-border: rgba(124, 31, 212, 0.4);
     --warn: #b45309;
     --warn-bg: rgba(180, 83, 9, 0.07);
+    --origin-draft: #7c1fd4;
+    --origin-mine: #047857;
+    --origin-imported: #1d4ed8;
+    --origin-android: #52606d;
     --shadow:
       rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
@@ -65,8 +77,11 @@ body {
   min-height: 100svh;
 }
 
+/* Wide enough for the library's rail beside its list, and for the player and editor to put their
+   panels beside the chart instead of below it. Prose inside keeps its own `ch` measures, so a wide
+   window makes more room for controls rather than longer lines. */
 #root {
-  max-width: 900px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 16px;
 }

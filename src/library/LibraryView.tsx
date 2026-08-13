@@ -1,27 +1,99 @@
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { BUILD_ID } from '../app/build';
-import { formatDuration } from '../app/format';
 import { LIVE, navigate } from '../app/routing';
-import type { BundledProgram } from './programs';
-import { programsByCategory } from './programs';
+import type { LibraryItem, LibrarySection } from './catalog';
+import { ORIGIN_LABELS, buildCatalog } from './catalog';
 import type { Draft, ImportedProgram } from './storage';
 import './LibraryView.css';
 
 export interface LibraryViewProps {
   onOpenFile: () => void;
+  /** Start a blank draft — the only way into the editor that does not begin with someone else's
+   *  program. */
+  onNewProgram: () => void;
   /** Null while IndexedDB is still being read — the section holds off rather than flashing empty. */
   imported: ImportedProgram[] | null;
   onRemoveImported: (id: string) => void;
   drafts: Draft[] | null;
   onDiscardDraft: (id: string) => void;
+  /** Route hashes, as `Settings.favourites` stores them. */
+  favourites: string[];
+  onFavouritesChange: (favourites: string[]) => void;
+  collapsed: string[];
+  onCollapsedChange: (collapsed: string[]) => void;
 }
+
+/**
+ * The library (PLAN.md §5.1's program list).
+ *
+ * **A list, not a wall of cards.** Nineteen bundled programs plus everything a user makes is more
+ * than a grid of three-line cards can be scanned through: this shows one row per program — colour
+ * and badge for where it came from, length, credit — inside collapsible sections, with a search
+ * field and a rail that jumps to any of them. What a person came here to do is find one program and
+ * press it, and every decision below serves that.
+ *
+ * The grouping itself lives in `catalog.ts`; this file is the markup and the three pieces of
+ * session state a list has: what is typed in the search box, which section is folded, and which row
+ * has been asked to confirm a deletion.
+ */
+const EXPAND_ALL: string[] = [];
+const IGNORE_TOGGLE = () => {};
 
 export function LibraryView({
   onOpenFile,
+  onNewProgram,
   imported,
   onRemoveImported,
   drafts,
   onDiscardDraft,
+  favourites,
+  onFavouritesChange,
+  collapsed,
+  onCollapsedChange,
 }: LibraryViewProps) {
+  const [query, setQuery] = useState('');
+
+  const sections = useMemo(
+    () => buildCatalog({ imported, drafts, favourites, query }),
+    [drafts, favourites, imported, query],
+  );
+
+  /** Where each section rendered, so the rail can scroll to one without an `href` the router
+   *  would then try to read as a route. */
+  const anchors = useRef(new Map<string, HTMLElement>());
+
+  const toggleFavourite = useCallback(
+    (key: string) => {
+      onFavouritesChange(
+        favourites.includes(key) ? favourites.filter((held) => held !== key) : [...favourites, key],
+      );
+    },
+    [favourites, onFavouritesChange],
+  );
+
+  const setOpen = useCallback(
+    (id: string, open: boolean) => {
+      onCollapsedChange(open ? collapsed.filter((held) => held !== id) : [...collapsed, id]);
+    },
+    [collapsed, onCollapsedChange],
+  );
+
+  const jumpTo = useCallback(
+    (id: string) => {
+      setOpen(id, true);
+      anchors.current.get(id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    },
+    [setOpen],
+  );
+
+  const remove = useCallback(
+    (item: LibraryItem) => {
+      if (item.route.view === 'imported') onRemoveImported(item.route.id);
+      else if (item.route.view === 'editor') onDiscardDraft(item.route.id);
+    },
+    [onDiscardDraft, onRemoveImported],
+  );
+
   return (
     <div className="library">
       <header className="library__header">
@@ -30,149 +102,266 @@ export function LibraryView({
           Binaural beat programs. Headphones are required — the effect only exists between two
           ears.
         </p>
-        <button type="button" className="button" onClick={onOpenFile}>
-          Open a .gnaural file
-        </button>
+
+        <div className="library__actions">
+          <input
+            type="search"
+            className="library__search"
+            value={query}
+            placeholder="Search programs"
+            aria-label="Search programs"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <button type="button" className="button" onClick={onOpenFile}>
+            Open a file
+          </button>
+          <button type="button" className="button" onClick={onNewProgram}>
+            New program
+          </button>
+          {/* Not a program, so not a program row: it has no author, no length and nothing to load. */}
+          <button type="button" className="button button--primary" onClick={() => navigate(LIVE)}>
+            Live
+          </button>
+        </div>
       </header>
 
-      {/* Not a program, so not a program card: it has no author, no length and nothing to load. */}
-      <button type="button" className="library__live" onClick={() => navigate(LIVE)}>
-        <span className="library__live-title">Live</span>
-        <span className="library__live-description">
-          Sliders instead of a timeline — set a beat and a tone and listen. Nothing to load.
-        </span>
-      </button>
+      <div className="library__body">
+        <SectionRail sections={sections} onJump={jumpTo} />
 
-      {/* Unfinished work leads: it is the only thing here that is waiting on someone. */}
-      {drafts && drafts.length > 0 && (
-        <section className="library__group">
-          <h2 className="library__category">Drafts</h2>
-          <ul className="library__list">
-            {drafts.map((draft) => (
-              <li key={draft.id} className="library__imported">
-                <DraftCard draft={draft} />
-                <button
-                  type="button"
-                  className="library__remove"
-                  aria-label={`Discard ${draft.title}`}
-                  onClick={() => onDiscardDraft(draft.id)}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        <div className="library__sections">
+          {sections.map((section) => (
+            <Section
+              key={section.id}
+              section={section}
+              depth={0}
+              // A search that left its results folded inside a collapsed section would look like a
+              // search that found nothing. What is folded is remembered, not applied, while one runs.
+              collapsed={query ? EXPAND_ALL : collapsed}
+              favourites={favourites}
+              anchors={anchors.current}
+              // Forcing a section open above fires `toggle` like any other opening would, and that
+              // must not be recorded as the user having unfolded it.
+              onToggleOpen={query ? IGNORE_TOGGLE : setOpen}
+              onToggleFavourite={toggleFavourite}
+              onRemove={remove}
+            />
+          ))}
 
-      {/* The user's own programs lead: they are the ones that got here on purpose. */}
-      {imported && imported.length > 0 && (
-        <section className="library__group">
-          <h2 className="library__category">Imported</h2>
-          <ul className="library__list">
-            {imported.map((program) => (
-              <li key={program.id} className="library__imported">
-                <ImportedCard program={program} />
-                <button
-                  type="button"
-                  className="library__remove"
-                  aria-label={`Remove ${program.title}`}
-                  onClick={() => onRemoveImported(program.id)}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+          {sections.length === 0 && (
+            <p className="library__empty">Nothing matches “{query}”.</p>
+          )}
 
-      {programsByCategory().map((group) => (
-        <section className="library__group" key={group.category}>
-          <h2 className="library__category">{group.label}</h2>
-          <ul className="library__list">
-            {group.programs.map((program) => (
-              <li key={program.id}>
-                <ProgramCard program={program} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-
-      {/* The bundled descriptions are upstream prose, preserved verbatim for credit (PLAN.md §10,
-          fixtures/presets/README.md), and several of them say what the audio is *for*. PLAN.md §2
-          forbids this app making medical claims; attributing them keeps the words where they came
-          from instead of putting them in the app's own voice. */}
-      <p className="library__attribution">
-        The bundled programs' titles and descriptions are their original authors' words, kept as
-        they were written. They are not claims made by this app.
-      </p>
-
-      {/* An installed PWA can be running a build older than the one you just deployed — the
-          service worker waits to be told to swap. Say which one this is. */}
-      <p className="library__build">build {BUILD_ID}</p>
+          {/* An installed PWA can be running a build older than the one you just deployed — the
+              service worker waits to be told to swap. Say which one this is. */}
+          <p className="library__build">build {BUILD_ID}</p>
+        </div>
+      </div>
     </div>
   );
 }
 
-function ProgramCard({ program }: { program: BundledProgram }) {
+/**
+ * The jump list: every section, in the order they appear, indented by depth.
+ *
+ * Buttons rather than `href="#id"` anchors — the app routes on the fragment (`src/app/routing.ts`),
+ * so an anchor would navigate the app as a side effect of scrolling it. It follows the same
+ * filtered tree the list does, so it can never offer a section the search has emptied.
+ */
+function SectionRail({
+  sections,
+  onJump,
+}: {
+  sections: LibrarySection[];
+  onJump: (id: string) => void;
+}) {
+  const entries = sections.flatMap((section) => [
+    { section, depth: 0 },
+    ...(section.children ?? []).map((child) => ({ section: child, depth: 1 })),
+  ]);
+
+  if (entries.length === 0) return null;
+
   return (
-    <Card
-      title={program.title}
-      duration={program.durationSeconds}
-      credit={program.author}
-      description={program.description}
-      onClick={() => navigate({ view: 'program', id: program.id })}
-    />
+    <nav className="library__rail" aria-label="Jump to a section">
+      {entries.map(({ section, depth }) => (
+        <button
+          key={section.id}
+          type="button"
+          className={`library__rail-link${depth > 0 ? ' library__rail-link--child' : ''}`}
+          onClick={() => onJump(section.id)}
+        >
+          {section.label}
+          <span className="library__rail-count">{count(section)}</span>
+        </button>
+      ))}
+    </nav>
   );
 }
 
-function ImportedCard({ program }: { program: ImportedProgram }) {
+function count(section: LibrarySection): number {
   return (
-    <Card
-      title={program.title}
-      duration={program.durationSeconds}
-      // The file it came from, since an imported program often has no author of its own.
-      credit={program.author || program.sourceName}
-      description={program.description}
-      onClick={() => navigate({ view: 'imported', id: program.id })}
-    />
+    section.items.length +
+    (section.children ?? []).reduce((total, child) => total + count(child), 0)
   );
 }
 
-function DraftCard({ draft }: { draft: Draft }) {
+interface SectionProps {
+  section: LibrarySection;
+  depth: number;
+  collapsed: string[];
+  favourites: string[];
+  anchors: Map<string, HTMLElement>;
+  onToggleOpen: (id: string, open: boolean) => void;
+  onToggleFavourite: (key: string) => void;
+  onRemove: (item: LibraryItem) => void;
+}
+
+/**
+ * One collapsible group.
+ *
+ * `<details>` rather than conditional rendering: it keeps its rows in the DOM when closed, so the
+ * browser's own find-in-page still reaches them, and it carries the disclosure semantics without
+ * any ARIA of ours.
+ */
+function Section({
+  section,
+  depth,
+  collapsed,
+  favourites,
+  anchors,
+  onToggleOpen,
+  onToggleFavourite,
+  onRemove,
+}: SectionProps) {
   return (
-    <Card
-      title={draft.title}
-      duration={draft.durationSeconds}
-      // Where it was forked from. A draft has no author until someone gives it one.
-      credit={`from ${draft.sourceName}`}
-      description=""
-      onClick={() => navigate({ view: 'editor', id: draft.id })}
-    />
+    <details
+      className={`library__section library__section--${depth === 0 ? 'top' : 'child'}`}
+      open={!collapsed.includes(section.id)}
+      ref={(element) => {
+        if (element) anchors.set(section.id, element);
+        else anchors.delete(section.id);
+      }}
+      onToggle={(event) => onToggleOpen(section.id, event.currentTarget.open)}
+    >
+      <summary className="library__summary">
+        <span className="library__category">
+          {section.code ? (
+            <>
+              <span className="library__package">{section.code}</span>
+              {section.label.slice(section.code.length)}
+            </>
+          ) : (
+            section.label
+          )}
+        </span>
+        <span className="library__count">{count(section)}</span>
+      </summary>
+
+      {section.note && <p className="library__note">{section.note}</p>}
+
+      {section.items.length > 0 && (
+        <ul className="library__list">
+          {section.items.map((item) => (
+            <li key={item.key}>
+              <ProgramRow
+                item={item}
+                favourite={favourites.includes(item.key)}
+                onToggleFavourite={() => onToggleFavourite(item.key)}
+                onRemove={() => onRemove(item)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {(section.children ?? []).map((child) => (
+        <Section
+          key={child.id}
+          section={child}
+          depth={depth + 1}
+          collapsed={collapsed}
+          favourites={favourites}
+          anchors={anchors}
+          onToggleOpen={onToggleOpen}
+          onToggleFavourite={onToggleFavourite}
+          onRemove={onRemove}
+        />
+      ))}
+    </details>
   );
 }
 
-interface CardProps {
-  title: string;
-  duration: number;
-  credit: string;
-  description: string;
-  onClick: () => void;
-}
+/**
+ * One program: a press to open it, a star, and — for the ones that can go — a two-step remove.
+ *
+ * The removal asks first because it is the only irreversible action in the app and it used to be a
+ * single tap on a 32 px `×` at the corner of a card, next to the press that opens the program.
+ * Inline rather than `window.confirm`, which on a phone is a system modal for what is a one-word
+ * question, and which no test can answer.
+ */
+function ProgramRow({
+  item,
+  favourite,
+  onToggleFavourite,
+  onRemove,
+}: {
+  item: LibraryItem;
+  favourite: boolean;
+  onToggleFavourite: () => void;
+  onRemove: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
 
-function Card({ title, duration, credit, description, onClick }: CardProps) {
   return (
-    <button type="button" className="program-card" onClick={onClick}>
-      <span className="program-card__title">{title}</span>
-      <span className="program-card__meta">
-        {formatDuration(duration)}
-        {/* One bundled preset is uncredited upstream; the rest carry a credit that must not be
-            dropped (fixtures/presets/README.md). */}
-        {credit && <> · {credit}</>}
-      </span>
-      <span className="program-card__description">{description}</span>
-    </button>
+    <div className={`program-row program-row--${item.origin}`}>
+      <button
+        type="button"
+        className="program-row__open"
+        onClick={() => navigate(item.route)}
+      >
+        <span className="program-row__title">{item.title}</span>
+        <span className="program-row__meta">{item.meta}</span>
+        {item.note && <span className="program-row__note">{item.note}</span>}
+      </button>
+
+      <span className="program-row__badge">{ORIGIN_LABELS[item.origin]}</span>
+
+      <button
+        type="button"
+        className={`program-row__star${favourite ? ' is-active' : ''}`}
+        aria-pressed={favourite}
+        aria-label={favourite ? `Unfavourite ${item.title}` : `Favourite ${item.title}`}
+        onClick={onToggleFavourite}
+      >
+        {favourite ? '★' : '☆'}
+      </button>
+
+      {item.removable &&
+        (confirming ? (
+          <span className="program-row__confirm">
+            <button type="button" className="program-row__action" onClick={onRemove}>
+              {item.removable === 'draft' ? 'Discard' : 'Remove'}
+            </button>
+            <button
+              type="button"
+              className="program-row__action"
+              onClick={() => setConfirming(false)}
+            >
+              Keep
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="library__remove"
+            aria-label={
+              item.removable === 'draft' ? `Discard ${item.title}` : `Remove ${item.title}`
+            }
+            onClick={() => setConfirming(true)}
+          >
+            ×
+          </button>
+        ))}
+    </div>
   );
 }

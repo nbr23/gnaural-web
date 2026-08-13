@@ -15,6 +15,14 @@ import { SilentKeepalive } from './keepalive';
  */
 const CLOCK_INTERVAL_MS = 100;
 
+/**
+ * How far one deliberate skip moves the playhead (PLAN.md §5.1's ±30 s).
+ *
+ * Here rather than in a view because three surfaces owe the same answer: the player's buttons, the
+ * lock-screen skip actions, and the keyboard arrows. Two of them used to carry their own copy.
+ */
+export const SEEK_STEP_SECONDS = 30;
+
 export interface VoiceGate {
   muted: boolean;
   soloed: boolean;

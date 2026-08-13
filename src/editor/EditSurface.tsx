@@ -46,8 +46,13 @@ export interface EditSurfaceProps {
   onCommitAt(schedule: Schedule, label: string, selection: Selection): void;
   /** The in-flight document, already rate-limited. Reaches the engine and nothing else. */
   onPreview(schedule: Schedule): void;
-  /** A pointer that hit no node and never moved. Transport, not editing. */
-  onSeek(time: number): void;
+  /**
+   * A pointer that hit no node and never moved. Transport, not editing.
+   *
+   * Omitted on touch (see `useCoarsePointer`): a tap that lands on nothing clears the selection and
+   * stops there, rather than also throwing the playhead somewhere nobody asked for.
+   */
+  onSeek?(time: number): void;
 }
 
 interface Drag {
@@ -330,7 +335,7 @@ export function EditSurface({
         if (!box.moved) {
           // A tap on empty space is transport, exactly as it was before the marquee existed.
           onSelect([]);
-          onSeek(box.time);
+          onSeek?.(box.time);
           return;
         }
         const found = nodesInRect(pointer.layout, box.rect);

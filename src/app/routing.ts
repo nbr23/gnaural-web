@@ -66,9 +66,23 @@ export function formatHash(route: Route): string {
   }
 }
 
+/**
+ * Whether the next route change is one the app made, rather than the back button.
+ *
+ * Changing the fragment does not move the scroll position — there is no element to scroll to — so
+ * opening a program from halfway down a long library used to land you halfway down the player.
+ * Going *back*, on the other hand, should return to where you were, and the browser already
+ * restores that for a history entry. So the scroll reset is tied to the app's own navigations
+ * rather than to every `hashchange`.
+ */
+let pushed = false;
+
 export function navigate(route: Route): void {
   const next = formatHash(route);
-  if (window.location.hash !== next) window.location.hash = next;
+  if (window.location.hash === next) return;
+
+  pushed = true;
+  window.location.hash = next;
 }
 
 /** Replaces the current entry instead of pushing — for redirecting away from a dead route. */
@@ -81,7 +95,12 @@ export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
 
   useEffect(() => {
-    const onChange = () => setRoute(parseHash(window.location.hash));
+    const onChange = () => {
+      setRoute(parseHash(window.location.hash));
+      if (!pushed) return;
+      pushed = false;
+      window.scrollTo?.(0, 0);
+    };
     window.addEventListener('hashchange', onChange);
     return () => window.removeEventListener('hashchange', onChange);
   }, []);

@@ -4,12 +4,14 @@ import { parseSchedule } from '../document/parser';
 import { loadFixture } from '../document/test-fixtures';
 import { DRAFT_SAVE_DEBOUNCE_MS } from '../editor/useDraft';
 import { encodeSharePayload } from '../files/shareLink';
+import { ANDROID_PACKAGE } from '../library/catalog';
 import { PROGRAMS } from '../library/programs';
 import { listDrafts, listImported } from '../library/storage';
-import { TEST_WIDTH, mediaSession, resetDatabase, resetPlatform, wakeLocks } from '../test-setup';
+import { TEST_WIDTH, media, mediaSession, resetDatabase, resetPlatform, wakeLocks } from '../test-setup';
 import {
   flush,
   pointer,
+  press,
   setCheckbox,
   setInputValue,
   setSelectValue,
@@ -33,11 +35,28 @@ afterEach(() => {
   window.location.hash = '';
 });
 
+/** Where the playhead is, from the timeline's own readout: `m:ss` of elapsed, then remaining. */
+function elapsedSeconds(): number {
+  const [minutes, seconds] = (root.query('.timeline__times')?.textContent ?? '')
+    .split('−')[0]
+    .split(':');
+  return Number(minutes) * 60 + Number(seconds);
+}
+
+/** Close a `<details>` the way the element would, since happy-dom does not implement the summary. */
+function fold(details: Element | null | undefined): void {
+  root.act(() => {
+    const element = details as HTMLDetailsElement;
+    element.open = false;
+    element.dispatchEvent(new Event('toggle'));
+  });
+}
+
 describe('library view', () => {
   it('lists every bundled program, grouped by category', () => {
     root.render(<App />);
 
-    expect(root.queryAll('.program-card')).toHaveLength(PROGRAMS.length);
+    expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
     expect(root.text()).toContain('Gnaural originals');
     expect(root.text()).toContain('OOBE');
   });
@@ -56,22 +75,67 @@ describe('library view', () => {
     // no-medical-claims rule is met by saying whose words they are, not by rewriting them.
     root.render(<App />);
 
-    expect(root.query('.library__attribution')?.textContent).toContain("original authors' words");
+    expect(root.query('.library__note')?.textContent).toContain("original authors' words");
   });
 
   it('credits each program on its card', () => {
     root.render(<App />);
-    const card = root.byText('.program-card', 'Power Nap');
+    const card = root.byText('.program-row__open', 'Power Nap');
 
     expect(card?.textContent).toContain('Gnaural');
     expect(card?.textContent).toContain('20 min');
+  });
+
+  it('narrows the list and the jump rail to what is searched for', () => {
+    root.render(<App />);
+    root.act(() =>
+      setInputValue(root.query('.library__search') as HTMLInputElement, 'schumann'),
+    );
+
+    expect(root.queryAll('.program-row')).toHaveLength(1);
+    expect(root.text()).toContain('Schumann Resonance');
+    // The rail is built from the same filtered tree, so it cannot offer an empty section.
+    expect(root.queryAll('.library__rail-link').map((link) => link.textContent)).toEqual([
+      'com.ihunda.android.binauralbeat imports1',
+      'Meditation1',
+    ]);
+  });
+
+  it('keeps a favourite across a reload, and lists it first', async () => {
+    root.render(<App />);
+    root.click(root.query('.program-row__star'));
+    await wait(WRITE_DEBOUNCE);
+
+    root.remount(<App />);
+    await flush();
+
+    expect(root.query('.library__section')?.textContent).toContain('Favourites');
+    // Once in its own section and once where it belongs — starring is not a move.
+    expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length + 1);
+
+    root.click(root.query('.program-row__star'));
+    expect(root.query('.library__section')?.textContent).not.toContain('Favourites');
+  });
+
+  it('remembers which sections were folded away', async () => {
+    root.render(<App />);
+    // The summary's click behaviour is the browser's; what the app listens for is `toggle`.
+    fold(root.byText('.library__category', ANDROID_PACKAGE)?.closest('details'));
+    await wait(WRITE_DEBOUNCE);
+
+    root.remount(<App />);
+    await flush();
+
+    expect(root.byText('.library__category', ANDROID_PACKAGE)?.closest('details')?.open).toBe(
+      false,
+    );
   });
 });
 
 describe('routing', () => {
   it('opens a program from the library and shows its player', async () => {
     root.render(<App />);
-    root.click(root.byText('.program-card', 'Power Nap'));
+    root.click(root.byText('.program-row__open', 'Power Nap'));
     await flush();
 
     expect(window.location.hash).toBe('#/p/powernap');
@@ -79,6 +143,19 @@ describe('routing', () => {
     // The chart and transport come with it.
     expect(root.queryAll('path.schedule-chart__series').length).toBeGreaterThan(0);
     expect(root.byText('.button', 'Play')).toBeDefined();
+  });
+
+  it('opens a program at the top of the page, not where the library was scrolled to', async () => {
+    // A fragment change scrolls nothing — there is no element to scroll to — so a program opened
+    // from halfway down a nineteen-row library used to open halfway down the player.
+    const scrollTo = vi.fn();
+    Object.defineProperty(window, 'scrollTo', { configurable: true, value: scrollTo });
+
+    root.render(<App />);
+    root.click(root.byText('.program-row__open', 'Power Nap'));
+    await flush();
+
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
   });
 
   it('returns to the library from the player', async () => {
@@ -89,7 +166,7 @@ describe('routing', () => {
     root.click(root.byText('.back-link', 'Library'));
     await flush();
 
-    expect(root.queryAll('.program-card')).toHaveLength(PROGRAMS.length);
+    expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
   });
 
   it('redirects an unknown program id back to the library', async () => {
@@ -97,7 +174,7 @@ describe('routing', () => {
     root.render(<App />);
     await flush();
 
-    expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
+    expect(root.queryAll('.program-row').length).toBeGreaterThan(0);
   });
 
   it('redirects an imported id that is no longer stored', async () => {
@@ -105,7 +182,7 @@ describe('routing', () => {
     root.render(<App />);
     await flush();
 
-    expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
+    expect(root.queryAll('.program-row').length).toBeGreaterThan(0);
   });
 });
 
@@ -140,6 +217,82 @@ describe('player view', () => {
     root.act(() => setInputValue(range, '600'));
 
     expect(root.query('.timeline__times')?.textContent).toContain('10:00');
+  });
+
+  it('scrubs from the chart with a mouse', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    const svg = root.query('.player__chart svg') as SVGSVGElement;
+    stubRect(svg, TEST_WIDTH, 200);
+    pointer(svg, 'pointerdown', { x: TEST_WIDTH / 2, y: 100 });
+
+    // Halfway across the plot of a twenty-minute programme, give or take the axis gutter.
+    expect(elapsedSeconds()).toBeGreaterThan(8 * 60);
+  });
+
+  /**
+   * The chart is a picture on a phone, not a transport.
+   *
+   * A plot wide enough to read is wide enough to brush past while reaching for something else, and
+   * a stray touch used to throw the playhead across the programme. The timeline below it is a
+   * native touch target and cannot be hit by accident, so nothing is lost.
+   */
+  it('does not scrub from the chart on touch', async () => {
+    media.coarsePointer = true;
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    const svg = root.query('.player__chart svg') as SVGSVGElement;
+    stubRect(svg, TEST_WIDTH, 200);
+    pointer(svg, 'pointerdown', { x: TEST_WIDTH / 2, y: 100 });
+
+    expect(elapsedSeconds()).toBe(0);
+  });
+});
+
+describe('keyboard shortcuts', () => {
+  it('plays and pauses with the space bar, from anywhere', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    press(' ');
+    await flush();
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+
+    press(' ');
+    await flush();
+    expect(root.byText('.button--primary', 'Play')).toBeDefined();
+  });
+
+  it('seeks with the arrows', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    press('ArrowRight');
+    press('ArrowRight');
+    expect(root.query('.timeline__times')?.textContent).toContain('1:00');
+
+    press('ArrowLeft');
+    expect(root.query('.timeline__times')?.textContent).toContain('0:30');
+  });
+
+  it('leaves the keys alone inside a field, and on a focused button', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    // Typing a space into the export sample-rate select, or pressing the Stop button with the
+    // keyboard, must do what that control does — not toggle playback behind it.
+    press(' ', root.query('.export__rate select') as Element);
+    press(' ', root.byText('.button', 'Stop') as Element);
+    await flush();
+
+    expect(root.byText('.button--primary', 'Play')).toBeDefined();
   });
 });
 
@@ -220,7 +373,7 @@ describe('share links', () => {
     await flush();
 
     expect(root.query('[role="alert"]')?.textContent).toContain('shared link');
-    expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
+    expect(root.queryAll('.program-row').length).toBeGreaterThan(0);
   });
 });
 
@@ -265,12 +418,41 @@ describe('opening a file', () => {
     root.click(root.byText('.back-link', 'Library'));
     await flush();
     expect(root.text()).toContain('Imported');
-    expect(root.queryAll('.program-card')).toHaveLength(PROGRAMS.length + 1);
+    expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length + 1);
+
+    // Removing asks first — the × arms the row, the answer removes it.
+    root.click(root.query('.library__remove'));
+    root.click(root.byText('.program-row__action', 'Remove'));
+    await flush();
+    expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
+    expect(await listImported()).toHaveLength(0);
+  });
+
+  it('changes its mind about removing an imported program', async () => {
+    root.render(<App />);
+    drop(loadFixture('powernap.gnaural'), 'mine.gnaural');
+    await flush();
+    root.click(root.byText('.back-link', 'Library'));
+    await flush();
 
     root.click(root.query('.library__remove'));
+    root.click(root.byText('.program-row__action', 'Keep'));
     await flush();
-    expect(root.queryAll('.program-card')).toHaveLength(PROGRAMS.length);
-    expect(await listImported()).toHaveLength(0);
+
+    expect(await listImported()).toHaveLength(1);
+    expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length + 1);
+  });
+
+  it('says where a program came from, so a file and a session are told apart', async () => {
+    root.render(<App />);
+    drop(loadFixture('powernap.gnaural'), 'mine.gnaural');
+    await flush();
+    root.click(root.byText('.back-link', 'Library'));
+    await flush();
+
+    const badges = root.queryAll('.program-row__badge').map((tag) => tag.textContent);
+    expect(new Set(badges)).toEqual(new Set(['Android', 'Imported']));
+    expect(root.query('.program-row--imported')).not.toBeNull();
   });
 
   it('does not import the same file twice', async () => {
@@ -290,7 +472,7 @@ describe('opening a file', () => {
 
     expect(root.query('[role="alert"]')?.textContent).toContain('broken.gnaural');
     // And stays on the library rather than half-loading a player.
-    expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
+    expect(root.queryAll('.program-row').length).toBeGreaterThan(0);
     expect(await listImported()).toHaveLength(0);
   });
 });
@@ -309,7 +491,7 @@ describe('playback outside the player', () => {
     root.click(root.byText('.back-link', 'Library'));
     await flush();
 
-    expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
+    expect(root.queryAll('.program-row').length).toBeGreaterThan(0);
     expect(root.query('.now-playing__title')?.textContent).toBe('Power Nap');
     expect(root.byText('.now-playing .button--primary', 'Pause')).toBeDefined();
   });
@@ -515,7 +697,7 @@ describe('settings', () => {
 describe('live mode (§6.1)', () => {
   it('opens from the library and has sliders instead of a timeline', async () => {
     root.render(<App />);
-    root.click(root.query('.library__live'));
+    root.click(root.byText('.button', 'Live'));
     await flush();
 
     expect(window.location.hash).toBe('#/live');
@@ -623,6 +805,19 @@ describe('the editor (§6.1)', () => {
     root.blur(input);
   }
 
+  it('starts a blank draft from the library (§6.3, authored from scratch)', async () => {
+    root.render(<App />);
+    root.click(root.byText('.button', 'New program'));
+    await flush();
+
+    expect(window.location.hash).toMatch(/^#\/e\/.+/);
+    expect(root.query('.editor__title')?.textContent).toBe('New program');
+    // One tone voice, twenty minutes long — the same voice "Add a voice" would have made.
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(1);
+    expect(root.query('.timeline__times')?.textContent).toContain('20:00');
+    expect(await listDrafts()).toHaveLength(1);
+  });
+
   it('forks a program into a draft rather than editing it in place', async () => {
     await openDraftOf();
 
@@ -672,7 +867,7 @@ describe('the editor (§6.1)', () => {
     window.location.hash = '';
     root.remount(<App />);
     await flush();
-    expect(root.byText('.program-card', 'Saved by itself')).toBeDefined();
+    expect(root.byText('.program-row__open', 'Saved by itself')).toBeDefined();
     expect(root.text()).toContain('Drafts');
   });
 
@@ -758,11 +953,13 @@ describe('the editor (§6.1)', () => {
 
   it('discards a draft from the editor', async () => {
     await openDraftOf();
+    // Two steps: discarding is the one thing in the editor undo cannot take back.
     root.click(root.byText('.button', 'Discard draft'));
+    root.click(root.byText('.button', 'Discard for good'));
     await flush();
 
     expect(await listDrafts()).toHaveLength(0);
-    expect(root.queryAll('.program-card').length).toBe(PROGRAMS.length);
+    expect(root.queryAll('.program-row').length).toBe(PROGRAMS.length);
   });
 
   it('redirects a draft id that is no longer stored', async () => {
@@ -770,7 +967,7 @@ describe('the editor (§6.1)', () => {
     root.render(<App />);
     await flush();
 
-    expect(root.queryAll('.program-card').length).toBeGreaterThan(0);
+    expect(root.queryAll('.program-row').length).toBeGreaterThan(0);
   });
 
   /**
@@ -782,19 +979,19 @@ describe('the editor (§6.1)', () => {
     await openDraftOf();
 
     const laneToggle = (label: string) =>
-      root.byText('.editor__lanes .editor__check', label)?.querySelector('input') as HTMLInputElement;
+      root.byText('.editor__lanes .editor__chip', label) as HTMLButtonElement;
 
     expect(root.text()).not.toContain('Volume left (');
-    expect(laneToggle('Volume L').checked).toBe(false);
+    expect(laneToggle('Volume L').getAttribute('aria-pressed')).toBe('false');
 
-    root.act(() => setCheckbox(laneToggle('Volume L'), true));
+    root.click(laneToggle('Volume L'));
     expect(root.queryAll('.schedule-chart__lane-title').map((t) => t.textContent)).toEqual([
       'Beat frequency (Hz)',
       'Base frequency (Hz)',
       'Volume left',
     ]);
 
-    root.act(() => setCheckbox(laneToggle('Beat'), false));
+    root.click(laneToggle('Beat'));
     expect(root.queryAll('.schedule-chart__lane-title').map((t) => t.textContent)).toEqual([
       'Base frequency (Hz)',
       'Volume left',
@@ -830,6 +1027,29 @@ describe('the editor (§6.1)', () => {
     root.click(root.byText('.button', 'Undo'));
     // Undo restores the selection the commit was made with, so the obvious next action works.
     expect(root.text()).toContain('Node 3 of 12');
+  });
+
+  /** The player's rule, in the editor: on touch a tap that hits nothing deselects, and stops. */
+  it('does not move the playhead when a touch lands on empty plot', async () => {
+    media.coarsePointer = true;
+    await openDraftOf();
+
+    const svg = root.query('.editor__chart svg') as SVGSVGElement;
+    stubRect(svg, TEST_WIDTH, 262);
+    const marker = root.queryAll('circle.schedule-chart__node')[2];
+    const x = Number(marker.getAttribute('cx'));
+    const y = Number(marker.getAttribute('cy'));
+
+    pointer(svg, 'pointerdown', { x, y });
+    pointer(svg, 'pointerup', { x, y });
+    expect(root.text()).toContain('Node 3 of 12');
+
+    // Well away from any node, and 12 px is inside the hit radius of nothing.
+    pointer(svg, 'pointerdown', { x: x + 60, y: y + 40 });
+    pointer(svg, 'pointerup', { x: x + 60, y: y + 40 });
+
+    expect(root.text()).toContain('Tap a node on the chart');
+    expect(elapsedSeconds()).toBe(0);
   });
 
   /**

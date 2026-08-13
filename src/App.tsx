@@ -4,7 +4,9 @@ import type { Route } from './app/routing';
 import { HeadphoneNotice } from './app/HeadphoneNotice';
 import { LIBRARY, formatHash, navigate, redirect, useRoute } from './app/routing';
 import { UpdatePrompt } from './app/UpdatePrompt';
+import { useKeyboardShortcuts } from './app/useKeyboardShortcuts';
 import { useSettings } from './app/useSettings';
+import { newSchedule } from './document/edit';
 import { parseSchedule, parseScheduleWithWarnings } from './document/parser';
 import { serializeSchedule } from './document/serializer';
 import type { Schedule } from './document/types';
@@ -60,6 +62,10 @@ function App() {
   useMediaSession(player, current?.schedule.title ?? null, current?.subtitle);
   // Held here rather than in `PlayerView`, which unmounts while a program keeps playing.
   useWakeLock(settings.wakeLock && player.playing);
+  // Space and the arrows, from wherever you are. A live session has nowhere to seek to — its
+  // document is one constant hold — so it gets play/pause and no arrows, exactly as `LiveView`
+  // omits the ±30 s buttons.
+  useKeyboardShortcuts(player, route.view !== 'live');
 
   /**
    * The route a resolution is in flight or settled for.
@@ -114,7 +120,7 @@ function App() {
       setError(null);
       // Every file the user opens is kept. Nothing is session-only any more, so a reload, a share
       // and a return visit all land on the same program.
-      navigate({ view: 'imported', id: (await library.add(name, text, schedule)).id });
+      navigate({ view: 'imported', id: (await library.add(name, text, schedule, 'file')).id });
     },
     [library],
   );
@@ -137,7 +143,10 @@ function App() {
   const saveToLibrary = useCallback(async () => {
     if (!current?.unsaved) return;
     const { name, text } = current.unsaved;
-    navigate({ view: 'imported', id: (await library.add(name, text, current.schedule)).id });
+    navigate({
+      view: 'imported',
+      id: (await library.add(name, text, current.schedule, 'link')).id,
+    });
   }, [current, library]);
 
   /**
@@ -150,7 +159,10 @@ function App() {
   const keepProgram = useCallback(
     async (schedule: Schedule, sourceName: string) => {
       const text = serializeSchedule(schedule);
-      navigate({ view: 'imported', id: (await library.add(sourceName, text, schedule)).id });
+      navigate({
+        view: 'imported',
+        id: (await library.add(sourceName, text, schedule, 'authored')).id,
+      });
     },
     [library],
   );
@@ -162,6 +174,13 @@ function App() {
    * bytes because re-exporting should hand them back, but a draft is a document about to be
    * rewritten, and the round-trip is a fixed point either way.
    */
+  /** §6.3's "authored from scratch": a blank draft, by the same fork path "Edit a copy" takes. */
+  const newProgram = useCallback(async () => {
+    const schedule = newSchedule('New program');
+    const draft = await library.fork('scratch', serializeSchedule(schedule), schedule);
+    navigate({ view: 'editor', id: draft.id });
+  }, [library]);
+
   const editCopy = useCallback(async () => {
     if (!current) return;
     const { schedule } = current;
@@ -303,10 +322,15 @@ function App() {
       {onLibrary && (
         <LibraryView
           onOpenFile={() => void openFile()}
+          onNewProgram={() => void newProgram()}
           imported={library.imported}
           onRemoveImported={(id) => void removeImported(id)}
           drafts={library.drafts}
           onDiscardDraft={(id) => void discardDraft(id)}
+          favourites={settings.favourites}
+          onFavouritesChange={(next) => set('favourites', next)}
+          collapsed={settings.collapsedSections}
+          onCollapsedChange={(next) => set('collapsedSections', next)}
         />
       )}
       {nowPlaying && (

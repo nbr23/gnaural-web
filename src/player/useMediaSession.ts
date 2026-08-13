@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import type { Player } from './usePlayer';
+import { SEEK_STEP_SECONDS } from './usePlayer';
 
 /** How far the notification's skip buttons move the playhead — the player's own step (§5.1). */
-export const MEDIA_SEEK_STEP = 30;
+export const MEDIA_SEEK_STEP = SEEK_STEP_SECONDS;
 
 /**
  * Lock-screen metadata and controls on Android (PLAN.md §5.1, and a condition of §5.3's done).

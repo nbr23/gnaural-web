@@ -24,6 +24,9 @@ export const DEFAULT_SETTINGS: Settings = {
   noiseGain: SILENT_NOISE_LAYER.gain,
   liveBaseFreq: DEFAULT_LIVE_VALUES.baseFreq,
   liveBeatFreq: DEFAULT_LIVE_VALUES.beatFreq,
+  favourites: [],
+  /** Every section starts open: a library that hides its contents on first run explains nothing. */
+  collapsedSections: [],
 };
 
 export interface SettingsStore {

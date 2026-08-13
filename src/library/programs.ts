@@ -31,6 +31,16 @@ export interface BundledProgram {
    * synthetic and §3.8 item 6 is what forcing noise on looks like when it goes wrong.
    */
   lostAmbientBed: boolean;
+  /**
+   * Whether this program was **converted** from the Android app's `DefaultProgramsBuilder.java`
+   * rather than shipped by it as a `.gnaural` file already.
+   *
+   * The 17 presets were; `powernap` and `airplanetravelaid` were not. The library says so, because
+   * the conversion caveats in `fixtures/presets/README.md` — the dropped ambient beds, the
+   * per-period fades that were a property of the Android engine rather than of the data — apply to
+   * one set and not the other.
+   */
+  converted: boolean;
 }
 
 /** The manifest's name for the ambient ogg loop PLAN.md §4.6 deliberately left behind. */
@@ -63,6 +73,7 @@ const GNAURAL_ORIGINALS: BundledProgram[] = [
     description: 'Around 20mn of rest to make it through the day. Put on your headphones and relax!',
     durationSeconds: 1200,
     lostAmbientBed: false,
+    converted: false,
   },
   {
     id: 'airplanetravelaid',
@@ -75,6 +86,7 @@ const GNAURAL_ORIGINALS: BundledProgram[] = [
     // totaltime — say 4410.
     durationSeconds: 4410,
     lostAmbientBed: false,
+    converted: false,
   },
 ];
 
@@ -92,6 +104,7 @@ const PRESETS: BundledProgram[] = manifest.map((preset) => ({
   description: preset.description.trim(),
   durationSeconds: preset.durationSeconds,
   lostAmbientBed: preset.backgrounds.includes(AMBIENT_BACKGROUND),
+  converted: true,
 }));
 
 export const PROGRAMS: BundledProgram[] = [...GNAURAL_ORIGINALS, ...PRESETS];

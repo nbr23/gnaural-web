@@ -588,6 +588,33 @@ export function insertVoice(schedule: Schedule, args: InsertVoiceArgs): VoiceEdi
 }
 
 /**
+ * A document to start from: one tone voice, twenty minutes long, and nothing else.
+ *
+ * §6.3 asks that a schedule can be authored *from scratch*, and until now the only way into the
+ * editor was to fork something that already existed. This is the missing beginning, and it is
+ * deliberately `insertVoice` on an empty schedule rather than a hand-written literal: the defaults
+ * a new voice gets, its id, its `preserved` and its length are decided in one place, and a blank
+ * program is then the same document "Add a voice" would have produced.
+ *
+ * The master volumes are 1/1, matching what the parser defaults a file with no `overallvolume_*`
+ * to, so a new program and an old file that says nothing about its mix mean the same thing.
+ */
+export function newSchedule(title: string): Schedule {
+  const empty: Schedule = {
+    title,
+    description: '',
+    author: '',
+    loops: 1,
+    masterVolume: { left: 1, right: 1 },
+    stereoSwap: false,
+    voices: [],
+    preserved: {},
+  };
+
+  return insertVoice(empty, { kind: 'tone' }).schedule;
+}
+
+/**
  * Delete a voice, including the last one.
  *
  * A schedule with no voices is an accepted state rather than a refused one: 9a already warns for it

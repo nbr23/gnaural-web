@@ -1,28 +1,28 @@
+/* The two-column grid, the sticky stage and the sticky transport are shared with the player and
+   live in `PlayerView.css`, which both views load. */
 .editor {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
   padding-bottom: 32px;
 }
 
+/* One line where there is room: back, title, save state, and the history buttons pushed to the
+   end. It used to be four stacked rows above a chart that was already too far down the page. */
 .editor__header {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
 }
 
 .editor__title {
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .editor__state {
-  font-size: 14px;
-  color: var(--text-h);
+  font-size: 13px;
+  color: var(--text);
 }
 
 .editor__history,
-.editor__transport,
 .editor__row {
   display: flex;
   flex-wrap: wrap;
@@ -30,33 +30,47 @@
   gap: 8px 16px;
 }
 
-.editor__transport {
-  align-items: center;
+.editor__history {
+  margin-inline-start: auto;
 }
 
-.editor__elapsed {
-  font-variant-numeric: tabular-nums;
-  color: var(--text-h);
+.editor__history .button {
+  font-size: 13px;
+  padding: 6px 12px;
+  min-height: 36px;
+  /* The undo label names the command, which is what makes the button worth reading; it must not
+     be allowed to set the header's width when that command is "Change master volume". */
+  max-width: 22ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .editor__chart {
   margin-block: 4px;
 }
 
-.editor__fields,
-.editor__publish {
+/* A group of fields that stands on its own — today the node and group panels, which are always
+   visible because they are what a selection *is*. The same markup inside a `.panel` drops the
+   frame, since the panel already drew one. */
+.editor__fields {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
 }
 
-.editor__fields h2,
-.editor__publish h2 {
-  font-size: 15px;
+.panel__body > .editor__fields {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.editor__fields h2 {
+  font-size: 14px;
   color: var(--text-h);
 }
 
@@ -112,25 +126,49 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
+  gap: 6px;
 }
 
 .editor__lanes-label {
-  font-size: 14px;
-  color: var(--text-h);
+  font-size: 13px;
+  color: var(--text);
+  margin-inline-end: 2px;
 }
 
-/* The mode control belongs with the lanes but is a different kind of choice, so it breaks to its
-   own line on a phone rather than reading as a fifth lane. */
-.editor__mode {
-  flex-basis: 100%;
-}
+/* A lane toggle. Same shape as the authoring panel's band chips, because it is the same gesture:
+   one press, on or off, at a size a thumb can hit. */
+.editor__chip {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
 
-@media (min-width: 620px) {
-  .editor__mode {
-    flex-basis: auto;
-    margin-inline-start: auto;
+  &.is-active {
+    color: var(--accent);
+    background: var(--accent-bg);
+    border-color: var(--accent-border);
   }
+}
+
+/* The choices that change what a *drag* means, and the axis overrides. Folded away by default:
+   they are worth having and they are not worth 200 px above the thing being edited. */
+.editor__options {
+  font-size: 14px;
+}
+
+.editor__options > summary {
+  padding: 6px 0;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.editor__options > *:not(summary) {
+  margin-top: 8px;
 }
 
 /* Zoom, and the pan rail — a real range input, for the reason `Timeline` is one: keyboard-operable
@@ -207,6 +245,7 @@
 .editor__publish-note {
   max-width: 62ch;
   font-size: 14px;
+  color: var(--text);
 }
 
 /* §6.1's validation surface. Deliberately the same amber and the same two tiers as the player's

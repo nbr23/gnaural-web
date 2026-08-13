@@ -84,7 +84,27 @@ export function resetPlatform(): void {
   mediaSession.position = null;
   mediaSession.handlers.clear();
   wakeLocks.length = 0;
+  media.coarsePointer = false;
 }
+
+/**
+ * What `matchMedia` answers, since happy-dom lays nothing out and evaluates no queries.
+ *
+ * `(pointer: coarse)` is the one that changes behaviour rather than styling — it is what takes the
+ * seek gesture off the chart — so a test can set it and get the phone's answer. Everything else
+ * reads false, which is the desktop-shaped default the views are written against.
+ */
+export const media = { coarsePointer: false };
+
+Object.defineProperty(window, 'matchMedia', {
+  configurable: true,
+  value: (query: string) => ({
+    matches: query.includes('pointer: coarse') ? media.coarsePointer : false,
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+  }),
+});
 
 globalThis.MediaMetadata = class {
   constructor(init: { title?: string; artist?: string; album?: string }) {

@@ -191,6 +191,18 @@ export function setSelectValue(select: HTMLSelectElement, value: string): void {
 }
 
 /**
+ * A key, pressed at an element — or at the document, which is where the app's own shortcuts listen.
+ *
+ * Dispatched rather than simulated through React: `useKeyboardShortcuts` and the editor's undo both
+ * bind to `window`, so what matters is that the event reaches it with the right target.
+ */
+export function press(key: string, target: EventTarget = document.body): void {
+  act(() => {
+    target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  });
+}
+
+/**
  * Flush pending async work — a lazily imported program, a file read, an IndexedDB query — and the
  * renders it causes. A dynamic import settles on a macrotask, so a microtask drain alone is not
  * enough, and a chain of them needs one turn each: fake-indexeddb spends a turn per request, and

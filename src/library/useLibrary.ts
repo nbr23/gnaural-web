@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Schedule } from '../document/types';
-import type { Draft, ImportedProgram } from './storage';
+import type { Draft, ImportedProgram, ProgramOrigin } from './storage';
 import {
   createDraft,
   importProgram,
@@ -15,7 +15,12 @@ export interface Library {
   imported: ImportedProgram[] | null;
   /** Drafts being authored (§6.1), most recently edited first. Null until the read settles. */
   drafts: Draft[] | null;
-  add(sourceName: string, text: string, schedule: Schedule): Promise<ImportedProgram>;
+  add(
+    sourceName: string,
+    text: string,
+    schedule: Schedule,
+    origin?: ProgramOrigin,
+  ): Promise<ImportedProgram>;
   remove(id: string): Promise<void>;
   /** Copy a document into a new draft — the editor never edits a program in place. */
   fork(sourceName: string, xml: string, schedule: Schedule): Promise<Draft>;
@@ -54,11 +59,14 @@ export function useLibrary(): Library {
     };
   }, []);
 
-  const add = useCallback(async (sourceName: string, text: string, schedule: Schedule) => {
-    const program = await importProgram(sourceName, text, schedule);
-    setImported(await listImported());
-    return program;
-  }, []);
+  const add = useCallback(
+    async (sourceName: string, text: string, schedule: Schedule, origin?: ProgramOrigin) => {
+      const program = await importProgram(sourceName, text, schedule, origin);
+      setImported(await listImported());
+      return program;
+    },
+    [],
+  );
 
   const remove = useCallback(async (id: string) => {
     await removeImported(id);

@@ -1,5 +1,8 @@
 import { useMemo } from 'react';
+import { Panel } from '../app/Panel';
+import { formatClock } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
+import { useCoarsePointer, useWideLayout } from '../app/useMediaQuery';
 import type { Schedule } from '../document/types';
 import type { ScheduleWarning } from '../document/warnings';
 import { scheduleWarnings } from '../document/warnings';
@@ -13,9 +16,15 @@ import { Readout } from './Readout';
 import { Timeline } from './Timeline';
 import { VoiceList } from './VoiceList';
 import type { Player } from './usePlayer';
+import { SEEK_STEP_SECONDS } from './usePlayer';
 import './PlayerView.css';
 
-const SEEK_STEP_SECONDS = 30;
+/**
+ * How tall the plot is drawn, in px — a number rather than a rule, since the SVG is laid out from
+ * it. Short enough on a phone that the transport stays on the same screen as the chart, taller
+ * where the chart sits in a column of its own.
+ */
+const CHART_HEIGHT = { narrow: 200, wide: 320 };
 
 export interface PlayerViewProps {
   schedule: Schedule;
@@ -63,16 +72,98 @@ export function PlayerView({
   const all = useMemo(() => [...warnings, ...scheduleWarnings(schedule)], [warnings, schedule]);
   const silent = all.some((warning) => warning.kind === 'nothing-to-play');
 
+  const coarse = useCoarsePointer();
+  const wide = useWideLayout();
+
   return (
     <div className="player">
-      <header className="player__header">
-        <button type="button" className="back-link" onClick={() => navigate(LIBRARY)}>
-          ← Library
-        </button>
-        <h1 className="player__title">{title}</h1>
-        {(schedule.author || subtitle) && (
-          <p className="player__byline">{subtitle ?? schedule.author}</p>
+      {/* Everything about *listening*. On a wide screen this column stays where it is while the
+          panels beside it scroll, so the chart and the transport are never scrolled away from. */}
+      <div className="player__stage">
+        <header className="player__header">
+          <button type="button" className="back-link" onClick={() => navigate(LIBRARY)}>
+            ← Library
+          </button>
+          <h1 className="player__title">{title}</h1>
+          {(schedule.author || subtitle) && (
+            <p className="player__byline">{subtitle ?? schedule.author}</p>
+          )}
+        </header>
+
+        {/* With the program rather than with the panels, and never inside one: a file that will
+            not play the way it reads has to say so where the Play button is. */}
+        <WarningList warnings={all} />
+
+        <Readout schedule={schedule} offset={player.offset} />
+
+        {/* No seek on touch: a plot wide enough to read is wide enough to brush past, and the
+            timeline below is the deliberate way to move the playhead. See `useCoarsePointer`. */}
+        <ScheduleChart
+          schedule={schedule}
+          currentTime={player.offset}
+          height={wide ? CHART_HEIGHT.wide : CHART_HEIGHT.narrow}
+          onSeek={coarse ? undefined : player.seek}
+          className="player__chart"
+        />
+
+        <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
+
+        {/* The timeline plots one pass, because that is the curve; a repeating schedule replays it
+            rather than extending it (§3.2). Which pass you are on is the part the timeline cannot
+            show. */}
+        {schedule.loops <= 0 ? (
+          <p className="player__passes">Repeats until stopped — pass {player.pass + 1}</p>
+        ) : (
+          player.passCount > 1 && (
+            <p className="player__passes">
+              Pass {player.pass + 1} of {player.passCount}
+            </p>
+          )
         )}
+
+        {/* Sticky to the bottom of the viewport on a phone: the panels below run long, and the one
+            control nobody should have to scroll for is the one that stops the sound. */}
+        <div className="player__transport">
+          <button
+            type="button"
+            className="button"
+            onClick={() => player.seek(player.offset - SEEK_STEP_SECONDS)}
+          >
+            −{SEEK_STEP_SECONDS}s
+          </button>
+          {/* Nothing renderable means Play would produce silence for the schedule's full length.
+              The warning above says why; a disabled button is what stops it being a mystery. */}
+          <button
+            type="button"
+            className="button button--primary"
+            disabled={silent}
+            onClick={() => (player.playing ? player.pause() : player.play())}
+          >
+            {player.playing ? 'Pause' : 'Play'}
+          </button>
+          <button
+            type="button"
+            className="button"
+            onClick={() => player.seek(player.offset + SEEK_STEP_SECONDS)}
+          >
+            +{SEEK_STEP_SECONDS}s
+          </button>
+          <button type="button" className="button" onClick={player.stop}>
+            Stop
+          </button>
+          <span className="player__elapsed">{formatClock(player.offset)}</span>
+        </div>
+
+        <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
+      </div>
+
+      {/* Everything *about* the program. Folded away by default on a phone, where the page would
+          otherwise be several screens of controls nobody asked for yet. */}
+      <div className="player__aside">
+        {schedule.description.trim() && (
+          <p className="player__description">{schedule.description.trim()}</p>
+        )}
+
         <div className="player__actions">
           {onSaveToLibrary && (
             <button type="button" className="button" onClick={onSaveToLibrary}>
@@ -85,91 +176,34 @@ export function PlayerView({
             Edit a copy
           </button>
         </div>
-      </header>
 
-      {schedule.description.trim() && (
-        <p className="player__description">{schedule.description.trim()}</p>
-      )}
+        {schedule.voices.length > 1 && (
+          <Panel title="Voices" badge={schedule.voices.length} defaultOpen={wide}>
+            <VoiceList
+              schedule={schedule}
+              gates={player.voiceGates}
+              onToggleMute={player.toggleMute}
+              onToggleSolo={player.toggleSolo}
+            />
+          </Panel>
+        )}
 
-      <WarningList warnings={all} />
+        <Panel title="Sound" badge={noise.gain > 0 ? 'noise on' : undefined} defaultOpen={wide}>
+          <NoisePanel noise={noise} onChange={onNoiseChange} lostAmbientBed={lostAmbientBed} />
+          <WakeLockToggle enabled={wakeLock} onChange={onWakeLockChange} />
+        </Panel>
 
-      <Readout schedule={schedule} offset={player.offset} />
+        <Panel title="Export & share" defaultOpen={wide}>
+          <ExportPanel
+            schedule={schedule}
+            sampleRate={exportSampleRate}
+            onSampleRateChange={onExportSampleRateChange}
+            noiseActive={noise.gain > 0}
+          />
+        </Panel>
 
-      <ScheduleChart
-        schedule={schedule}
-        currentTime={player.offset}
-        onSeek={player.seek}
-        className="player__chart"
-      />
-
-      <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
-
-      {/* The timeline plots one pass, because that is the curve; a repeating schedule replays it
-          rather than extending it (§3.2). Which pass you are on is the part the timeline cannot
-          show. */}
-      {schedule.loops <= 0 ? (
-        <p className="player__passes">Repeats until stopped — pass {player.pass + 1}</p>
-      ) : (
-        player.passCount > 1 && (
-          <p className="player__passes">
-            Pass {player.pass + 1} of {player.passCount}
-          </p>
-        )
-      )}
-
-      <div className="player__transport">
-        <button
-          type="button"
-          className="button"
-          onClick={() => player.seek(player.offset - SEEK_STEP_SECONDS)}
-        >
-          −{SEEK_STEP_SECONDS}s
-        </button>
-        {/* Nothing renderable means Play would produce silence for the schedule's full length.
-            The warning above says why; a disabled button is what stops it being a mystery. */}
-        <button
-          type="button"
-          className="button button--primary"
-          disabled={silent}
-          onClick={() => (player.playing ? player.pause() : player.play())}
-        >
-          {player.playing ? 'Pause' : 'Play'}
-        </button>
-        <button
-          type="button"
-          className="button"
-          onClick={() => player.seek(player.offset + SEEK_STEP_SECONDS)}
-        >
-          +{SEEK_STEP_SECONDS}s
-        </button>
-        <button type="button" className="button" onClick={player.stop}>
-          Stop
-        </button>
+        <p className="player__note">Headphones required — the beat only exists between two ears.</p>
       </div>
-
-      <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
-
-      <NoisePanel noise={noise} onChange={onNoiseChange} lostAmbientBed={lostAmbientBed} />
-
-      <WakeLockToggle enabled={wakeLock} onChange={onWakeLockChange} />
-
-      {schedule.voices.length > 1 && (
-        <VoiceList
-          schedule={schedule}
-          gates={player.voiceGates}
-          onToggleMute={player.toggleMute}
-          onToggleSolo={player.toggleSolo}
-        />
-      )}
-
-      <ExportPanel
-        schedule={schedule}
-        sampleRate={exportSampleRate}
-        onSampleRateChange={onExportSampleRateChange}
-        noiseActive={noise.gain > 0}
-      />
-
-      <p className="player__note">Headphones required — the beat only exists between two ears.</p>
     </div>
   );
 }

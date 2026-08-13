@@ -9,10 +9,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  /* Full-bleed background, but its contents line up with the 900px column `#root` centres —
-     `100%` is the bar's own width, so no scrollbar to account for. */
+  /* Full-bleed background, but its contents line up with the column `#root` centres — `100%` is
+     the bar's own width, so no scrollbar to account for. */
   padding-block: 10px calc(10px + env(safe-area-inset-bottom));
-  padding-inline: max(16px, calc((100% - 868px) / 2));
+  padding-inline: max(16px, calc((100% - 1248px) / 2));
   border-top: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow);

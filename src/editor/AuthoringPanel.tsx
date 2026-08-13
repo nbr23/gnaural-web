@@ -118,7 +118,6 @@ export function AuthoringPanel({
 
   return (
     <section className="editor__fields authoring">
-      <h2>Authoring aids</h2>
 
       <h3 className="editor__subhead">Program length</h3>
       <p className="editor__hint">

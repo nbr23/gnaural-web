@@ -1,8 +1,11 @@
+/* A slider is only as usable as it is readable, and one stretched across a 1280 px window moves
+   half a hertz per hundred pixels. Live mode keeps a column, wherever it is shown. */
 .live {
   display: flex;
   flex-direction: column;
   gap: 20px;
   padding-bottom: 32px;
+  max-width: 720px;
 }
 
 .live__header {

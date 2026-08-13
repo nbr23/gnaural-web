@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Panel } from '../app/Panel';
 import { formatClock, numberOr } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
+import { isTypingTarget } from '../app/useKeyboardShortcuts';
+import { useCoarsePointer, useWideLayout } from '../app/useMediaQuery';
 import { useThrottled } from '../app/useThrottled';
 import type { MoveMode, VoiceEdit } from '../document/edit';
 import { padVoicesToLongest, repairVoiceGrouping, updateSchedule } from '../document/edit';
@@ -36,9 +39,24 @@ import './EditorView.css';
  * chart divides its total height between however many lanes it is given, so beat, base and both
  * volumes inside the read-only 280 px leaves about 44 px of plot each — unusable before it is
  * unzoomable.
+ *
+ * `MIN` is what the fourth lane is allowed to shrink to when the chart has to fit a sticky column
+ * beside the panels: still twice the 44 px that made a fixed box unusable, and the lane toggles are
+ * one press away from giving any lane its full height back.
  */
 const LANE_HEIGHT = 116;
+const MIN_LANE_HEIGHT = 90;
 const AXIS_BAND = 30;
+/**
+ * Everything in the stage that is not the plot: header, lane chips, the options summary, the
+ * readout, the timeline, the transport, the volume, and the gaps between them.
+ *
+ * Measured in the browser at 1280×900 rather than added up from the stylesheet, which is why it is
+ * a round 480 and not a sum. It only has to be close: it decides how much of the remaining height
+ * each lane may take, and being wrong by a little costs a little scrolling on a four-lane document
+ * in a short window.
+ */
+const STAGE_CHROME_PX = 480;
 
 const LANE_LABELS: Record<LaneId, string> = {
   beat: 'Beat',
@@ -92,6 +110,7 @@ export function EditorView({
   const [mode, setMode] = useState<MoveMode>('squeeze');
   const [snap, setSnap] = useState(false);
   const [domains, setDomains] = useState<LaneDomains>({});
+  const [discarding, setDiscarding] = useState(false);
 
   const patch = useCallback(
     (label: string, fields: Parameters<typeof updateSchedule>[1]) => {
@@ -199,165 +218,209 @@ export function EditorView({
   }, [lanes, schedule]);
 
   const title = schedule.title.trim() || 'Untitled program';
+  const coarse = useCoarsePointer();
+  const wide = useWideLayout();
+  const laneHeight = wide
+    ? clampLaneHeight(lanes.length, window.innerHeight - STAGE_CHROME_PX)
+    : LANE_HEIGHT;
 
   return (
     <div className="editor">
-      <header className="editor__header">
-        <button type="button" className="back-link" onClick={() => navigate(LIBRARY)}>
-          ← Library
-        </button>
-        <h1 className="editor__title">{title}</h1>
-        <p className="editor__state">{pending ? 'Saving…' : 'Draft — saved automatically'}</p>
-      </header>
+      {/* The document, and everything that acts on the document as a whole. The chart is the third
+          element on the page rather than the ninth: the browser pass measured it 622 px down on a
+          phone, which is below the fold on the device this app is mostly used on. */}
+      <div className="editor__stage">
+        <header className="editor__header">
+          <button type="button" className="back-link" onClick={() => navigate(LIBRARY)}>
+            ← Library
+          </button>
+          <h1 className="editor__title">{title}</h1>
+          <p className="editor__state">{pending ? 'Saving…' : 'Draft — saved automatically'}</p>
 
-      <div className="editor__history">
-        <button type="button" className="button" disabled={!editor.canUndo} onClick={editor.undo}>
-          Undo{editor.undoLabel ? ` ${editor.undoLabel.toLowerCase()}` : ''}
-        </button>
-        <button type="button" className="button" disabled={!editor.canRedo} onClick={editor.redo}>
-          Redo{editor.redoLabel ? ` ${editor.redoLabel.toLowerCase()}` : ''}
-        </button>
-      </div>
+          <div className="editor__history">
+            <button
+              type="button"
+              className="button"
+              disabled={!editor.canUndo}
+              title={editor.undoLabel ? `Undo ${editor.undoLabel.toLowerCase()}` : 'Undo'}
+              onClick={editor.undo}
+            >
+              Undo{editor.undoLabel ? ` ${editor.undoLabel.toLowerCase()}` : ''}
+            </button>
+            <button
+              type="button"
+              className="button"
+              disabled={!editor.canRedo}
+              title={editor.redoLabel ? `Redo ${editor.redoLabel.toLowerCase()}` : 'Redo'}
+              onClick={editor.redo}
+            >
+              Redo{editor.redoLabel ? ` ${editor.redoLabel.toLowerCase()}` : ''}
+            </button>
+          </div>
+        </header>
 
-      <Readout schedule={schedule} offset={player.offset} />
+        {/* Chips rather than checkboxes: four lanes, one row, at a thumb's size — the checkbox
+            version wrapped onto three lines on a phone and pushed the chart down with it. */}
+        <div className="editor__lanes">
+          <span className="editor__lanes-label">Lanes</span>
+          {ALL_LANES.map((lane) => {
+            const on = lanes.includes(lane);
+            return (
+              <button
+                key={lane}
+                type="button"
+                className={`editor__chip${on ? ' is-active' : ''}`}
+                aria-pressed={on}
+                // Updater form rather than the rendered `lanes`: two chips pressed inside one
+                // frame both read the same closure otherwise, and the second undoes the first.
+                onClick={() =>
+                  setLanes((current) =>
+                    current.includes(lane)
+                      ? current.filter((id) => id !== lane)
+                      : ALL_LANES.filter((id) => id === lane || current.includes(id)),
+                  )
+                }
+              >
+                {LANE_LABELS[lane]}
+              </button>
+            );
+          })}
+        </div>
 
-      <div className="editor__lanes">
-        <span className="editor__lanes-label">Lanes</span>
-        {ALL_LANES.map((lane) => (
-          <label key={lane} className="editor__check">
+        <details className="editor__options">
+          <summary>Drag and axis options</summary>
+
+          {/* There is no modifier key on a phone, so both of these are controls rather than chords.
+              On a keyboard Alt overrides the first and Shift the second, momentarily and fixed at
+              pointerdown; `EditSurface` handles both. */}
+          <label className="editor__check">
             <input
               type="checkbox"
-              checked={lanes.includes(lane)}
-              onChange={(event) =>
-                setLanes(
-                  event.target.checked
-                    ? ALL_LANES.filter((id) => id === lane || lanes.includes(id))
-                    : lanes.filter((id) => id !== lane),
-                )
-              }
+              checked={mode === 'ripple'}
+              onChange={(event) => setMode(event.target.checked ? 'ripple' : 'squeeze')}
             />
-            <span>{LANE_LABELS[lane]}</span>
+            <span>Ripple — move everything after the node too</span>
           </label>
-        ))}
 
-        {/* There is no modifier key on a phone, so both of these are controls rather than chords.
-            On a keyboard Alt overrides the first and Shift the second, momentarily and fixed at
-            pointerdown; `EditSurface` handles both. */}
-        <label className="editor__check editor__mode">
-          <input
-            type="checkbox"
-            checked={mode === 'ripple'}
-            onChange={(event) => setMode(event.target.checked ? 'ripple' : 'squeeze')}
+          {/* Off by default: the grid follows the zoom, and at 1× on a long programme its step is
+              around a hundred times the gap between that document's own nodes, so snapping before
+              zooming in would pin whole clusters onto their neighbours. */}
+          <label className="editor__check">
+            <input
+              type="checkbox"
+              checked={snap}
+              onChange={(event) => setSnap(event.target.checked)}
+            />
+            <span>Snap to the grid</span>
+          </label>
+
+          <LaneRanges
+            lanes={lanes}
+            labels={LANE_LABELS}
+            domains={domains}
+            fitted={fitted}
+            onChange={setDomains}
           />
-          <span>Ripple — move everything after the node too</span>
-        </label>
+        </details>
 
-        {/* Off by default: the grid follows the zoom, and at 1× on a long programme its step is
-            around a hundred times the gap between that document's own nodes, so snapping before
-            zooming in would pin whole clusters onto their neighbours. */}
-        <label className="editor__check editor__mode">
-          <input type="checkbox" checked={snap} onChange={(event) => setSnap(event.target.checked)} />
-          <span>Snap to the grid</span>
-        </label>
-      </div>
-
-      <LaneRanges
-        lanes={lanes}
-        labels={LANE_LABELS}
-        domains={domains}
-        fitted={fitted}
-        onChange={setDomains}
-      />
-
-      <EditSurface
-        schedule={schedule}
-        lanes={lanes}
-        height={Math.max(1, lanes.length) * LANE_HEIGHT + AXIS_BAND}
-        currentTime={player.offset}
-        selected={editor.selection}
-        mode={mode}
-        snap={snap}
-        domains={domains}
-        marks={marks}
-        onSelect={editor.select}
-        onCommit={commitEdit}
-        onCommitAt={commitEditAt}
-        onPreview={preview}
-        onSeek={player.seek}
-      />
-
-      {/* Under the chart rather than above it, which is where the player puts the same statement:
-          the marks these rows explain are on the chart, and a list that grew above it would shift
-          the chart itself downwards at the instant a drag commits. */}
-      <ValidationPanel
-        schedule={warnings}
-        entries={issues}
-        repairs={repairs}
-        onSelect={(node) => editor.select([node])}
-      />
-
-      <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
-
-      <div className="editor__transport">
-        {/* Disabled for the same reason the player disables it: twenty minutes of silence with no
-            explanation is worse than a button that says it cannot help. The panel above says why. */}
-        <button
-          type="button"
-          className="button button--primary"
-          disabled={silent}
-          onClick={() => (player.playing ? player.pause() : player.play())}
-        >
-          {player.playing ? 'Pause' : 'Play'}
-        </button>
-        <button type="button" className="button" onClick={player.stop}>
-          Stop
-        </button>
-        <span className="editor__elapsed">{formatClock(player.offset)}</span>
-      </div>
-
-      <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
-
-      <VoiceRows
-        schedule={schedule}
-        gates={player.voiceGates}
-        onCommit={commitEdit}
-        onStructural={commitStructure}
-        onToggleSolo={player.toggleSolo}
-      />
-
-      {/* §6.1's authoring aids. Voice- and document-scoped, so they sit with the voice list rather
-          than with the node and group panels below, which are what a selection means. */}
-      <AuthoringPanel
-        schedule={schedule}
-        selected={editor.selection}
-        onCommit={commitEdit}
-        onCommitAt={commitEditAt}
-        onStructural={commitStructure}
-      />
-
-      {/* Exact values are what §6.1 asks for and they only mean something for one node; with a
-          marquee's worth selected, what generalises is the operation rather than the value. */}
-      {editor.selection.length > 1 ? (
-        <GroupPanel
+        {/* No seek on a miss on touch, for the reason the player drops it there: a tap that lands
+            on nothing should clear the selection, not move the playhead. */}
+        <EditSurface
           schedule={schedule}
+          lanes={lanes}
+          height={Math.max(1, lanes.length) * laneHeight + AXIS_BAND}
+          currentTime={player.offset}
           selected={editor.selection}
           mode={mode}
+          snap={snap}
+          domains={domains}
+          marks={marks}
+          onSelect={editor.select}
           onCommit={commitEdit}
           onCommitAt={commitEditAt}
+          onPreview={preview}
+          onSeek={coarse ? undefined : player.seek}
         />
-      ) : (
-        <NodePanel
-          schedule={schedule}
-          selected={editor.selection[0] ?? null}
-          mode={mode}
-          onCommit={commitEdit}
-          onCommitAt={commitEditAt}
+
+        <Readout schedule={schedule} offset={player.offset} />
+
+        <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
+
+        <div className="editor__transport">
+          {/* Disabled for the same reason the player disables it: twenty minutes of silence with no
+              explanation is worse than a button that says it cannot help. The issues list says
+              why. */}
+          <button
+            type="button"
+            className="button button--primary"
+            disabled={silent}
+            onClick={() => (player.playing ? player.pause() : player.play())}
+          >
+            {player.playing ? 'Pause' : 'Play'}
+          </button>
+          <button type="button" className="button" onClick={player.stop}>
+            Stop
+          </button>
+          <span className="editor__elapsed">{formatClock(player.offset)}</span>
+        </div>
+
+        <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
+      </div>
+
+      <div className="editor__aside">
+        {/* Never inside a panel: the marks these rows explain are already on the chart, and a
+            problem the document has must not need a click to be discovered. */}
+        <ValidationPanel
+          schedule={warnings}
+          entries={issues}
+          repairs={repairs}
+          onSelect={(node) => editor.select([node])}
         />
-      )}
 
-      <section className="editor__fields">
-        <h2>Program</h2>
+        {/* Exact values are what §6.1 asks for and they only mean something for one node; with a
+            marquee's worth selected, what generalises is the operation rather than the value.
+            Never folded away: this panel *is* the selection, and its own heading says which. */}
+        {editor.selection.length > 1 ? (
+          <GroupPanel
+            schedule={schedule}
+            selected={editor.selection}
+            mode={mode}
+            onCommit={commitEdit}
+            onCommitAt={commitEditAt}
+          />
+        ) : (
+          <NodePanel
+            schedule={schedule}
+            selected={editor.selection[0] ?? null}
+            mode={mode}
+            onCommit={commitEdit}
+            onCommitAt={commitEditAt}
+          />
+        )}
 
+        <Panel title="Voices" badge={schedule.voices.length} defaultOpen={wide}>
+          <VoiceRows
+            schedule={schedule}
+            gates={player.voiceGates}
+            onCommit={commitEdit}
+            onStructural={commitStructure}
+            onToggleSolo={player.toggleSolo}
+          />
+        </Panel>
+
+        {/* §6.1's authoring aids. Voice- and document-scoped, so they sit with the voice list
+            rather than with the node and group panels, which are what a selection means. */}
+        <Panel title="Generate" defaultOpen={false}>
+          <AuthoringPanel
+            schedule={schedule}
+            selected={editor.selection}
+            onCommit={commitEdit}
+            onCommitAt={commitEditAt}
+            onStructural={commitStructure}
+          />
+        </Panel>
+
+        <Panel title="Program" defaultOpen={false}>
         <CommittedField
           label="Title"
           value={schedule.title}
@@ -423,25 +486,50 @@ export function EditorView({
           />
           <span>Swap left and right on output</span>
         </label>
-      </section>
+        </Panel>
 
-      <section className="editor__publish">
-        <h2>Finish</h2>
-        <p className="editor__publish-note">
-          Saving puts a copy in your library, where it can be exported as a WAV or a .gnaural file
-          and shared as a link. The draft stays here to keep working on.
-        </p>
-        <div className="editor__row">
-          <button type="button" className="button" onClick={() => onSaveToLibrary(schedule)}>
-            Save to library
-          </button>
-          <button type="button" className="button" onClick={onDiscard}>
-            Discard draft
-          </button>
-        </div>
-      </section>
+        <Panel title="Finish">
+          <p className="editor__publish-note">
+            Saving puts a copy in your library, where it can be exported as a WAV or a .gnaural file
+            and shared as a link. The draft stays here to keep working on.
+          </p>
+          <div className="editor__row">
+            <button type="button" className="button" onClick={() => onSaveToLibrary(schedule)}>
+              Save to library
+            </button>
+            {/* Asks first, like the library's remove: discarding is the one thing here that undo
+                cannot take back. */}
+            {discarding ? (
+              <>
+                <button type="button" className="button" onClick={onDiscard}>
+                  Discard for good
+                </button>
+                <button type="button" className="button" onClick={() => setDiscarding(false)}>
+                  Keep working
+                </button>
+              </>
+            ) : (
+              <button type="button" className="button" onClick={() => setDiscarding(true)}>
+                Discard draft
+              </button>
+            )}
+          </div>
+        </Panel>
+      </div>
     </div>
   );
+}
+
+/**
+ * How tall each lane may be when the stage has to fit beside the panels rather than scroll.
+ *
+ * Four open lanes at the full 116 px plus the axis and the chrome around it is taller than a
+ * laptop's viewport, and a sticky column taller than the viewport does not stick — it scrolls like
+ * anything else, which is precisely the behaviour the two-column layout exists to avoid.
+ */
+function clampLaneHeight(lanes: number, available: number): number {
+  const each = available / Math.max(1, lanes);
+  return Math.max(MIN_LANE_HEIGHT, Math.min(LANE_HEIGHT, Math.floor(each)));
 }
 
 
@@ -580,10 +668,7 @@ function useUndoShortcuts(undo: () => void, redo: () => void): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== 'z' || !(event.metaKey || event.ctrlKey)) return;
-
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      if (isTypingTarget(event.target)) return;
 
       event.preventDefault();
       if (event.shiftKey) redo();

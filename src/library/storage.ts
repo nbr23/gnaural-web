@@ -17,6 +17,14 @@ import type { NoiseColour } from '../engine/noise';
 const DB_NAME = 'gnaural-web';
 const DB_VERSION = 2;
 
+/**
+ * Where a stored program came from, which is what the library colour-codes and groups by.
+ *
+ * Absent on every row written before this field existed, and those all arrived as a file or a link
+ * — the app had no way to save its own work at the time — so a missing value reads as `'file'`.
+ */
+export type ProgramOrigin = 'file' | 'link' | 'authored';
+
 export interface ImportedProgram {
   id: string;
   /**
@@ -27,6 +35,8 @@ export interface ImportedProgram {
   text: string;
   /** Filename it arrived as, or the share link it came from. Shown as the byline. */
   sourceName: string;
+  /** Optional for the rows written before it existed; see `ProgramOrigin`. */
+  origin?: ProgramOrigin;
   title: string;
   author: string;
   description: string;
@@ -58,6 +68,18 @@ export interface Settings {
    */
   liveBaseFreq: number;
   liveBeatFreq: number;
+  /**
+   * Programs starred in the library, as the route hashes `formatHash` produces (`#/p/powernap`,
+   * `#/i/<uuid>`).
+   *
+   * The route rather than a bare id because bundled and imported programs share this list and their
+   * ids do not share a namespace — and because the route is what the star has to navigate to
+   * anyway. A key whose program is gone is ignored when the list is built rather than pruned on
+   * delete: an import that comes back keeps its star.
+   */
+  favourites: string[];
+  /** Library sections the user has folded away, by `LibrarySection.id`. Open is the default. */
+  collapsedSections: string[];
 }
 
 /**
@@ -132,6 +154,7 @@ export async function importProgram(
   sourceName: string,
   text: string,
   schedule: Schedule,
+  origin: ProgramOrigin = 'file',
 ): Promise<ImportedProgram> {
   const database = await db();
 
@@ -142,6 +165,7 @@ export async function importProgram(
     id: crypto.randomUUID(),
     text,
     sourceName,
+    origin,
     title: schedule.title.trim() || sourceName,
     author: schedule.author.trim(),
     description: schedule.description.trim(),
