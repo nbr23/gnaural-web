@@ -166,7 +166,7 @@ describe('VoiceRows', () => {
     expect(harness.structural[0].edit.voiceMap).toEqual([0, -1]);
   });
 
-  it('adds a voice of either kind, at the length the schedule already plays', () => {
+  it('adds a voice of any kind, at the length the schedule already plays', () => {
     const schedule = twoVoices();
     const harness = mount(schedule);
 
@@ -177,8 +177,49 @@ describe('VoiceRows', () => {
     // The new node is what a person would edit next, so it is selected.
     expect(harness.structural[0].selection).toEqual({ voice: 2, entry: 0 });
 
+    testRoot.click(testRoot.byText('button', 'Add isochronic voice'));
+    const pulse = harness.structural[1].edit.schedule.voices[2];
+    expect(pulse.type).toBe(VoiceType.IsoPulse);
+    expect(voiceDuration(pulse)).toBe(scheduleDuration(schedule));
+
     testRoot.click(testRoot.byText('button', 'Add noise voice'));
-    expect(harness.structural[1].edit.schedule.voices[2].type).toBe(VoiceType.PinkNoise);
+    expect(harness.structural[2].edit.schedule.voices[2].type).toBe(VoiceType.PinkNoise);
+  });
+
+  /**
+   * Types 3 and 4 differ only in which ear each pulse lands in, so the editor offers one voice with
+   * a switch rather than two things to add. The toggle is on that voice's own row, and nowhere else.
+   */
+  it('switches an isochronic voice between both ears and alternating', () => {
+    const schedule = {
+      ...twoVoices(),
+      voices: [makeVoice(), makeVoice({ id: 1, type: VoiceType.IsoPulse })],
+    };
+    const harness = mount(schedule);
+
+    expect(rows()[1].textContent).toContain('isochronic');
+    expect(() => control(0, 'Alternate ears')).toThrow();
+
+    const toggle = control(1, 'Alternate ears');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+
+    testRoot.click(toggle);
+    expect(harness.commits[0].label).toBe('Alternate ears');
+    expect(harness.commits[0].schedule.voices[1].type).toBe(VoiceType.IsoPulseAlt);
+  });
+
+  it('shows an alternating voice as such, and switches it back', () => {
+    const harness = mount({
+      ...twoVoices(),
+      voices: [makeVoice({ type: VoiceType.IsoPulseAlt })],
+    });
+
+    expect(rows()[0].textContent).toContain('isochronic (alternating)');
+    expect(control(0, 'Alternate ears').getAttribute('aria-pressed')).toBe('true');
+
+    testRoot.click(control(0, 'Alternate ears'));
+    expect(harness.commits[0].label).toBe('Pulse in both ears');
+    expect(harness.commits[0].schedule.voices[0].type).toBe(VoiceType.IsoPulse);
   });
 
   /**

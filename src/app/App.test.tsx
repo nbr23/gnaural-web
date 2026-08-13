@@ -1110,12 +1110,29 @@ describe('the warning surface (§3.3, §3.4, §3.7)', () => {
   it('says a voice type it cannot render will be silent, and still plays the rest', async () => {
     root.render(<App />);
     drop(`<?xml version="1.0"?><schedule><title>Mixed</title>
-      ${voiceXml(0, 'tone', 600)}${voiceXml(3, 'pulse', 600)}</schedule>`);
+      ${voiceXml(0, 'tone', 600)}${voiceXml(5, 'drops', 600)}</schedule>`);
     await flush();
 
     expect(root.query('.warnings__list[role="alert"]')?.textContent).toContain('does not render yet');
     // Something is still audible, so the transport stays live.
     expect((root.byText('.button', 'Play') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  /**
+   * Types 3 and 4 became renderable in step 10, so a file made only of them is an ordinary
+   * programme: no alarm, a playable transport, and a voice list that says what the voice is rather
+   * than that it will be silent.
+   */
+  it('treats an isochronic programme as an ordinary one', async () => {
+    root.render(<App />);
+    drop(`<?xml version="1.0"?><schedule><title>Pulses</title>
+      ${voiceXml(3, 'pulse', 600)}${voiceXml(4, 'alt', 600)}</schedule>`);
+    await flush();
+
+    expect(root.query('.warnings')).toBeNull();
+    expect((root.byText('.button', 'Play') as HTMLButtonElement).disabled).toBe(false);
+    expect(root.text()).toContain('isochronic (alternating)');
+    expect(root.text()).not.toContain('not yet rendered');
   });
 
   it('refuses to offer Play for a schedule with nothing renderable in it', async () => {

@@ -21,12 +21,13 @@ export interface VoiceListProps {
  */
 const TYPE_LABELS: Partial<Record<VoiceType, string>> = {
   [VoiceType.PinkNoise]: 'noise',
+  [VoiceType.IsoPulse]: 'isochronic',
+  // Named apart from type 3 because the difference is audible: the pulse swaps ears.
+  [VoiceType.IsoPulseAlt]: 'isochronic (alternating)',
 };
 
 const UNRENDERED_LABELS: Partial<Record<VoiceType, string>> = {
   [VoiceType.Pcm]: 'external audio — cannot be rendered',
-  [VoiceType.IsoPulse]: 'isochronic — not yet rendered',
-  [VoiceType.IsoPulseAlt]: 'isochronic — not yet rendered',
   [VoiceType.WaterDrops]: 'water drops — not yet rendered',
   [VoiceType.Rain]: 'rain — not yet rendered',
 };

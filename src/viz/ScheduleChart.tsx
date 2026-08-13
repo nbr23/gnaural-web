@@ -151,7 +151,7 @@ const VOICE_TYPE_LABELS: Partial<Record<VoiceType, string>> = {
   [VoiceType.PinkNoise]: 'noise',
   [VoiceType.Pcm]: 'external audio',
   [VoiceType.IsoPulse]: 'isochronic',
-  [VoiceType.IsoPulseAlt]: 'isochronic',
+  [VoiceType.IsoPulseAlt]: 'isochronic (alternating)',
   [VoiceType.WaterDrops]: 'water drops',
   [VoiceType.Rain]: 'rain',
 };

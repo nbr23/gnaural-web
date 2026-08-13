@@ -23,7 +23,7 @@ const TYPE_LABELS: Partial<Record<VoiceType, string>> = {
   [VoiceType.PinkNoise]: 'noise',
   [VoiceType.Pcm]: 'external audio',
   [VoiceType.IsoPulse]: 'isochronic',
-  [VoiceType.IsoPulseAlt]: 'isochronic',
+  [VoiceType.IsoPulseAlt]: 'isochronic (alternating)',
   [VoiceType.WaterDrops]: 'water drops',
   [VoiceType.Rain]: 'rain',
 };
@@ -140,6 +140,28 @@ export function VoiceRows({
                     onStructural(moveVoice(schedule, { from: index, to: index + 1 }), 'Move voice')
                   }
                 />
+                {/* Types 3 and 4 are one voice type with a switch, not two things to add: the
+                    only difference is whether each pulse lands in both ears or alternates between
+                    them. It is a `type` change, so the engine crossfades rather than cutting. */}
+                {isochronicType(voice.type) && (
+                  <Toggle
+                    label="Alternate ears"
+                    active={voice.type === VoiceType.IsoPulseAlt}
+                    onClick={() =>
+                      onCommit(
+                        updateVoice(schedule, index, {
+                          type:
+                            voice.type === VoiceType.IsoPulseAlt
+                              ? VoiceType.IsoPulse
+                              : VoiceType.IsoPulseAlt,
+                        }),
+                        voice.type === VoiceType.IsoPulseAlt
+                          ? 'Pulse in both ears'
+                          : 'Alternate ears',
+                      )
+                    }
+                  />
+                )}
                 {/* The one shape the `gnaural-regroup` repair cannot reach: a voice with no
                     entries contributes no datapoint whatever its id, so Gnaural loses it on reopen
                     and every voice after it takes the wrong name, type and flags. Giving it a node
@@ -167,12 +189,20 @@ export function VoiceRows({
         <button type="button" className="button" onClick={() => add('tone')}>
           Add tone voice
         </button>
+        <button type="button" className="button" onClick={() => add('isochronic')}>
+          Add isochronic voice
+        </button>
         <button type="button" className="button" onClick={() => add('noise')}>
           Add noise voice
         </button>
       </div>
     </section>
   );
+}
+
+/** Whether this voice is one of the pair the Alternate-ears toggle switches between. */
+function isochronicType(type: VoiceType): boolean {
+  return type === VoiceType.IsoPulse || type === VoiceType.IsoPulseAlt;
 }
 
 /** A flag that is either on or off, so it reports its state rather than just its name. */

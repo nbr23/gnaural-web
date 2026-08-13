@@ -148,11 +148,14 @@ export function moveEntry(schedule: Schedule, args: MoveEntryArgs): Schedule {
 }
 
 /**
- * The voice fields §6.1 asks the editor's voice list for. `type` and `mono` are deliberately absent:
- * there is no control for either, and a patch field with no caller is a capability nobody can
- * exercise. `id` is absent because nothing may renumber a voice — see `insertVoice`.
+ * The voice fields §6.1 asks the editor's voice list for.
+ *
+ * `type` was absent until step 10 on the grounds that a patch field with no caller is a capability
+ * nobody can exercise; the isochronic pair supplied one, since types 3 and 4 differ only in which
+ * ear each pulse lands in and switching between them is a toggle rather than a new voice. `mono`
+ * still has no control. `id` is absent because nothing may renumber a voice — see `insertVoice`.
  */
-export type VoicePatch = Partial<Pick<Voice, 'description' | 'muted' | 'hidden'>>;
+export type VoicePatch = Partial<Pick<Voice, 'description' | 'muted' | 'hidden' | 'type'>>;
 
 export function updateVoice(schedule: Schedule, voiceIndex: number, patch: VoicePatch): Schedule {
   const voice = schedule.voices[voiceIndex];
@@ -202,7 +205,7 @@ export function insertEntry(schedule: Schedule, args: InsertEntryArgs): Schedule
   // voice — which is what the schedule would have played had this voice not zeroed it (§3.7).
   if (voice.entries.length === 0) {
     const duration = longestVoiceDuration(schedule) || NEW_VOICE_SECONDS;
-    return replaceEntries(schedule, args.voice, () => [newEntry(voice.type, duration)]);
+    return replaceEntries(schedule, args.voice, () => [newEntry(voiceKindOf(voice.type), duration)]);
   }
 
   const index = Math.min(Math.max(0, Math.trunc(args.after)), voice.entries.length - 1);
@@ -480,18 +483,45 @@ export const NEW_VOICE_SECONDS = 1200;
  * defaults cannot drift apart — and the volume sits just under the corpus tone median of 0.6, close
  * to `powernap`'s real 0.515. Deliberately not 1.0: dropping a new voice at full scale into a
  * programme already near it is the clipping case §5.3's null test had to be designed around.
+ *
+ * **`isochronic` is the one row with no corpus behind it**, since no bundled file uses any type
+ * 2–6 — so it is a decision rather than a measurement. It takes the tone row's numbers unchanged,
+ * because the two fields mean the same two things for it (a carrier, and a rate); a different set
+ * would be asserting a difference that is not there. The same test pins all three together.
+ *
+ * The offered kinds are deliberately not every renderable type: type 4 differs from type 3 only in
+ * which ear each pulse lands in, which is a toggle on a voice rather than a separate thing to add.
  */
-export type VoiceKind = 'tone' | 'noise';
+export type VoiceKind = 'tone' | 'isochronic' | 'noise';
 
 const VOICE_DEFAULTS: Record<VoiceKind, { type: VoiceType } & Omit<Entry, 'duration' | 'preserved'>> = {
   tone: { type: VoiceType.Binaural, baseFreq: 200, beatFreq: 10, volumeLeft: 0.5, volumeRight: 0.5 },
+  isochronic: { type: VoiceType.IsoPulse, baseFreq: 200, beatFreq: 10, volumeLeft: 0.5, volumeRight: 0.5 },
   noise: { type: VoiceType.PinkNoise, baseFreq: 100, beatFreq: 0, volumeLeft: 0.4, volumeRight: 0.4 },
 };
 
-function newEntry(type: VoiceType, duration: number): Entry {
-  const defaults = type === VoiceType.PinkNoise ? VOICE_DEFAULTS.noise : VOICE_DEFAULTS.tone;
-  const { type: _unused, ...values } = defaults;
+/** What each kind of voice is called when nobody has named it. */
+const VOICE_DESCRIPTIONS: Record<VoiceKind, string | null> = {
+  // A tone voice takes its position instead, which is what the corpus does.
+  tone: null,
+  isochronic: 'Isochronic pulse',
+  noise: 'Background noise',
+};
+
+function newEntry(kind: VoiceKind, duration: number): Entry {
+  const { type: _unused, ...values } = VOICE_DEFAULTS[kind];
   return { ...values, duration, preserved: {} };
+}
+
+/**
+ * Which set of defaults an existing voice's entries should be made from — needed when a voice
+ * exists already and a *node* is being added to it. Every type this app does not offer as a kind
+ * falls back to `tone`, which reads both fields the way the file most likely intends.
+ */
+export function voiceKindOf(type: VoiceType): VoiceKind {
+  if (type === VoiceType.PinkNoise) return 'noise';
+  if (type === VoiceType.IsoPulse || type === VoiceType.IsoPulseAlt) return 'isochronic';
+  return 'tone';
 }
 
 export interface InsertVoiceArgs {
@@ -539,8 +569,7 @@ export function insertVoice(schedule: Schedule, args: InsertVoiceArgs): VoiceEdi
 
   const voice: Voice = {
     id: nextVoiceId(schedule),
-    description:
-      args.description ?? (args.kind === 'noise' ? 'Background noise' : `Voice ${at + 1}`),
+    description: args.description ?? VOICE_DESCRIPTIONS[args.kind] ?? `Voice ${at + 1}`,
     type,
     muted: false,
     hidden: false,
@@ -550,7 +579,7 @@ export function insertVoice(schedule: Schedule, args: InsertVoiceArgs): VoiceEdi
     // until now. `state` is safely absent (Gnaural `calloc`s its datapoints, so it reads as the 0
     // all 354 corpus entries carry); `parent` is not, which is what makes that fallback
     // load-bearing rather than decorative.
-    entries: args.entries && args.entries.length > 0 ? [...args.entries] : [newEntry(type, duration)],
+    entries: args.entries && args.entries.length > 0 ? [...args.entries] : [newEntry(args.kind, duration)],
     preserved: {},
   };
 

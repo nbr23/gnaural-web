@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { formatClock, formatHz, numberOr } from '../app/format';
-import type { VoiceEdit } from '../document/edit';
+import type { VoiceEdit, VoiceKind } from '../document/edit';
 import {
   NEW_VOICE_SECONDS,
   duplicateVoice,
@@ -74,6 +74,7 @@ export function AuthoringPanel({
   const [length, setLength] = useState('');
   const [offset, setOffset] = useState('60');
   const [kind, setKind] = useState<GeneratorKind>('ramp');
+  const [voiceKind, setVoiceKind] = useState<VoiceKind>('tone');
   const [seconds, setSeconds] = useState('');
   const [returnLeg, setReturnLeg] = useState('60');
   const [from, setFrom] = useState<Tone>({ baseFreq: 200, beatFreq: 10 });
@@ -96,7 +97,7 @@ export function AuthoringPanel({
     if (entries.length === 0) return;
 
     const edit = insertVoice(schedule, {
-      kind: 'tone',
+      kind: voiceKind,
       entries,
       description: GENERATOR_NAMES[kind],
     });
@@ -253,6 +254,15 @@ export function AuthoringPanel({
                 {label}
               </option>
             ))}
+          </select>
+        </label>
+        {/* The shape is the same numbers either way — a carrier and a rate — so the kind is a
+            choice about the voice it lands in rather than about what is generated. */}
+        <label className="editor__field">
+          <span>As</span>
+          <select value={voiceKind} onChange={(event) => setVoiceKind(event.target.value as VoiceKind)}>
+            <option value="tone">Binaural voice</option>
+            <option value="isochronic">Isochronic voice</option>
           </select>
         </label>
         <label className="editor__field">

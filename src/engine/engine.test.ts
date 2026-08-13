@@ -220,6 +220,244 @@ describe('noise voices (type 1, §4.5a)', () => {
   });
 });
 
+/**
+ * Types 3 and 4 (§3.3): one carrier at `basefreq`, switched on and off at `beatfreq`.
+ *
+ * These assert against `playSchedule` — the export path — because it is the simpler of the two
+ * graphs and the one §5.3's null test proves the other equal to. What is measured is the gate:
+ * a 50% duty cycle, a rate that follows `beatfreq`, and the two channels' relationship, which is
+ * the whole of the difference between type 3 and type 4.
+ */
+describe('isochronic voices (types 3 and 4, §3.3)', () => {
+  /**
+   * Peak amplitude per 10 ms window — the pulse train with the carrier taken out of it.
+   *
+   * The window has to be *short against the gate* and *long against the carrier*: a sine crosses
+   * zero twice per cycle, so a per-sample threshold reads the carrier rather than the gate, and a
+   * window as long as half a pulse cannot tell an open gate from a closed one. 10 ms holds at least
+   * three cycles of every carrier used here and at most a sixth of the shortest gate half-period.
+   */
+  const ENVELOPE_WINDOW = Math.round(0.01 * SAMPLE_RATE);
+
+  function envelope(samples: Float32Array): number[] {
+    const windows = Math.floor(samples.length / ENVELOPE_WINDOW);
+    return Array.from({ length: windows }, (_unused, i) =>
+      peakAmplitude(samples.subarray(i * ENVELOPE_WINDOW, (i + 1) * ENVELOPE_WINDOW)),
+    );
+  }
+
+  /**
+   * How many times the gate *opens* across the samples given — the pulse rate, if that is a second.
+   *
+   * A run already in progress at the start is not counted: the gate is a cosine, so it opens at
+   * t=0, and any window into the middle of a schedule begins part-way through a pulse. Counting
+   * that one would report n+1 pulses for n periods.
+   */
+  function pulseCount(samples: Float32Array): number {
+    const levels = envelope(samples);
+    const threshold = Math.max(...levels) * 0.5;
+    let pulses = 0;
+    levels.forEach((level, i) => {
+      if (i > 0 && level > threshold && levels[i - 1] <= threshold) pulses++;
+    });
+    return pulses;
+  }
+
+  /** Fraction of the time the gate is open, from the same envelope. */
+  function dutyCycle(samples: Float32Array): number {
+    const levels = envelope(samples);
+    const threshold = Math.max(...levels) * 0.5;
+    return levels.filter((level) => level > threshold).length / levels.length;
+  }
+
+  async function render(schedule: Schedule, seconds = 1): Promise<AudioBuffer> {
+    const context = new OfflineAudioContext(2, seconds * SAMPLE_RATE, SAMPLE_RATE);
+    playSchedule(context, schedule);
+    return context.startRendering();
+  }
+
+  function isochronic(entries: Entry[], overrides: Partial<Voice> = {}): Voice {
+    return makeVoice(entries, { type: VoiceType.IsoPulse, ...overrides });
+  }
+
+  it('gates one carrier at basefreq, identically in both ears', async () => {
+    const buffer = await render(
+      makeSchedule([isochronic([makeEntry({ duration: 4, baseFreq: 300, beatFreq: 1 })])]),
+    );
+    const left = buffer.getChannelData(0);
+    const right = buffer.getChannelData(1);
+
+    // Measured inside one open pulse. The gate is a cosine, so at 1 Hz it is open from the start
+    // until 0.25 s; a whole-second estimate would count only the crossings that survive the gate
+    // and read a fraction of the carrier rather than the carrier.
+    const open = left.subarray(Math.round(0.02 * SAMPLE_RATE), Math.round(0.24 * SAMPLE_RATE));
+    expect(Math.abs(estimateFrequency(open, SAMPLE_RATE) - 300)).toBeLessThan(6);
+
+    // The §3.6 split does not happen here — both channels carry the same tone (BinauralBeat.c:598).
+    for (let i = 0; i < left.length; i += 499) expect(right[i]).toBe(left[i]);
+  });
+
+  it('pulses at the beat frequency, on for half of each period', async () => {
+    const buffer = await render(
+      makeSchedule([isochronic([makeEntry({ duration: 4, baseFreq: 400, beatFreq: 8 })])]),
+    );
+    const left = buffer.getChannelData(0);
+
+    expect(pulseCount(left)).toBe(8);
+    // 50%, plus the windows straddling each of the sixteen edges (BinauralBeat.c:609 — the
+    // countdown is a *half* period, so on and off are equal by construction).
+    expect(dutyCycle(left)).toBeGreaterThan(0.45);
+    expect(dutyCycle(left)).toBeLessThan(0.65);
+  });
+
+  it('alternates between the ears for type 4, and only for type 4', async () => {
+    const entries = [makeEntry({ duration: 4, baseFreq: 400, beatFreq: 4 })];
+
+    const plain = await render(makeSchedule([isochronic(entries)]));
+    const alternating = await render(
+      makeSchedule([isochronic(entries, { type: VoiceType.IsoPulseAlt })]),
+    );
+
+    expect(envelope(plain.getChannelData(0))).toEqual(envelope(plain.getChannelData(1)));
+    // Type 3 is silent between pulses; type 4 never is, which is the whole difference.
+    expect(Math.min(...envelope(plain.getChannelData(1)))).toBeLessThan(0.05);
+
+    const left = envelope(alternating.getChannelData(0));
+    const right = envelope(alternating.getChannelData(1));
+    expect(Math.min(...left)).toBeLessThan(0.05); // each ear does go fully silent
+    expect(Math.min(...right)).toBeLessThan(0.05);
+    left.forEach((value, i) => {
+      // …but never both at once: the pulse is in one ear or the other (BinauralBeat.c:788-801).
+      expect(Math.max(value, right[i])).toBeGreaterThan(0.9);
+    });
+  });
+
+  /**
+   * The trap the graph is built around: `voice_mono` makes both channels the same downmix node, and
+   * a single shared gate gain would be connected to it twice — a no-op the second time — leaving a
+   * mono type-3 voice 6 dB down. The reference computes `(L + R) * 0.5` over two separately
+   * computed samples (`:839`), and for type 3 those are equal, so mono changes nothing at all.
+   */
+  it('is unchanged by voice_mono when both channels are already identical (type 3)', async () => {
+    const entries = [makeEntry({ duration: 4, baseFreq: 300, beatFreq: 4 })];
+
+    const stereo = await render(makeSchedule([isochronic(entries)]));
+    const mono = await render(makeSchedule([isochronic(entries, { mono: true })]));
+
+    expect(peakAmplitude(mono.getChannelData(0))).toBeCloseTo(
+      peakAmplitude(stereo.getChannelData(0)),
+      5,
+    );
+    expect(peakAmplitude(mono.getChannelData(0))).toBeGreaterThan(0.9);
+  });
+
+  /**
+   * The same downmix on a type-4 voice sums two complementary gates, so the pulsing cancels
+   * completely and what is left is a steady tone at half level. That is what the reference
+   * computes; it is reproduced rather than special-cased.
+   */
+  it('cancels type 4’s alternation under voice_mono, leaving a steady half-level tone', async () => {
+    const buffer = await render(
+      makeSchedule([
+        isochronic([makeEntry({ duration: 4, baseFreq: 300, beatFreq: 4 })], {
+          type: VoiceType.IsoPulseAlt,
+          mono: true,
+        }),
+      ]),
+    );
+
+    for (const level of envelope(buffer.getChannelData(0))) expect(level).toBeCloseTo(0.5, 2);
+  });
+
+  /** `beatfreq = 0` is legitimate and means a steady tone: the reference's polarity flag never
+   *  flips (BinauralBeat.c:592). A gate that sat half open would be 6 dB down and audibly wrong. */
+  it('plays a steady tone at beatfreq 0, not a half-open gate', async () => {
+    const buffer = await render(
+      makeSchedule([isochronic([makeEntry({ duration: 4, baseFreq: 300, beatFreq: 0 })])]),
+    );
+
+    for (const level of envelope(buffer.getChannelData(0))) expect(level).toBeCloseTo(1, 2);
+  });
+
+  it('follows a beat ramp without a discontinuity', async () => {
+    // One ramp across the whole render: §3.5's wrap means a second entry would ramp straight back,
+    // and the two halves would then carry the same pulses in the opposite order.
+    const buffer = await render(
+      makeSchedule([
+        isochronic([
+          makeEntry({ duration: 2, baseFreq: 400, beatFreq: 4 }),
+          makeEntry({ duration: 2, baseFreq: 400, beatFreq: 20 }),
+        ]),
+      ]),
+      2,
+    );
+    const left = buffer.getChannelData(0);
+
+    const first = pulseCount(left.subarray(0, Math.round(0.5 * SAMPLE_RATE)));
+    const last = pulseCount(left.subarray(Math.round(1.5 * SAMPLE_RATE)));
+    expect(last).toBeGreaterThan(first * 1.5);
+
+    // The gate oscillator keeps its phase across the ramp, which is what the reference spends ten
+    // lines rescaling a sample counter to achieve (`:602-612`). A gate that jumped would step.
+    let maxDelta = 0;
+    for (let i = 1; i < left.length; i++) maxDelta = Math.max(maxDelta, Math.abs(left[i] - left[i - 1]));
+    expect(maxDelta).toBeLessThan(0.2);
+  });
+
+  it('follows its volume envelope like any other voice', async () => {
+    // One second of the two-second voice, so the measurement is inside the fall and not past the
+    // wrap that takes it back up (§3.5).
+    const buffer = await render(
+      makeSchedule([
+        isochronic([
+          makeEntry({ duration: 1, baseFreq: 300, beatFreq: 10, volumeLeft: 1, volumeRight: 1 }),
+          makeEntry({ duration: 1, baseFreq: 300, beatFreq: 10, volumeLeft: 0, volumeRight: 0 }),
+        ]),
+      ]),
+    );
+    const left = buffer.getChannelData(0);
+
+    const head = peakAmplitude(left.subarray(0, Math.round(0.1 * SAMPLE_RATE)));
+    const tail = peakAmplitude(left.subarray(Math.round(0.9 * SAMPLE_RATE)));
+    expect(head).toBeGreaterThan(0.9);
+    expect(tail).toBeLessThan(head * 0.2);
+  });
+
+  /**
+   * A change of `type` is one of the three things `requiresVoiceRebuild` fires on, so this is the
+   * crossfade path with a new caller. It genuinely needs a mid-render edit — a crossfade exists only
+   * across a transition during playback — which is what `renderWithEditAt` is for.
+   */
+  it('crossfades rather than cutting when a voice becomes isochronic mid-playback', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    const binaural = makeSchedule([
+      makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0, volumeLeft: 0.5, volumeRight: 0.5 })]),
+    ]);
+    engine.load(binaural);
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, 0.5, () =>
+      engine.update(
+        makeSchedule([
+          makeVoice(
+            [makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0, volumeLeft: 0.5, volumeRight: 0.5 })],
+            { type: VoiceType.IsoPulse },
+          ),
+        ]),
+      ),
+    );
+    const left = buffer.getChannelData(0);
+
+    // Beat 0 either side, so both documents are a steady 300 Hz tone and the swap is inaudible in
+    // frequency — what is measured is that the level never drops out and never steps.
+    expect(peakAmplitude(left.subarray(Math.round(0.7 * SAMPLE_RATE)))).toBeGreaterThan(0.4);
+    let maxDelta = 0;
+    for (let i = 1; i < left.length; i++) maxDelta = Math.max(maxDelta, Math.abs(left[i] - left[i - 1]));
+    expect(maxDelta).toBeLessThan(0.2);
+  });
+});
+
 /** A voice whose frequency ramps continuously for its whole 20s (never flat), so any offset
  *  within it has a distinct, unambiguous expected frequency — good for verifying transport. */
 function makeRampingSchedule(): { schedule: Schedule; events: ReturnType<typeof compileVoice> } {

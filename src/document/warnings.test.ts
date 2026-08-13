@@ -34,25 +34,36 @@ function kindsOf(warnings: { kind: WarningKind }[]): WarningKind[] {
 describe('scheduleWarnings — what the program will do (§3.3, §3.7)', () => {
   it('warns that an unsupported voice type is silent, and names the type', () => {
     const { schedule } = parseScheduleWithWarnings(
-      xml(voice({ type: 0, description: 'tone' }, entry(60)) + voice({ type: 3, description: 'pulse' }, entry(60))),
+      xml(voice({ type: 0, description: 'tone' }, entry(60)) + voice({ type: 5, description: 'drops' }, entry(60))),
     );
 
     const warnings = scheduleWarnings(schedule);
     expect(kindsOf(warnings)).toEqual(['unsupported-voice']);
     expect(warnings[0].severity).toBe('warning');
-    expect(warnings[0].message).toContain('pulse');
-    expect(warnings[0].message).toContain('isochronic');
+    expect(warnings[0].message).toContain('drops');
+    expect(warnings[0].message).toContain('water drops');
+  });
+
+  /** Types 3 and 4 became renderable in step 10, so what is left to warn about is 5 and 6 — and
+   *  type 2, which has its own permanent message. This is the assertion that says the warning
+   *  surface and the engine agree; they read the same set (`isRenderableType`). */
+  it('says nothing about isochronic voices, which are rendered', () => {
+    const { schedule } = parseScheduleWithWarnings(
+      xml(voice({ type: 3, description: 'pulse' }, entry(60)) + voice({ type: 4, id: 1, description: 'alt' }, entry(60))),
+    );
+
+    expect(scheduleWarnings(schedule)).toEqual([]);
   });
 
   it('agrees the verb with the number of voices it is talking about', () => {
-    const one = parseScheduleWithWarnings(xml(voice({ type: 0 }, entry(60)) + voice({ type: 3, id: 1, description: 'a' }, entry(60))));
+    const one = parseScheduleWithWarnings(xml(voice({ type: 0 }, entry(60)) + voice({ type: 5, id: 1, description: 'a' }, entry(60))));
     expect(scheduleWarnings(one.schedule)[0].message).toContain('Voice a uses a voice type');
 
     const many = parseScheduleWithWarnings(
       xml(
         voice({ type: 0 }, entry(60)) +
-          voice({ type: 3, id: 1, description: 'a' }, entry(60)) +
-          voice({ type: 4, id: 2, description: 'b' }, entry(60)),
+          voice({ type: 5, id: 1, description: 'a' }, entry(60)) +
+          voice({ type: 6, id: 2, description: 'b' }, entry(60)),
       ),
     );
     expect(scheduleWarnings(many.schedule)[0].message).toContain('Voices a and b use a voice type');
@@ -256,6 +267,24 @@ describe('entryWarnings — values that are legal and wrong (§6.1)', () => {
     // would have to make an exception for exactly that.
     expect(entryWarnings(one({ basefreq: 0, beatfreq: 0 }, 1))).toEqual([]);
     expect(entryWarnings(one({ basefreq: 0, beatfreq: 0 }, 5))).toEqual([]);
+  });
+
+  /**
+   * An isochronic voice reads both fields, so the range rules apply to it — but not
+   * `beat-exceeds-base`, which describes §3.6's channel split failing. Types 3 and 4 have no split:
+   * both ears get `basefreq` and `beatfreq` is the rate it is switched on and off at, so a beat
+   * wider than the carrier is an ordinary fast pulse, and `beat-above-band` is what has something
+   * to say about it.
+   */
+  it('applies the range rules to an isochronic voice, but not the channel-split rule', () => {
+    for (const type of [3, 4]) {
+      expect(entryWarnings(one({ basefreq: 5, beatfreq: 0 }, type))[0].kind).toBe('base-too-low');
+      expect(entryWarnings(one({ beatfreq: 70 }, type))[0].kind).toBe('beat-above-band');
+
+      expect(entryWarnings(one({ basefreq: 30, beatfreq: 80 }, type)).map((w) => w.kind)).toEqual([
+        'beat-above-band',
+      ]);
+    }
   });
 
   it('gathers a rule into one warning that names every voice and node it found', () => {

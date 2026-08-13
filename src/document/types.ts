@@ -53,3 +53,43 @@ export const enum VoiceType {
   WaterDrops = 5,   // Phase 1
   Rain = 6,         // Phase 1
 }
+
+/**
+ * Voice types this app makes a sound for. Everything else is parsed, preserved and silent (§3.3).
+ *
+ * **Stated once, here, because two readers must never disagree**: the engine skips what it cannot
+ * render, and `warnings.ts` promises the listener that everything else was heard. A second copy
+ * would eventually either silently drop a voice — §3.3's one prohibition — or warn about one that
+ * is sounding. Types 5 and 6 (water drops, rain) are still to come; type 2 (PCM) never can, since
+ * the schedule does not record where the audio file is.
+ */
+const RENDERABLE_TYPES = new Set<VoiceType>([
+  VoiceType.Binaural,
+  VoiceType.PinkNoise,
+  VoiceType.IsoPulse,
+  VoiceType.IsoPulseAlt,
+]);
+
+export function isRenderableType(type: VoiceType): boolean {
+  return RENDERABLE_TYPES.has(type);
+}
+
+/**
+ * Voice types whose `basefreq` and `beatfreq` describe a tone — the only ones for which those two
+ * fields mean a carrier and a rate, and so the only ones the §6.1 frequency rules and the player's
+ * readout mean anything for.
+ *
+ * Noise (type 1) reads neither: all nine noise voices in the bundled corpus carry base 100 and beat
+ * 0. §3.3 records that water drops (type 5) reads the *first* `beatfreq` as a drop count rather than
+ * a frequency. An isochronic voice reads both, differently from a binaural one but no less
+ * literally: the base is its tone and the beat is the rate that tone is switched on and off at.
+ */
+const TONAL_TYPES = new Set<VoiceType>([
+  VoiceType.Binaural,
+  VoiceType.IsoPulse,
+  VoiceType.IsoPulseAlt,
+]);
+
+export function isTonalType(type: VoiceType): boolean {
+  return TONAL_TYPES.has(type);
+}

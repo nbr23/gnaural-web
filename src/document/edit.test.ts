@@ -293,6 +293,21 @@ describe('updateVoice', () => {
     expect(reparsed.voices[0].muted).toBe(true);
     expect(reparsed.voices[0].hidden).toBe(true);
   });
+
+  /**
+   * `type` joined the patch in step 10, for the isochronic pair: 3 and 4 differ only in which ear
+   * each pulse lands in, so switching is a toggle on the voice rather than a new voice. It is also
+   * one of the three things `requiresVoiceRebuild` fires on, so it crossfades in the engine.
+   */
+  it('switches a voice between the two isochronic types, and serializes it', () => {
+    const before = updateVoice(fixture(), 0, { type: VoiceType.IsoPulse });
+    const after = updateVoice(before, 0, { type: VoiceType.IsoPulseAlt });
+
+    expect(after.voices[0].type).toBe(VoiceType.IsoPulseAlt);
+    expect(after.voices[0].entries).toBe(before.voices[0].entries);
+    expect(updateVoice(after, 0, { type: VoiceType.IsoPulseAlt })).toBe(after);
+    expect(parseSchedule(serializeSchedule(after)).voices[0].type).toBe(VoiceType.IsoPulseAlt);
+  });
 });
 
 describe('insertEntry', () => {
@@ -477,6 +492,21 @@ describe('insertVoice', () => {
     expect(entry.volumeLeft).toBe(0.5);
     expect(entry.volumeRight).toBe(0.5);
     expect(schedule.voices[3].type).toBe(VoiceType.Binaural);
+  });
+
+  /**
+   * The one row of defaults with no corpus behind it — no bundled file uses any type 2–6 — so it
+   * takes the tone row's numbers rather than inventing a difference that is not there. Pinned
+   * against that row, not restated, so the three cannot drift apart.
+   */
+  it('gives an isochronic voice the same values as a tone voice', () => {
+    const { schedule } = insertVoice(fixture(), { kind: 'isochronic' });
+    const voice = schedule.voices[3];
+    const tone = insertVoice(fixture(), { kind: 'tone' }).schedule.voices[3];
+
+    expect(voice.type).toBe(VoiceType.IsoPulse);
+    expect(voice.description).toBe('Isochronic pulse');
+    expect(voice.entries[0]).toEqual(tone.entries[0]);
   });
 
   /** All nine noise voices in the bundled library are exactly this. */

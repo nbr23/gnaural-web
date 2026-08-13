@@ -109,10 +109,20 @@ describe('renderSchedule', () => {
  * shifted by exactly that many frames.
  *
  * The schedule deliberately exercises the parts of the graph an export could plausibly get wrong:
- * two binaural voices (one of them `voice_mono`), a noise voice, asymmetric `overallvolume_*` and
- * `stereoswap`. Its opening segment is flat in frequency because `PlaybackEngine` holds frequency
- * constant during the fade-in while the export is already ramping; a flat opening makes the two
- * oscillator phases identical rather than a few thousandths of a cycle apart.
+ * two binaural voices (one of them `voice_mono`), a noise voice, an isochronic voice, asymmetric
+ * `overallvolume_*` and `stereoswap`.
+ *
+ * **Its premises, both of which the isochronic voice extends rather than changes.**
+ *
+ * 1. *Every opening segment is flat in frequency.* `PlaybackEngine` holds frequency constant
+ *    through its fade-in while the export is already ramping, so a sloping opening leaves the two
+ *    oscillator phases a few thousandths of a cycle apart. Since step 10 that applies to a **gate**
+ *    oscillator as well as a carrier, and matters more there: a gate slews between fully off and
+ *    fully on in ~2.3 ms, so a misalignment costs far more than a phase error on a sine does. Both
+ *    paths start every oscillator at `t0`, and the comparison below shifts by exactly the
+ *    `CLICK_FREE_RAMP` frames between them — so if this test ever fails on the isochronic voice,
+ *    suspect the alignment and not the gate.
+ * 2. *The summed mix stays below full scale*, or the WAV's clamp is what is being compared.
  */
 describe('WAV export null test (§5.3)', () => {
   const DURATION = 1.5;
@@ -140,6 +150,16 @@ describe('WAV export null test (§5.3)', () => {
           id: 2,
           type: VoiceType.PinkNoise,
         }),
+        // Isochronic: one carrier gated at 9 Hz, flat across the opening segment so premise 1
+        // covers its gate oscillator too.
+        makeVoice(
+          [
+            makeEntry({ duration: 0.5, baseFreq: 220, beatFreq: 9, volumeLeft: 0.2, volumeRight: 0.2 }),
+            makeEntry({ duration: 0.5, baseFreq: 220, beatFreq: 9, volumeLeft: 0.2, volumeRight: 0.2 }),
+            makeEntry({ duration: 0.5, baseFreq: 260, beatFreq: 5, volumeLeft: 0.1, volumeRight: 0.2 }),
+          ],
+          { id: 3, type: VoiceType.IsoPulse },
+        ),
       ],
       { masterVolume: { left: 0.9, right: 0.6 }, stereoSwap: true },
     );

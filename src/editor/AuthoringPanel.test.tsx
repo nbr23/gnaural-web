@@ -88,6 +88,12 @@ function field(label: string): HTMLInputElement {
   return span?.parentElement?.querySelector('input') as HTMLInputElement;
 }
 
+/** By its label rather than its position: this panel has four selects and they move about. */
+function chooser(label: string): HTMLSelectElement {
+  const span = testRoot.queryAll('.editor__field span').find((node) => node.textContent === label);
+  return span?.parentElement?.querySelector('select') as HTMLSelectElement;
+}
+
 describe('AuthoringPanel — program length', () => {
   it('scales the whole programme to the target, proportionally', () => {
     const before = schedule();
@@ -218,7 +224,7 @@ describe('AuthoringPanel — generators', () => {
 
   it('generates each shape, naming the voice after it', () => {
     const harness = mount();
-    const select = () => testRoot.queryAll('.authoring select')[1] as HTMLSelectElement;
+    const select = () => chooser('Shape');
 
     for (const [kind, name] of [
       ['hold', 'Hold'],
@@ -261,11 +267,31 @@ describe('AuthoringPanel — generators', () => {
 
   it('hides the return field for the one shape that needs none', () => {
     mount();
-    const select = testRoot.queryAll('.authoring select')[1] as HTMLSelectElement;
 
     expect(field('Return over (s)')).toBeDefined();
-    testRoot.act(() => setSelectValue(select, 'sleep-cycle'));
+    testRoot.act(() => setSelectValue(chooser('Shape'), 'sleep-cycle'));
     expect(field('Return over (s)')).toBeUndefined();
+  });
+
+  /**
+   * The generated entries are the same numbers either way — a carrier and a rate — so the kind is a
+   * choice about the voice they land in. It defaults to binaural, which is what every generator did
+   * before there was a choice.
+   */
+  it('generates into an isochronic voice when asked to', () => {
+    const harness = mount();
+
+    testRoot.click(button('Generate'));
+    expect(harness.structural.at(-1)!.edit.schedule.voices.at(-1)!.type).toBe(VoiceType.Binaural);
+
+    testRoot.act(() => setSelectValue(chooser('As'), 'isochronic'));
+    testRoot.click(button('Generate'));
+
+    const added = harness.structural.at(-1)!.edit.schedule.voices.at(-1)!;
+    expect(added.type).toBe(VoiceType.IsoPulse);
+    // The shape is untouched by the kind: same name, same nodes as the binaural one above.
+    expect(added.description).toBe('Ramp');
+    expect(added.entries).toEqual(harness.structural.at(-2)!.edit.schedule.voices.at(-1)!.entries);
   });
 
   it('generates into an empty schedule, where there is no playing length to match', () => {

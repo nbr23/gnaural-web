@@ -1,7 +1,7 @@
 import { entryParent } from './serializer';
 import { DURATION_EPSILON, scheduleDuration, voiceDuration } from './timing';
 import type { Entry, EntryLocation, Schedule, Voice } from './types';
-import { VoiceType } from './types';
+import { VoiceType, isRenderableType, isTonalType } from './types';
 
 /**
  * Everything a file does that the listener should be told about (PLAN.md §3.3, §3.4, §3.7).
@@ -55,13 +55,13 @@ export type WarningKind =
   | 'volume-out-of-range'
   | 'gnaural-regroup';
 
-/** Voice types this app renders. Everything else is parsed, preserved, and silent (§3.3). */
-const RENDERABLE = new Set<VoiceType>([VoiceType.Binaural, VoiceType.PinkNoise]);
-
+/**
+ * Names for the types this file has something to say about — which, since types 3 and 4 became
+ * renderable, is types 2, 5 and 6 and no others. A row here for a type the engine plays would be
+ * unreachable, and `isRenderableType` is what decides that in one place for both.
+ */
 const TYPE_NAMES: Record<number, string> = {
   [VoiceType.Pcm]: 'external audio',
-  [VoiceType.IsoPulse]: 'isochronic pulse',
-  [VoiceType.IsoPulseAlt]: 'isochronic pulse',
   [VoiceType.WaterDrops]: 'water drops',
   [VoiceType.Rain]: 'rain',
 };
@@ -96,7 +96,7 @@ export function scheduleWarnings(schedule: Schedule): ScheduleWarning[] {
   }
 
   const unsupported = schedule.voices.filter(
-    (voice) => !RENDERABLE.has(voice.type) && voice.type !== VoiceType.Pcm,
+    (voice) => !isRenderableType(voice.type) && voice.type !== VoiceType.Pcm,
   );
   if (unsupported.length > 0) {
     const subject = describeVoices(schedule, unsupported);
@@ -131,7 +131,7 @@ export function scheduleWarnings(schedule: Schedule): ScheduleWarning[] {
       kind: 'nothing-to-play',
       message: 'This file contains no voices, so there is nothing to play.',
     });
-  } else if (!schedule.voices.some((voice) => RENDERABLE.has(voice.type))) {
+  } else if (!schedule.voices.some((voice) => isRenderableType(voice.type))) {
     warnings.push({
       severity: 'warning',
       kind: 'nothing-to-play',
@@ -147,17 +147,6 @@ export const BASE_RANGE = { min: 20, max: 1500 };
 
 /** §6.1's "beat frequencies above ~40 Hz where the effect breaks down", in Hz. */
 export const BEAT_CEILING = 40;
-
-/**
- * Voice types whose `basefreq` and `beatfreq` describe a tone, and are therefore the only ones the
- * frequency rules below mean anything for.
- *
- * Noise (type 1) ignores both — all nine noise voices in the bundled corpus carry base 100 and beat
- * 0, which a rule applied to every type would either flag or would have to make an exception for —
- * and §3.3 records that water drops (type 5) reads the *first* `beatfreq` as a drop count rather
- * than a frequency. Volume and duration are read by every type, so those rules are not restricted.
- */
-const TONAL = new Set<VoiceType>([VoiceType.Binaural, VoiceType.IsoPulse, VoiceType.IsoPulseAlt]);
 
 /**
  * Where a warning is, addressed the way the document and the editor's selection address a node.
@@ -199,11 +188,9 @@ export function entryWarnings(schedule: Schedule): EntryWarning[] {
   const hits = new Map<WarningKind, { nodes: EntryLocation[]; voices: Set<number>; worst: number }>();
 
   schedule.voices.forEach((voice, voiceIndex) => {
-    const tonal = TONAL.has(voice.type);
-
     voice.entries.forEach((entry, entryIndex) => {
       for (const rule of VALUE_RULES) {
-        const value = rule.offence(entry, tonal);
+        const value = rule.offence(entry, voice.type);
         if (value === null) continue;
 
         const hit = hits.get(rule.kind);
@@ -244,8 +231,14 @@ export function entryWarnings(schedule: Schedule): EntryWarning[] {
 interface ValueRule {
   kind: WarningKind;
   severity: WarningSeverity;
-  /** The value this rule objects to in one entry, or null when there is nothing to say. */
-  offence(entry: Entry, tonal: boolean): number | null;
+  /**
+   * The value this rule objects to in one entry, or null when there is nothing to say.
+   *
+   * The voice's `type` is passed rather than a `tonal` flag because the rules do not all divide at
+   * the same place: three of them mean something for any voice whose `basefreq`/`beatfreq` describe
+   * a tone, and `beat-exceeds-base` means something only for a *binaural* one.
+   */
+  offence(entry: Entry, type: VoiceType): number | null;
   /** How far outside acceptable a value is. The furthest one is what the message quotes. */
   distance(value: number): number;
   message(subject: VoiceSubject, count: string, worst: number): string;
@@ -257,7 +250,8 @@ interface ValueRule {
  * The addition is `beat-exceeds-base`: §3.6 puts the right channel at `basefreq - beatfreq/2`, so a
  * beat wider than its carrier drives that channel to zero and below. Nothing in the corpus comes
  * near it (110 Hz against a 70 Hz beat is the closest, at 75 Hz) and no drag can produce it, but the
- * numeric panel can, and it is the one combination here that is not a matter of taste.
+ * numeric panel can, and it is the one combination here that is not a matter of taste. **It is the
+ * one rule restricted to type 0**, since it describes a channel split only a binaural voice has.
  *
  * **`duration === 0` is deliberately absent.** Step 5's squeeze clamps a node against its neighbour
  * rather than letting it pass, so a zero-length segment is something a person can produce on purpose
@@ -276,7 +270,7 @@ const VALUE_RULES: ValueRule[] = [
   {
     kind: 'base-too-low',
     severity: 'warning',
-    offence: (entry, tonal) => (tonal && entry.baseFreq < BASE_RANGE.min ? entry.baseFreq : null),
+    offence: (entry, type) => (isTonalType(type) && entry.baseFreq < BASE_RANGE.min ? entry.baseFreq : null),
     distance: (value) => -value,
     message: (subject, count, worst) =>
       `${subject.text} ${subject.verb('drop')} below ${BASE_RANGE.min} Hz at ${count} (down to ${worst} Hz). A carrier that low is beneath hearing, so there is nothing there for a beat to sit on.`,
@@ -284,7 +278,7 @@ const VALUE_RULES: ValueRule[] = [
   {
     kind: 'base-too-high',
     severity: 'notice',
-    offence: (entry, tonal) => (tonal && entry.baseFreq > BASE_RANGE.max ? entry.baseFreq : null),
+    offence: (entry, type) => (isTonalType(type) && entry.baseFreq > BASE_RANGE.max ? entry.baseFreq : null),
     distance: (value) => value,
     message: (subject, count, worst) =>
       `${subject.text} ${subject.verb('reach')} above ${BASE_RANGE.max} Hz at ${count} (up to ${worst} Hz). It plays exactly as written; the beat is faint on a carrier that high.`,
@@ -292,7 +286,7 @@ const VALUE_RULES: ValueRule[] = [
   {
     kind: 'beat-above-band',
     severity: 'notice',
-    offence: (entry, tonal) => (tonal && entry.beatFreq > BEAT_CEILING ? entry.beatFreq : null),
+    offence: (entry, type) => (isTonalType(type) && entry.beatFreq > BEAT_CEILING ? entry.beatFreq : null),
     distance: (value) => value,
     message: (subject, count, worst) =>
       `${subject.text} ${subject.verb('reach')} a beat above ${BEAT_CEILING} Hz at ${count} (up to ${worst} Hz). It plays exactly as written; a beat is not heard as one this far above the EEG bands.`,
@@ -300,9 +294,11 @@ const VALUE_RULES: ValueRule[] = [
   {
     kind: 'beat-exceeds-base',
     severity: 'warning',
-    offence: (entry, tonal) => {
+    offence: (entry, type) => {
+      // Binaural only: this is §3.6's channel split failing, and an isochronic voice has no split
+      // to fail — both ears get `basefreq`, and `beatfreq` is a rate rather than a width.
       const right = entry.baseFreq - entry.beatFreq / 2;
-      return tonal && right <= 0 ? right : null;
+      return type === VoiceType.Binaural && right <= 0 ? right : null;
     },
     distance: (value) => -value,
     message: (subject, count, worst) =>

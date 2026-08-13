@@ -1,10 +1,11 @@
 import { scheduleDuration } from '../document/timing';
 import type { Schedule, Voice } from '../document/types';
-import { VoiceType } from '../document/types';
+import { VoiceType, isRenderableType } from '../document/types';
 import type { VoiceMap } from '../document/voiceMap';
 import { invertVoiceMap, remapIndices } from '../document/voiceMap';
 import type { AutomationEvent, AutomationValues } from './compiler';
-import { compileVoice, valueAtTime } from './compiler';
+import { compileVoice, eventBaseFreq, eventBeatFreq, valueAtTime } from './compiler';
+import { MIN_GATE_FREQ, cosineGateWave, gateCurve } from './isochronic';
 import type { NoiseColour } from './noise';
 import { LAYER_NOISE_SEEDS, createLayerNoiseBuffer, createNoiseBuffer, noiseSeeds } from './noise';
 
@@ -259,10 +260,26 @@ function stopNoiseLayer(layer: NoiseLayer, when: number): void {
  * A binaural voice's oscillator pair lives for the whole session (§4.4 — an `OscillatorNode`
  * cannot be restarted after `stop()`), so `started` records whether it is running yet. A noise
  * voice's `AudioBufferSourceNode`s are single-use by spec and so are recreated on every
- * transport transition; the buffers behind them are generated once.
+ * transport transition; the buffers behind them are generated once. An isochronic voice is two
+ * oscillators with the same lifetime as a binaural pair — one carrier, one gate.
  */
 type VoiceSource =
   | { kind: 'binaural'; oscL: OscillatorNode; oscR: OscillatorNode; started: boolean }
+  | {
+      kind: 'isochronic';
+      /** The tone, at `basefreq` — one sine feeding both channels (`BinauralBeat.c:598`). */
+      carrier: OscillatorNode;
+      /** Runs at `beatfreq`; shaped into a 0..1 gate rather than heard. */
+      gate: OscillatorNode;
+      /**
+       * The shapers and the gain nodes they drive, held rather than left to the connection graph.
+       * A `WaveShaperNode` whose only output goes to an `AudioParam` is precisely the case where
+       * implementations differ on when a node may be collected.
+       */
+      shapers: WaveShaperNode[];
+      gains: GainNode[];
+      started: boolean;
+    }
   | {
       kind: 'noise';
       buffers: [AudioBuffer, AudioBuffer];
@@ -293,6 +310,9 @@ interface VoiceNodes {
  * `voice_mono` (§3.2) routes both channels through a single 0.5 gain first, so each carries
  * `(L+R)/2` before `volume_left`/`volume_right` are applied to it independently. It is a
  * downmix of the voice's own content, not a pan — the per-channel volumes still apply afterwards.
+ * On a type-4 voice, whose two channels are complementary, that downmix cancels the pulsing
+ * entirely and leaves a steady tone at half level: the reference's own arithmetic, reproduced
+ * rather than special-cased.
  */
 function buildVoiceNodes(
   context: BaseAudioContext,
@@ -336,11 +356,63 @@ function buildVoiceSource(
     };
   }
 
+  if (voice.type === VoiceType.IsoPulse || voice.type === VoiceType.IsoPulseAlt) {
+    return buildIsochronicSource(context, voice.type === VoiceType.IsoPulseAlt, inputs);
+  }
+
   const oscL = context.createOscillator();
   const oscR = context.createOscillator();
   oscL.connect(inputs[0]);
   oscR.connect(inputs[1]);
   return { kind: 'binaural', oscL, oscR, started: false };
+}
+
+/**
+ * One carrier, gated per channel by a shaped oscillator running at `beatfreq` (§3.3, types 3 and 4).
+ *
+ * The gate is an **audio-rate signal into a gain node's `gain`**, which sums its intrinsic value
+ * with whatever is connected to it — so with the intrinsic at 0 the output is `carrier * gate`,
+ * a multiplication rather than the addition that connecting to the volume envelope's own gain
+ * would have produced. Nothing is scheduled per pulse and no timer is involved (§4.2).
+ *
+ * **Both gains exist even when the two channels are identical (type 3), and that is not
+ * redundancy.** `voice_mono` makes `inputs[0]` and `inputs[1]` the same downmix node, and
+ * connecting one output to one input twice is a no-op — a single shared gain would then be summed
+ * once and halved, leaving a mono type-3 voice 6 dB down. The reference computes `Sample_left` and
+ * `Sample_right` separately for exactly this reason (`BinauralBeat.c:786`, `:839`).
+ *
+ * `alternating` is the whole of type 4: the right channel's curve is the complement of the left's,
+ * so the pulse swaps ears (`:788-801`). Under `voice_mono` the two then cancel to a steady tone at
+ * half level, which is what the reference's `(L + R) * 0.5` computes and is left to happen.
+ */
+function buildIsochronicSource(
+  context: BaseAudioContext,
+  alternating: boolean,
+  inputs: [AudioNode, AudioNode],
+): VoiceSource {
+  const carrier = context.createOscillator();
+  const gate = context.createOscillator();
+  gate.setPeriodicWave(cosineGateWave(context));
+
+  const shapers: WaveShaperNode[] = [];
+  const gains: GainNode[] = [];
+
+  inputs.forEach((input, channel) => {
+    const shaper = context.createWaveShaper();
+    // `oversample` stays at its default — see `isochronic.ts` for the measurement that decided it.
+    shaper.curve = gateCurve(alternating && channel === 1);
+
+    const gain = context.createGain();
+    gain.gain.value = 0; // driven entirely by the gate signal
+
+    gate.connect(shaper).connect(gain.gain);
+    carrier.connect(gain).connect(input);
+
+    shapers.push(shaper);
+    gains.push(gain);
+  });
+
+  return { kind: 'isochronic', carrier, gate, shapers, gains, started: false };
 }
 
 /**
@@ -356,13 +428,12 @@ function buildVoiceSource(
 function startSource(context: BaseAudioContext, source: VoiceSource, t0: number, offset: number): void {
   const now = context.currentTime;
 
-  if (source.kind === 'binaural') {
+  if (source.kind === 'binaural' || source.kind === 'isochronic') {
     if (source.started) return;
     // Clamped because seeking into a schedule puts schedule-time zero in the past; only the
     // play-from-the-start case can align phase exactly, and only that case needs to.
     const at = Math.max(now, t0);
-    source.oscL.start(at);
-    source.oscR.start(at);
+    for (const oscillator of oscillatorsOf(source)) oscillator.start(at);
     source.started = true;
     return;
   }
@@ -392,29 +463,61 @@ function disposeSource(source: VoiceSource, when: number): void {
     return;
   }
   if (!source.started) return;
-  source.oscL.stop(when);
-  source.oscR.stop(when);
+  for (const oscillator of oscillatorsOf(source)) oscillator.stop(when);
   source.started = false;
 }
 
-/** Anchor a binaural voice's frequencies; noise ignores beat and base entirely
- *  (`BinauralBeat.c:553`). */
+/** Every oscillator a source owns — a binaural pair, or an isochronic voice's carrier and gate.
+ *  They share a lifetime: created with the graph, started once at `t0`, stopped only on disposal. */
+function oscillatorsOf(source: VoiceSource): OscillatorNode[] {
+  if (source.kind === 'binaural') return [source.oscL, source.oscR];
+  if (source.kind === 'isochronic') return [source.carrier, source.gate];
+  return [];
+}
+
+/**
+ * The frequency params a voice's automation drives, paired with the values to write.
+ *
+ * A binaural voice takes §3.6's split pair straight from the compiled event. An isochronic voice
+ * takes the two numbers *behind* that pair: its carrier is `basefreq` in both ears and its gate runs
+ * at `beatfreq` (`BinauralBeat.c:598`, and its own comment — "the beat frequency purely affects base
+ * frequency pulse on/off duration, not its frequency"). `eventBaseFreq`/`eventBeatFreq` are the
+ * exact inverse of the assignment `compileVoice` applied, so nothing about the compiler, the
+ * automation event or `valueAtTime` has to know this voice type exists.
+ *
+ * The gate is floored at `MIN_GATE_FREQ`, matching the reference's own clamp (`:592`): `beatfreq`
+ * of zero means a steady tone, not a stopped oscillator.
+ *
+ * Noise reads neither value (`:553`), so it drives nothing.
+ */
+function frequencyTargets(source: VoiceSource, values: AutomationValues): [AudioParam, number][] {
+  if (source.kind === 'binaural') {
+    return [
+      [source.oscL.frequency, values.leftFreq],
+      [source.oscR.frequency, values.rightFreq],
+    ];
+  }
+  if (source.kind === 'isochronic') {
+    return [
+      [source.carrier.frequency, eventBaseFreq(values)],
+      [source.gate.frequency, Math.max(MIN_GATE_FREQ, eventBeatFreq(values))],
+    ];
+  }
+  return [];
+}
+
 function anchorFrequency(source: VoiceSource, values: AutomationValues, at: number): void {
-  if (source.kind !== 'binaural') return;
-  source.oscL.frequency.setValueAtTime(values.leftFreq, at);
-  source.oscR.frequency.setValueAtTime(values.rightFreq, at);
+  for (const [param, value] of frequencyTargets(source, values)) param.setValueAtTime(value, at);
 }
 
 function rampFrequency(source: VoiceSource, values: AutomationValues, at: number): void {
-  if (source.kind !== 'binaural') return;
-  source.oscL.frequency.linearRampToValueAtTime(values.leftFreq, at);
-  source.oscR.frequency.linearRampToValueAtTime(values.rightFreq, at);
+  for (const [param, value] of frequencyTargets(source, values)) {
+    param.linearRampToValueAtTime(value, at);
+  }
 }
 
 function cancelFrequency(source: VoiceSource, from: number): void {
-  if (source.kind !== 'binaural') return;
-  source.oscL.frequency.cancelScheduledValues(from);
-  source.oscR.frequency.cancelScheduledValues(from);
+  for (const oscillator of oscillatorsOf(source)) oscillator.frequency.cancelScheduledValues(from);
 }
 
 function setGate(nodes: VoiceNodes, gate: number): void {
@@ -500,9 +603,10 @@ function outlastsSchedule(events: AutomationEvent[], duration: number): boolean 
   return end > duration + 1e-9;
 }
 
-/** Voices this app can render. Other types are parsed and preserved, but silent (§3.3). */
+/** Voices this app can render. Other types are parsed and preserved, but silent (§3.3). The set
+ *  lives in the document layer, so the warning surface cannot come to disagree with the engine. */
 function isRenderable(voice: Voice): boolean {
-  return voice.type === VoiceType.Binaural || voice.type === VoiceType.PinkNoise;
+  return isRenderableType(voice.type);
 }
 
 /**
@@ -532,8 +636,9 @@ function requiresVoiceRebuild(previous: Schedule, next: Schedule): boolean {
  * (`renderSchedule`), which is why this shares `buildOutputChain`/`buildVoiceNodes` with
  * `PlaybackEngine` instead of building a graph of its own.
  *
- * Voice types 0 (binaural) and 1 (noise) are rendered. Types 2–6 are parsed and preserved by the
- * document layer but silent here (§3.3), and `VoiceList`/`WarningList` say so.
+ * Voice types 0 (binaural), 1 (noise) and 3/4 (isochronic) are rendered. Types 2, 5 and 6 are
+ * parsed and preserved by the document layer but silent here (§3.3), and `VoiceList`/`WarningList`
+ * say so.
  *
  * **Exactly one pass, whatever `loops` says.** This is the export path (`renderSchedule`), and a
  * WAV of a schedule that repeats forever is not a file anyone can write. Repetition is a playback
