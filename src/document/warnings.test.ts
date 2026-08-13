@@ -93,6 +93,29 @@ describe('scheduleWarnings — what the program will do (§3.3, §3.7)', () => {
     expect(warnings[0].message).toContain('1:00');
   });
 
+  /**
+   * The test above could not see this, because it names its voices 'short' and 'long' — the message
+   * lowercased its mid-sentence subject wholesale, which mangles the *names* and not just the noun.
+   * A browser pass caught it rendering "cuts voices every rule and background noise short" in the
+   * same sentence that spelled "Voice Short and mis-parented" correctly. Capitalised names are what
+   * makes the difference visible, so this states both halves.
+   */
+  it('lowercases only the leading noun of a mid-sentence subject, never the voice names', () => {
+    const { schedule } = parseScheduleWithWarnings(
+      xml(
+        voice({ description: 'Short one' }, entry(60)) +
+          voice({ description: 'Every rule', id: 1 }, entry(300)) +
+          voice({ description: 'Background noise', id: 2 }, entry(300)),
+      ),
+    );
+
+    const message = scheduleWarnings(schedule)[0].message;
+    expect(message).toContain('Voice Short one ends');
+    expect(message).toContain('cuts voices Every rule and Background noise short');
+    expect(message).not.toContain('every rule');
+    expect(message).not.toContain('background noise');
+  });
+
   it('ignores a difference small enough to be a rounding error', () => {
     const { schedule } = parseScheduleWithWarnings(
       xml(voice({}, entry(60)) + voice({}, entry(60.01))),

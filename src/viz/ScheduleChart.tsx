@@ -33,6 +33,7 @@ import {
   visibleRange,
 } from './geometry';
 import { seriesColor } from './palette';
+import type { Scale } from './scales';
 import { gridLines, niceTicks, timeGridStep, timeTicksIn } from './scales';
 import './ScheduleChart.css';
 
@@ -157,8 +158,24 @@ const VOICE_TYPE_LABELS: Partial<Record<VoiceType, string>> = {
 };
 
 /**
+ * Least vertical distance between two y-axis labels, measured rather than chosen: the tick text is
+ * 11px in a 15px line box, so anything closer overprints.
+ *
+ * Deliberately **not** `MIN_GRID_PX`, which governs the *time grid* — that constant can be as fine
+ * as 14px precisely because a grid line carries no label (step 8). A label is the opposite case.
+ */
+const MIN_TICK_LABEL_PX = 15;
+
+/**
  * Y-axis positions for a lane. The beat lane reads against the EEG bands it is shaded with
  * (PLAN.md §1) rather than arbitrary round numbers — those boundaries are what the value means.
+ *
+ * **The boundaries are geometric (0.5, 4, 8, 13, 30, 100) while the lane is linear**, so any domain
+ * reaching into Gamma crushes the low ones into the bottom few pixels. Measured in a browser at
+ * 390px over a 0–60 Hz domain, the five labels sat 3.8, 4.5, 5.5 and 18.9 px apart in a 15px box —
+ * four of the five overprinted into an illegible smear. They are therefore thinned by pixel
+ * distance, and a lane too short to carry two of them falls back to round numbers rather than
+ * labelling a single band edge.
  */
 function laneTicks(lane: LaneLayout): number[] {
   const [min, max] = lane.model.domain;
@@ -166,9 +183,31 @@ function laneTicks(lane: LaneLayout): number[] {
     const edges = [...new Set(EEG_BANDS.flatMap((band) => [band.min, band.max]))].filter(
       (hz) => hz > min && hz < max,
     );
-    if (edges.length >= 2) return edges;
+    const legible = legibleTicks(edges, lane.valueScale);
+    if (legible.length >= 2) return legible;
   }
   return niceTicks(lane.model.domain, 4).filter((tick) => tick >= min && tick <= max);
+}
+
+/**
+ * Drop the ticks a reader could not tell apart, keeping the **higher** values.
+ *
+ * Highest-first because the crowding is always at the bottom of a beat lane — the band boundaries
+ * are geometric — so walking down from the top keeps the widely-spaced ones that carry the most
+ * information and discards the cluster near zero.
+ */
+function legibleTicks(values: readonly number[], scale: Scale): number[] {
+  const kept: number[] = [];
+  let lastPixel = Infinity;
+
+  for (const value of [...values].sort((a, b) => b - a)) {
+    const pixel = scale.toPixel(value);
+    if (Math.abs(pixel - lastPixel) < MIN_TICK_LABEL_PX) continue;
+    kept.push(value);
+    lastPixel = pixel;
+  }
+
+  return kept.reverse();
 }
 
 function useElementWidth<T extends HTMLElement>() {

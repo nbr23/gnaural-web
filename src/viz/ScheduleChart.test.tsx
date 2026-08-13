@@ -306,3 +306,70 @@ describe('ScheduleChart with a view window', () => {
     expect(testRoot.queryAll('clipPath').length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * The beat lane labels its y-axis with the EEG band boundaries (§1) rather than round numbers,
+ * because that is what the value means. Those boundaries are **geometric** (0.5, 4, 8, 13, 30, 100)
+ * and the lane is linear, so a domain reaching into Gamma pushes the low ones into the bottom few
+ * pixels of the lane.
+ *
+ * Found by a browser pass, not by these tests: at 390px over a 0–60 Hz domain the five labels sat
+ * 3.8, 4.5, 5.5 and 18.9 px apart in a 15px line box, so four of the five overprinted into an
+ * illegible smear. The assertion is on the *pixel spacing* rather than on which ticks survive —
+ * naming the survivors would pin the arithmetic instead of the property that matters.
+ */
+describe('ScheduleChart beat-lane ticks', () => {
+  function tickPixels() {
+    return testRoot
+      .queryAll('text.schedule-chart__tick')
+      .map((tick) => ({ text: tick.textContent ?? '', y: Number(tick.getAttribute('y')) }))
+      .filter(({ text }) => /^[\d.]+$/.test(text))
+      .map(({ y }) => y);
+  }
+
+  it('never places two y-axis labels closer than a label box apart', () => {
+    // A beat curve reaching into Gamma is what crowds the low boundaries together.
+    render(
+      <ScheduleChart
+        schedule={makeSchedule([
+          makeVoice({
+            entries: [
+              makeEntry({ duration: 10, baseFreq: 200, beatFreq: 1 }),
+              makeEntry({ duration: 10, baseFreq: 200, beatFreq: 60 }),
+            ],
+          }),
+        ])}
+      />,
+    );
+
+    const ys = [...new Set(tickPixels())].sort((a, b) => a - b);
+    expect(ys.length).toBeGreaterThan(1);
+
+    const gaps = ys.slice(1).map((y, i) => y - ys[i]);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(15);
+  });
+
+  it('still labels the band boundaries when the lane has room for them', () => {
+    // 2–25 Hz puts three boundaries (4, 8, 13) inside the domain, far enough apart to all survive.
+    // Note the pre-existing floor this sits above: a domain holding fewer than two boundaries falls
+    // back to round numbers rather than labelling a lone band edge.
+    render(
+      <ScheduleChart
+        schedule={makeSchedule([
+          makeVoice({
+            entries: [
+              makeEntry({ duration: 10, baseFreq: 200, beatFreq: 2 }),
+              makeEntry({ duration: 10, baseFreq: 200, beatFreq: 25 }),
+            ],
+          }),
+        ])}
+      />,
+    );
+
+    const labels = testRoot.queryAll('text.schedule-chart__tick').map((t) => t.textContent);
+    // 8 and 13 are band boundaries and are not values `niceTicks` would choose for this domain, so
+    // their presence is what says the lane is still labelled by band rather than by round number.
+    expect(labels).toContain('8');
+    expect(labels).toContain('13');
+  });
+});

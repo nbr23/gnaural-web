@@ -121,7 +121,7 @@ export function scheduleWarnings(schedule: Schedule): ScheduleWarning[] {
     warnings.push({
       severity: 'warning',
       kind: 'unequal-durations',
-      message: `The voices are not the same length. ${ends.text} ${ends.verb('end')} at ${formatSeconds(playback)}, which stops the whole schedule there and cuts ${cut.text.toLowerCase()} short.`,
+      message: `The voices are not the same length. ${ends.text} ${ends.verb('end')} at ${formatSeconds(playback)}, which stops the whole schedule there and cuts ${cut.midSentence} short.`,
     });
   }
 
@@ -395,6 +395,17 @@ function round(value: number): number {
 interface VoiceSubject {
   /** "Voice tone" or "Voices tone and pulse" — the grammatical subject of a warning sentence. */
   text: string;
+  /**
+   * The same subject part-way through a sentence: "voice tone", "voices tone and pulse".
+   *
+   * **Only the leading noun is lowercased, and that is the whole point of having this.** The ragged
+   * message used `text.toLowerCase()`, which reads correctly for the noun and mangles the voice
+   * *names* along with it — a browser pass found it rendering "cuts voices every rule and background
+   * noise short" for two voices called "Every rule" and "Background noise", in the same sentence
+   * that had just spelled a third one correctly. Third defect in this helper, and the third found by
+   * reading the output rather than the code: the corpus trips none of these messages.
+   */
+  midSentence: string;
   plural: boolean;
   /** Agrees the verb with the subject: one voice *plays*, two voices *play*. */
   verb(base: string): string;
@@ -403,8 +414,11 @@ interface VoiceSubject {
 function describeVoices(schedule: Schedule, subset: Voice[]): VoiceSubject {
   const labels = subset.map((voice) => voiceLabel(voice, schedule.voices.indexOf(voice)));
   const plural = labels.length > 1;
+  const noun = plural ? 'Voices' : 'Voice';
+  const names = list(labels);
   return {
-    text: `${plural ? 'Voices' : 'Voice'} ${list(labels)}`,
+    text: `${noun} ${names}`,
+    midSentence: `${noun.toLowerCase()} ${names}`,
     plural,
     verb: (base) => (plural ? base : thirdPerson(base)),
   };
