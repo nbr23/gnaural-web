@@ -3,23 +3,26 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from 'react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { formatClock } from '../app/format';
-import type { Schedule } from '../document/types';
+import type { EntryLocation, Schedule } from '../document/types';
 import { VoiceType } from '../document/types';
 import { EEG_BANDS } from './bands';
 import type {
   BreakpointHit,
   ChartLayout,
   ChartMark,
+  LaneDomains,
   LaneId,
   LaneLayout,
   SeriesPoint,
+  ViewWindow,
   VoiceIdentity,
   VoiceSeries,
 } from './geometry';
 import {
   DEFAULT_LANES,
+  DEFAULT_METRICS,
   DOMAIN_PADDING,
   buildChartModel,
   layoutChart,
@@ -27,9 +30,10 @@ import {
   polylinePath,
   seriesValueAt,
   timeAtPixel,
+  visibleRange,
 } from './geometry';
 import { seriesColor } from './palette';
-import { niceTicks, timeTicks } from './scales';
+import { gridLines, niceTicks, timeGridStep, timeTicksIn } from './scales';
 import './ScheduleChart.css';
 
 /** A pointer position, resolved into everything an editing caller needs to decide what it grabbed. */
@@ -57,10 +61,18 @@ export interface ChartPointer {
 export interface ChartInteraction {
   /** Wider than the read-only default, so a value drag can reach past the data. */
   domainPadding?: number;
-  /** Drawn with a ring. Addressed the way the document is (§3.4): indices, not ids. */
-  selected?: { voice: number; entry: number } | null;
+  /**
+   * Drawn with a ring, one per node. Addressed the way the document is (§3.4): indices, not ids.
+   *
+   * **Identity-stable between selection changes, for the same reason `marks` must be**: a marquee
+   * can select every node in the document, which at four lanes is 308 rings, and this layer is
+   * `memo`'d so a drag does not rebuild them on every `pointermove`.
+   */
+  selected?: readonly EntryLocation[];
   /** A gesture is in flight: the static curves become a ghost and the crosshair gets out of the way. */
   dragging?: boolean;
+  /** Draw the snap grid the caller is snapping to. Omit for no grid. */
+  grid?: boolean;
   /**
    * Nodes to mark as needing attention. **Must be identity-stable while a gesture runs** — they are
    * drawn by a `memo`'d layer, exactly like `StaticPlot`, so a fresh array per `pointermove` would
@@ -72,6 +84,21 @@ export interface ChartInteraction {
   onPointerDown?(pointer: ChartPointer): void;
   onPointerMove?(pointer: ChartPointer): void;
   onPointerUp?(pointer: ChartPointer): void;
+  /**
+   * Zoom by `factor` about `anchor` seconds — a wheel with ctrl/⌘ held, or a two-finger pinch.
+   *
+   * The chart recognises the gesture, because only it has the layout and the element's rect, and
+   * the caller owns the window: this component stays fully controlled and holds no view state,
+   * exactly as it holds no clock.
+   */
+  onZoom?(factor: number, anchor: number): void;
+  /** Pan by a number of seconds — a horizontal wheel, or a two-finger drag. */
+  onPan?(seconds: number): void;
+  /**
+   * A second finger landed, so whatever one-finger gesture was in flight is not what was meant.
+   * The caller drops it without committing; the pinch takes over until one finger is left.
+   */
+  onGestureCancel?(): void;
   /** Return true to claim the key; anything unclaimed falls through to the crosshair readout. */
   onKeyDown?(event: ReactKeyboardEvent<SVGSVGElement>, layout: ChartLayout): boolean;
 }
@@ -94,11 +121,28 @@ export interface ScheduleChartProps {
   onSeek?: (time: number) => void;
   /** Supply this and the plot becomes editable. Absent, the component is exactly what it was. */
   interaction?: ChartInteraction;
+  /**
+   * The stretch of time to draw. Omit for the whole schedule, which is what the player wants.
+   *
+   * A controlled prop, not internal state: zoom is session state belonging to the editor, and the
+   * chart's job is to draw what it is given. It reaches `layoutChart` only, so the compiled model
+   * above it is untouched by a zoom.
+   */
+  view?: ViewWindow;
+  /** Manual y-axis bounds per lane (§6.1). A lane not named here is fitted to its data. */
+  domains?: LaneDomains;
   className?: string;
 }
 
 /** Pointer radius within which an authored breakpoint is highlighted (a >= 24px hit target). */
 const BREAKPOINT_HIT_RADIUS = 12;
+/**
+ * Zoom per pixel of wheel travel, exponentiated so the gesture is symmetric — the same scroll back
+ * undoes the same scroll forward exactly. One notch of a mouse wheel (~100 px) is about 1.35×.
+ */
+const WHEEL_ZOOM_RATE = 0.003;
+/** Below this much movement a two-finger gesture is a pan rather than a pinch. */
+const PINCH_EPSILON = 0.5;
 const DEFAULT_HEIGHT = 280;
 /** Roughly one time label per this many pixels, so narrow phones don't collide their labels. */
 const PX_PER_TIME_TICK = 110;
@@ -175,30 +219,51 @@ export function ScheduleChart({
   height = DEFAULT_HEIGHT,
   onSeek,
   interaction,
+  view,
+  domains,
   className,
 }: ScheduleChartProps) {
   const [containerRef, width] = useElementWidth<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
+  const clipId = useId();
   const [hover, setHover] = useState<HoverState | null>(null);
 
   const editing = interaction !== undefined;
   const padding = interaction?.domainPadding ?? DOMAIN_PADDING;
   const model = useMemo(
-    () => buildChartModel(schedule, lanes, padding),
-    [schedule, lanes, padding],
+    () => buildChartModel(schedule, lanes, padding, domains),
+    [schedule, lanes, padding, domains],
   );
   const layout = useMemo(
-    () => (width > 0 ? layoutChart(model, width, height) : null),
-    [model, width, height],
+    () => (width > 0 ? layoutChart(model, width, height, DEFAULT_METRICS, view) : null),
+    [model, width, height, view],
   );
 
   const xTicks = useMemo(
     () =>
       layout
-        ? timeTicks(layout.model.duration, Math.max(3, Math.round(width / PX_PER_TIME_TICK)))
+        ? timeTicksIn(
+            layout.view.start,
+            layout.view.end,
+            Math.max(3, Math.round(width / PX_PER_TIME_TICK)),
+          )
         : [],
     [layout, width],
   );
+
+  /**
+   * The snap grid, drawn only when the caller is snapping to it.
+   *
+   * Snapping to something invisible would be a mystery rather than a feature, and the step is a
+   * function of the zoom (`timeGridStep`), so what is drawn and what is snapped to are the same
+   * arithmetic run once.
+   */
+  const grid = useMemo(() => {
+    if (!layout || !interaction?.grid) return [];
+    const plot = layout.lanes[0]?.width ?? 0;
+    const step = timeGridStep(layout.view.end - layout.view.start, plot);
+    return gridLines(layout.view.start, layout.view.end, step);
+  }, [interaction?.grid, layout]);
 
   const scrubbing = useRef(false);
 
@@ -243,15 +308,34 @@ export function ScheduleChart({
     [layout, pointerPosition],
   );
 
+  /**
+   * Fingers currently on the plot, by pointer id.
+   *
+   * A map rather than a count because a pinch needs both positions. One finger is the editing
+   * gesture the caller owns; **two are the chart's own** — a phone sets `touch-action: none` while
+   * editing, so if this component does not implement pinch and two-finger pan, nothing does.
+   */
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ distance: number; centre: number } | null>(null);
+
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
+      const position = pointerPosition(event);
+
       if (interaction) {
+        if (position && touches.current.has(event.pointerId)) {
+          touches.current.set(event.pointerId, position);
+        }
+        if (touches.current.size >= 2) {
+          trackPinch(touches.current, pinch, layout, interaction);
+          return;
+        }
+
         const pointer = resolvePointer(event);
         if (pointer) interaction.onPointerMove?.(pointer);
         return;
       }
 
-      const position = pointerPosition(event);
       if (!position || !layout) return;
 
       const time = timeAtPixel(layout, position.x);
@@ -266,6 +350,16 @@ export function ScheduleChart({
       if (interaction) {
         const pointer = resolvePointer(event);
         if (!pointer) return;
+
+        touches.current.set(event.pointerId, { x: pointer.x, y: pointer.y });
+        if (touches.current.size >= 2) {
+          // The one-finger gesture in flight is not what was meant — drop it rather than commit
+          // half of it, and let the pinch run until a finger comes up.
+          pinch.current = null;
+          interaction.onGestureCancel?.();
+          return;
+        }
+
         // Captured unconditionally: a finger that leaves the plot mid-drag must still finish its
         // gesture, and a miss releases it on the pointerup that follows.
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -286,6 +380,13 @@ export function ScheduleChart({
   const handlePointerUp = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
       if (interaction) {
+        const pinching = touches.current.size >= 2;
+        touches.current.delete(event.pointerId);
+        pinch.current = null;
+        // The finger that ends a pinch must not also end a drag: there is no drag, the second
+        // finger cancelled it, and a pointerup the caller acted on would commit an edit nobody made.
+        if (pinching) return;
+
         const pointer = resolvePointer(event);
         if (pointer) interaction.onPointerUp?.(pointer);
         return;
@@ -294,6 +395,50 @@ export function ScheduleChart({
     },
     [interaction, resolvePointer],
   );
+
+  /**
+   * Wheel: ctrl/⌘ zooms about the pointer, a horizontal wheel pans, a plain vertical wheel is the
+   * page's business and is left alone.
+   *
+   * A native listener rather than React's `onWheel`, because React attaches wheel at the root as
+   * **passive** and `preventDefault` there does nothing — and a trackpad pinch arrives as
+   * ctrl+wheel, so without it the browser would zoom the page under the gesture.
+   */
+  // Read through a ref rather than as a dependency: `interaction` is a fresh object on every render
+  // of an editing caller, and a caller re-renders on every `pointermove` of a drag — so depending on
+  // it would rebind a DOM listener per move, which is exactly the kind of per-move work this surface
+  // is arranged to avoid.
+  const interactionRef = useRef(interaction);
+  interactionRef.current = interaction;
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !layout || !editing) return;
+
+    const onWheel = (event: WheelEvent) => {
+      const current = interactionRef.current;
+      if (!current) return;
+
+      const rect = svg.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * (rect.width > 0 ? layout.width / rect.width : 1);
+
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        current.onZoom?.(Math.exp(-event.deltaY * WHEEL_ZOOM_RATE), timeAtPixel(layout, x));
+        return;
+      }
+
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+        event.preventDefault();
+        const span = layout.view.end - layout.view.start;
+        const plot = layout.lanes[0]?.width ?? 1;
+        current.onPan?.((event.deltaX * span) / plot);
+      }
+    };
+
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', onWheel);
+  }, [editing, layout]);
 
   const endScrub = useCallback(() => {
     scrubbing.current = false;
@@ -388,13 +533,17 @@ export function ScheduleChart({
         onKeyDown={stepHover}
         onBlur={() => setHover(null)}
       >
-        <StaticPlot layout={layout} xTicks={xTicks} nodes={editing} />
+        <LaneClips layout={layout} id={clipId} />
+
+        <StaticPlot layout={layout} xTicks={xTicks} grid={grid} nodes={editing} clipId={clipId} />
 
         {interaction?.marks && interaction.marks.length > 0 && (
-          <IssueMarks layout={layout} marks={interaction.marks} />
+          <IssueMarks layout={layout} marks={interaction.marks} clipId={clipId} />
         )}
 
-        {interaction?.selected && <SelectionRing layout={layout} selected={interaction.selected} />}
+        {interaction?.selected && interaction.selected.length > 0 && (
+          <SelectionRing layout={layout} selected={interaction.selected} clipId={clipId} />
+        )}
 
         {showCrosshair && (
           <Crosshair
@@ -408,7 +557,7 @@ export function ScheduleChart({
 
         {interaction?.overlay?.(layout)}
 
-        {currentTime !== undefined && currentTime >= 0 && currentTime <= model.duration && (
+        {currentTime !== undefined && currentTime >= layout.view.start && currentTime <= layout.view.end && (
           <Playhead layout={layout} x={layout.timeScale.toPixel(currentTime)} />
         )}
       </svg>
@@ -416,6 +565,37 @@ export function ScheduleChart({
       {showCrosshair && <Tooltip layout={layout} time={hover.time} x={hoverX} />}
     </div>
   );
+}
+
+/**
+ * Two fingers: the change in their separation is a zoom, the change in their midpoint is a pan.
+ *
+ * Both are reported as *deltas* against the previous frame rather than as an absolute state, so the
+ * caller can rate-limit them — which it must, since a full redraw of the densest bundled document
+ * costs 10.7 ms at four lanes and a pinch at 60 Hz would be two thirds of the main thread.
+ */
+function trackPinch(
+  touches: Map<number, { x: number; y: number }>,
+  previous: { current: { distance: number; centre: number } | null },
+  layout: ChartLayout | null,
+  interaction: ChartInteraction,
+): void {
+  if (!layout) return;
+
+  const [a, b] = [...touches.values()];
+  const distance = Math.abs(a.x - b.x);
+  const centre = timeAtPixel(layout, (a.x + b.x) / 2);
+  const last = previous.current;
+  previous.current = { distance, centre };
+  if (!last) return;
+
+  if (last.distance > PINCH_EPSILON && Math.abs(distance - last.distance) > PINCH_EPSILON) {
+    interaction.onZoom?.(distance / last.distance, last.centre);
+  }
+  // Panning is reported after the zoom and measured in the window the zoom has just changed, which
+  // is why the anchor above is the *previous* midpoint: the instant between the fingers stays put,
+  // and this moves what is left.
+  if (centre !== last.centre) interaction.onPan?.(last.centre - centre);
 }
 
 function containerClass(className: string | undefined, editing: boolean, dragging: boolean): string {
@@ -446,23 +626,59 @@ function chartLabel(schedule: Schedule, voiceCount: number, duration: number): s
 const StaticPlot = memo(function StaticPlot({
   layout,
   xTicks,
+  grid,
   nodes,
+  clipId,
 }: {
   layout: ChartLayout;
   xTicks: number[];
+  grid: number[];
   /** Draw a marker on every entry. Editing only — see the note on "deliberately not drawn" below. */
   nodes: boolean;
+  clipId: string;
 }) {
+  const truncationVisible =
+    layout.model.truncated &&
+    layout.model.playbackDuration >= layout.view.start &&
+    layout.model.playbackDuration <= layout.view.end;
+
   return (
     <>
       {layout.lanes.map((lane) => (
-        <Lane key={lane.model.id} lane={lane} layout={layout} xTicks={xTicks} nodes={nodes} />
+        <Lane
+          key={lane.model.id}
+          lane={lane}
+          layout={layout}
+          xTicks={xTicks}
+          grid={grid}
+          nodes={nodes}
+          clipId={clipId}
+        />
       ))}
 
       <TimeAxis layout={layout} xTicks={xTicks} />
 
-      {layout.model.truncated && <TruncationMarker layout={layout} />}
+      {truncationVisible && <TruncationMarker layout={layout} />}
     </>
+  );
+});
+
+/**
+ * One clip rectangle per lane, so a zoomed view cannot draw a curve or a node outside its own plot.
+ *
+ * Culling keeps the *count* down — at 4× zoom only 6 of `oobe-lucid-dreams-2`'s 80 points are inside
+ * the window — but the points bracketing the window are deliberately kept so lines enter from
+ * off-screen, and without a clip those land on the y-axis labels.
+ */
+const LaneClips = memo(function LaneClips({ layout, id }: { layout: ChartLayout; id: string }) {
+  return (
+    <defs>
+      {layout.lanes.map((lane) => (
+        <clipPath key={lane.model.id} id={`${id}-${lane.model.id}`}>
+          <rect x={lane.x} y={lane.y} width={lane.width} height={lane.height} />
+        </clipPath>
+      ))}
+    </defs>
   );
 });
 
@@ -487,15 +703,20 @@ function Lane({
   lane,
   layout,
   xTicks,
+  grid,
   nodes,
+  clipId,
 }: {
   lane: LaneLayout;
   layout: ChartLayout;
   xTicks: number[];
+  grid: number[];
   nodes: boolean;
+  clipId: string;
 }) {
   const right = lane.x + lane.width;
   const bottom = lane.y + lane.height;
+  const clip = `url(#${clipId}-${lane.model.id})`;
 
   return (
     <g>
@@ -504,6 +725,20 @@ function Lane({
       </text>
 
       {lane.model.id === 'beat' && <BandLayer lane={lane} />}
+
+      {grid.map((tick) => {
+        const x = layout.timeScale.toPixel(tick);
+        return (
+          <line
+            className="schedule-chart__snap-grid"
+            key={tick}
+            x1={x}
+            y1={lane.y}
+            x2={x}
+            y2={bottom}
+          />
+        );
+      })}
 
       {laneTicks(lane).map((tick) => {
         const y = lane.valueScale.toPixel(tick);
@@ -524,13 +759,15 @@ function Lane({
 
       <line className="schedule-chart__axis" x1={lane.x} y1={bottom} x2={right} y2={bottom} />
 
-      {lane.model.series.map((series) => (
-        <Series key={series.voiceId} series={series} lane={lane} layout={layout} split={nodes} />
-      ))}
+      <g clipPath={clip}>
+        {lane.model.series.map((series) => (
+          <Series key={series.voiceId} series={series} lane={lane} layout={layout} split={nodes} />
+        ))}
 
-      {nodes && lane.model.series.map((series) => (
-        <Nodes key={series.voiceId} series={series} lane={lane} layout={layout} />
-      ))}
+        {nodes && lane.model.series.map((series) => (
+          <Nodes key={series.voiceId} series={series} lane={lane} layout={layout} />
+        ))}
+      </g>
     </g>
   );
 }
@@ -555,29 +792,40 @@ function Series({
   split: boolean;
 }) {
   const colour = seriesColor(series.slot);
+  // Only what the window can show, plus the point either side so a line enters from off-screen
+  // rather than starting at the first visible node.
+  const [from, to] = visibleRange(series.points, layout.view);
+  const points = series.points.slice(from, to);
+
   if (!split || series.points.length < 2) {
     return (
       <path
         className="schedule-chart__series"
-        d={polylinePath(series.points, layout.timeScale, lane.valueScale)}
+        d={polylinePath(points, layout.timeScale, lane.valueScale)}
         style={{ stroke: colour }}
       />
     );
   }
 
-  const cut = series.points.length - 1;
+  // Where §3.5's generated final segment begins, in this slice's own coordinates. Off the end of a
+  // window that stops short of the voice, in which case the whole slice is authored curve.
+  const cut = series.points.length - 1 - from;
   return (
     <>
-      <path
-        className="schedule-chart__series"
-        d={polylinePath(series.points.slice(0, cut), layout.timeScale, lane.valueScale)}
-        style={{ stroke: colour }}
-      />
-      <path
-        className="schedule-chart__series schedule-chart__series--wrap"
-        d={polylinePath(series.points.slice(cut - 1), layout.timeScale, lane.valueScale)}
-        style={{ stroke: colour }}
-      />
+      {cut > 0 && (
+        <path
+          className="schedule-chart__series"
+          d={polylinePath(points.slice(0, Math.min(cut, points.length)), layout.timeScale, lane.valueScale)}
+          style={{ stroke: colour }}
+        />
+      )}
+      {cut < points.length && (
+        <path
+          className="schedule-chart__series schedule-chart__series--wrap"
+          d={polylinePath(points.slice(Math.max(0, cut - 1)), layout.timeScale, lane.valueScale)}
+          style={{ stroke: colour }}
+        />
+      )}
     </>
   );
 }
@@ -601,11 +849,14 @@ function Nodes({
 }) {
   const colour = seriesColor(series.slot);
   const last = series.points.length - 1;
+  const [from, to] = visibleRange(series.points, layout.view);
 
   return (
     <g>
-      {series.points.map((point, index) =>
-        index === last ? (
+      {series.points.slice(from, to).map((point, offset) => {
+        // The slice keeps each point's own index, because that index is what addresses an entry.
+        const index = from + offset;
+        return index === last ? (
           <circle
             className="schedule-chart__wrap-node"
             key={index}
@@ -625,8 +876,8 @@ function Nodes({
             r={3.5}
             style={{ fill: colour }}
           />
-        ),
-      )}
+        );
+      })}
     </g>
   );
 }
@@ -642,9 +893,11 @@ function Nodes({
 const IssueMarks = memo(function IssueMarks({
   layout,
   marks,
+  clipId,
 }: {
   layout: ChartLayout;
   marks: readonly ChartMark[];
+  clipId: string;
 }) {
   return (
     <g className="schedule-chart__marks">
@@ -665,6 +918,7 @@ const IssueMarks = memo(function IssueMarks({
             <circle
               key={`${index}-${lane.model.id}`}
               className="schedule-chart__mark"
+              clipPath={`url(#${clipId}-${lane.model.id})`}
               cx={layout.timeScale.toPixel(point.time)}
               cy={lane.valueScale.toPixel(point.value)}
               r={9.5}
@@ -678,34 +932,50 @@ const IssueMarks = memo(function IssueMarks({
   );
 });
 
-/** The selected node, marked in every lane it appears in — one entry, several parameters. */
-function SelectionRing({
+/**
+ * The selection, ringed in every lane each node appears in — one entry, several parameters.
+ *
+ * **`memo`'d, on the same terms as `IssueMarks` and for a sharper reason.** A marquee can select
+ * every node in the document, which at four lanes is 308 rings; this layer sits in the chart's body,
+ * which re-renders on every `pointermove` of a drag, so an unmemoised version would rebuild all of
+ * them per move — the 1220 ms defect in a new place. The selection cannot change mid-gesture, so the
+ * memo holds for the whole of one.
+ */
+const SelectionRing = memo(function SelectionRing({
   layout,
   selected,
+  clipId,
 }: {
   layout: ChartLayout;
-  selected: { voice: number; entry: number };
+  selected: readonly EntryLocation[];
+  clipId: string;
 }) {
   return (
     <g className="schedule-chart__selection">
-      {layout.lanes.map((lane) => {
-        const series = lane.model.series.find((s) => s.slot === selected.voice);
-        const point: SeriesPoint | undefined = series?.points[selected.entry];
-        if (!series || !point) return null;
-        return (
-          <circle
-            key={lane.model.id}
-            className="schedule-chart__selected"
-            cx={layout.timeScale.toPixel(point.time)}
-            cy={lane.valueScale.toPixel(point.value)}
-            r={7}
-            style={{ stroke: seriesColor(series.slot) }}
-          />
-        );
-      })}
+      {selected.flatMap((node) =>
+        layout.lanes.flatMap((lane) => {
+          const series = lane.model.series.find((s) => s.slot === node.voice);
+          const point: SeriesPoint | undefined = series?.points[node.entry];
+          if (!series || !point) return [];
+          // Off-window nodes are still in the selection and simply have nowhere to be drawn.
+          if (point.time < layout.view.start || point.time > layout.view.end) return [];
+
+          return [
+            <circle
+              key={`${node.voice}-${node.entry}-${lane.model.id}`}
+              className="schedule-chart__selected"
+              clipPath={`url(#${clipId}-${lane.model.id})`}
+              cx={layout.timeScale.toPixel(point.time)}
+              cy={lane.valueScale.toPixel(point.value)}
+              r={7}
+              style={{ stroke: seriesColor(series.slot) }}
+            />,
+          ];
+        }),
+      )}
     </g>
   );
-}
+});
 
 /**
  * EEG band shading behind the beat curve. Deliberately a neutral alternating wash rather than a

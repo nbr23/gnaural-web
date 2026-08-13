@@ -9,7 +9,7 @@
  */
 
 import { formatHz } from '../app/format';
-import type { EntryPatch } from '../document/edit';
+import type { EntryValueField } from '../document/edit';
 import { DURATION_EPSILON, scheduleDuration, voiceDuration } from '../document/timing';
 import type { Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
@@ -19,6 +19,72 @@ import type { Scale } from './scales';
 import { linearScale } from './scales';
 
 export type LaneId = 'beat' | 'base' | 'volumeLeft' | 'volumeRight';
+
+/**
+ * The stretch of schedule time the chart draws, in seconds — §6.1's "zoom and pan on the time axis".
+ *
+ * **It belongs to the layout, never to the model.** `buildChartModel` compiles every voice and is
+ * memoised on the document; a window that reached it would recompile all of them on every zoom
+ * frame. What a window changes is one scale, so it changes in `layoutChart` and everything
+ * downstream — `polylinePath`, `timeAtPixel`, `nearestBreakpoint`, the drag geometry, the
+ * validation marks — follows for free through `layout.timeScale`.
+ */
+export interface ViewWindow {
+  start: number;
+  end: number;
+}
+
+/**
+ * The narrowest window, in seconds.
+ *
+ * A floor rather than a judgement about how far anyone should be able to zoom: 17 of the 19 bundled
+ * files carry entries 0.001 s apart, and no reachable window separates those — 0.001 s of a 2331 s
+ * programme is a millionth of the axis. Zoom is what makes the *ordinary* clusters addressable
+ * (median gap 1.16 px at 640 px on `airplanetravelaid`, against a 12 px hit radius); the arrow-walk
+ * and the numeric panel are what reach the rest, which is why neither is optional.
+ */
+export const MIN_VIEW_SECONDS = 0.5;
+
+export function fullView(duration: number): ViewWindow {
+  return { start: 0, end: Math.max(duration, MIN_VIEW_SECONDS) };
+}
+
+/** A window slid and narrowed until it is a real span inside `[0, duration]`. */
+export function clampView(view: ViewWindow, duration: number): ViewWindow {
+  const extent = Math.max(duration, MIN_VIEW_SECONDS);
+  const span = Math.min(extent, Math.max(MIN_VIEW_SECONDS, view.end - view.start));
+  const start = Math.min(Math.max(0, view.start), extent - span);
+  return { start, end: start + span };
+}
+
+/**
+ * Zoom by `factor` about a fixed point in schedule time, so whatever is under the pointer stays
+ * under it while the axis grows around it. A button passes the middle of the window as the anchor.
+ */
+export function zoomView(
+  view: ViewWindow,
+  duration: number,
+  factor: number,
+  anchor: number,
+): ViewWindow {
+  const span = view.end - view.start;
+  if (span <= 0 || factor <= 0) return clampView(view, duration);
+
+  const at = Math.min(Math.max(anchor, view.start), view.end);
+  const share = (at - view.start) / span;
+  const next = span / factor;
+  return clampView({ start: at - next * share, end: at + next * (1 - share) }, duration);
+}
+
+export function panView(view: ViewWindow, duration: number, seconds: number): ViewWindow {
+  return clampView({ start: view.start + seconds, end: view.end + seconds }, duration);
+}
+
+/** How much of the schedule is on screen, as a factor: 1 is the whole of it. */
+export function zoomFactor(view: ViewWindow, duration: number): number {
+  const span = view.end - view.start;
+  return span > 0 ? Math.max(duration, MIN_VIEW_SECONDS) / span : 1;
+}
 
 export const DEFAULT_LANES: readonly LaneId[] = ['beat', 'base'];
 
@@ -30,7 +96,7 @@ interface LaneDefinition {
   /** Empty for a dimensionless lane; volume is a bare 0–1 fraction. */
   unit: string;
   /** The `Entry` field a value drag in this lane writes. The inverse of `valueOf`, per voice. */
-  field: keyof EntryPatch;
+  field: EntryValueField;
   valueOf(event: AutomationEvent): number;
   domainOf(values: number[], padding: number): [number, number];
   format(value: number): string;
@@ -85,7 +151,7 @@ const LANE_DEFINITIONS: Record<LaneId, LaneDefinition> = {
 };
 
 /** Which `Entry` field a value drag in this lane writes. */
-export function laneField(id: LaneId): keyof EntryPatch {
+export function laneField(id: LaneId): EntryValueField {
   return LANE_DEFINITIONS[id].field;
 }
 
@@ -181,6 +247,31 @@ function formatVolume(value: number): string {
 }
 
 /**
+ * Manual y-axis bounds, per lane — §6.1's "vertical axis auto-scales to content with a manual
+ * override". A lane with no entry here is fitted to its data as it always was.
+ *
+ * The override is what makes a value reachable by dragging at all when it is far outside the
+ * document's own range: a lane fitted to a 200–210 Hz curve, even at `EDITOR_DOMAIN_PADDING`,
+ * cannot be dragged to 400 Hz. Session state, like the view window and the open lanes.
+ */
+export type LaneDomains = Partial<Record<LaneId, readonly [number, number]>>;
+
+/**
+ * The extent a chart of this schedule draws: its longest *visible* voice.
+ *
+ * `buildChartModel` reports the same number on the model it returns, and calls this to get it — one
+ * rule, so a caller that needs the extent without building a model (the editor's zoom controls) and
+ * the model itself cannot come to disagree about how long the picture is. Hidden voices are omitted
+ * for the reason the model omits them: `voice_hide` is editor presentation state.
+ */
+export function drawnDuration(schedule: Schedule): number {
+  const drawn = schedule.voices
+    .filter((voice) => !voice.hidden && voice.entries.length > 0)
+    .map(voiceDuration);
+  return drawn.length > 0 ? Math.max(...drawn) : 0;
+}
+
+/**
  * Build the plottable model for a schedule.
  *
  * Curves come from `compileVoice`, not from the raw entries: it supplies absolute times and the
@@ -196,6 +287,7 @@ export function buildChartModel(
   schedule: Schedule,
   laneIds: readonly LaneId[] = DEFAULT_LANES,
   domainPadding = DOMAIN_PADDING,
+  domains: LaneDomains = {},
 ): ChartModel {
   const compiled: { identity: VoiceIdentity; events: AutomationEvent[] }[] = [];
 
@@ -216,8 +308,7 @@ export function buildChartModel(
     });
   });
 
-  const drawn = compiled.map(({ identity }) => identity.duration);
-  const duration = drawn.length > 0 ? Math.max(...drawn) : 0;
+  const duration = drawnDuration(schedule);
   const playbackDuration = scheduleDuration(schedule);
 
   const lanes = laneIds.map<LaneModel>((id) => {
@@ -227,11 +318,14 @@ export function buildChartModel(
       points: events.map((event) => ({ time: event.time, value: definition.valueOf(event) })),
     }));
 
+    const override = domains[id];
     return {
       id,
       title: definition.title,
       unit: definition.unit,
-      domain: definition.domainOf(series.flatMap((s) => s.points.map((p) => p.value)), domainPadding),
+      domain: override
+        ? [override[0], override[1]]
+        : definition.domainOf(series.flatMap((s) => s.points.map((p) => p.value)), domainPadding),
       format: definition.format,
       series,
     };
@@ -280,6 +374,8 @@ export interface ChartLayout {
   height: number;
   /** Shared across every lane — one time axis, drawn once under the last lane. */
   timeScale: Scale;
+  /** The stretch of time this layout draws. The whole schedule unless the caller zoomed. */
+  view: ViewWindow;
   lanes: LaneLayout[];
 }
 
@@ -309,7 +405,9 @@ export function layoutChart(
   width: number,
   height: number,
   metrics: LayoutMetrics = DEFAULT_METRICS,
+  window?: ViewWindow,
 ): ChartLayout {
+  const view = clampView(window ?? fullView(model.duration), model.duration);
   const plotLeft = metrics.paddingLeft;
   const plotWidth = Math.max(1, width - metrics.paddingLeft - metrics.paddingRight);
   const laneCount = Math.max(1, model.lanes.length);
@@ -336,9 +434,80 @@ export function layoutChart(
     model,
     width,
     height,
-    timeScale: linearScale([0, model.duration], [plotLeft, plotLeft + plotWidth]),
+    timeScale: linearScale([view.start, view.end], [plotLeft, plotLeft + plotWidth]),
+    view,
     lanes,
   };
+}
+
+/**
+ * Which points a windowed lane actually has to draw: everything inside, plus one either side.
+ *
+ * The neighbours are not an optimisation detail, they are what makes the line *enter* the window
+ * from off-screen instead of starting at the first visible node. Returned as slice bounds so a
+ * caller can keep each point's own index, which is what addresses an entry.
+ *
+ * This is where zoom stops being expensive. A full rebuild of the densest bundled document costs
+ * 10.7 ms of React and DOM at four lanes against 0.14 ms of geometry, so the saving that matters is
+ * *elements not created*: at 4× zoom only 6 of that document's 80 points are inside the window.
+ */
+export function visibleRange(points: readonly SeriesPoint[], view: ViewWindow): [number, number] {
+  if (points.length === 0) return [0, 0];
+
+  let from = 0;
+  while (from + 1 < points.length && points[from + 1].time <= view.start) from++;
+
+  let to = points.length;
+  while (to - 1 > from + 1 && points[to - 2].time >= view.end) to--;
+
+  return [from, to];
+}
+
+/** A rectangle in the layout's own pixel space. Corners in any order. */
+export interface PixelRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * Every authored node inside a rectangle — §6.1's marquee.
+ *
+ * **The union across lanes, not one lane's answer.** A node is one entry that appears once per
+ * lane, so a rectangle dragged across the beat lane and into the base lane means the nodes it
+ * covers in either. It spans voices for the reason step 6 gave for insert: empty space cannot name
+ * a voice, so a marquee restricted to one would need an "active voice" this editor does not have.
+ *
+ * §3.5's terminal wrap point is excluded, the same rule `nearestBreakpoint`'s `entriesOnly` uses:
+ * it is derived rather than authored, so it is not a thing a selection can contain.
+ */
+export function nodesInRect(layout: ChartLayout, rect: PixelRect): { voice: number; entry: number }[] {
+  const left = Math.min(rect.x0, rect.x1);
+  const right = Math.max(rect.x0, rect.x1);
+  const top = Math.min(rect.y0, rect.y1);
+  const bottom = Math.max(rect.y0, rect.y1);
+
+  const found = new Map<string, { voice: number; entry: number }>();
+
+  for (const lane of layout.lanes) {
+    for (const series of lane.model.series) {
+      for (let index = 0; index < series.points.length; index++) {
+        if (isTerminalPoint(series, index)) continue;
+
+        const point = series.points[index];
+        const x = layout.timeScale.toPixel(point.time);
+        if (x < left || x > right) continue;
+
+        const y = lane.valueScale.toPixel(point.value);
+        if (y < top || y > bottom) continue;
+
+        found.set(`${series.slot}:${index}`, { voice: series.slot, entry: index });
+      }
+    }
+  }
+
+  return [...found.values()].sort((a, b) => a.voice - b.voice || a.entry - b.entry);
 }
 
 /** SVG path data for a series. The only renderer-specific function in this module. */

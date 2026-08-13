@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { formatClock } from '../app/format';
+import { formatClock, numberOr } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
 import { useThrottled } from '../app/useThrottled';
 import type { MoveMode, VoiceEdit } from '../document/edit';
@@ -13,14 +13,16 @@ import { VolumeSlider } from '../player/Controls';
 import { Readout } from '../player/Readout';
 import { Timeline } from '../player/Timeline';
 import type { Player } from '../player/usePlayer';
-import type { ChartMark, LaneId } from '../viz/geometry';
-import { ALL_LANES, DEFAULT_LANES } from '../viz/geometry';
+import type { ChartMark, LaneDomains, LaneId } from '../viz/geometry';
+import { ALL_LANES, DEFAULT_LANES, EDITOR_DOMAIN_PADDING, buildChartModel } from '../viz/geometry';
 import { CommittedField } from './CommittedField';
 import { EditSurface } from './EditSurface';
+import { GroupPanel } from './GroupPanel';
+import { LaneRanges } from './LaneRanges';
 import { NodePanel } from './NodePanel';
 import { ValidationPanel } from './ValidationPanel';
 import { VoiceRows } from './VoiceRows';
-import type { NodeRef } from './history';
+import type { NodeRef, Selection } from './history';
 import { useDraft } from './useDraft';
 import { useEditor } from './useEditor';
 import './EditorView.css';
@@ -80,10 +82,14 @@ export function EditorView({
   const schedule = editor.document;
   const { pending } = useDraft(draftId, schedule);
 
-  // Session state, deliberately outside the history stack: which lanes are open and how a drag
-  // treats the following segment are properties of the person editing, not of the document.
+  // Session state, deliberately outside the history stack: which lanes are open, how a drag treats
+  // the following segment, whether it snaps, and what each axis covers are all properties of the
+  // person editing rather than of the document. The view window itself lives one level further down,
+  // in `EditSurface`, because it changes at pointer rate.
   const [lanes, setLanes] = useState<readonly LaneId[]>(DEFAULT_LANES);
   const [mode, setMode] = useState<MoveMode>('squeeze');
+  const [snap, setSnap] = useState(false);
+  const [domains, setDomains] = useState<LaneDomains>({});
 
   const patch = useCallback(
     (label: string, fields: Parameters<typeof updateSchedule>[1]) => {
@@ -102,7 +108,7 @@ export function EditorView({
    * that); this sets where the selection lands *after* it, which only the command knows.
    */
   const commitEditAt = useCallback(
-    (next: Schedule, label: string, selection: NodeRef | null) => {
+    (next: Schedule, label: string, selection: Selection) => {
       editor.commit(next, { label });
       editor.select(selection);
     },
@@ -120,8 +126,8 @@ export function EditorView({
     (edit: VoiceEdit, label: string, selection?: NodeRef | null) => {
       const current = editor.selection;
       editor.commit(edit.schedule, { label, voiceMap: edit.voiceMap });
-      if (selection !== undefined) editor.select(selection);
-      else if (current) editor.select(followVoice(current, edit.voiceMap));
+      if (selection !== undefined) editor.select(selection ? [selection] : []);
+      else editor.select(followVoices(current, edit.voiceMap));
     },
     [editor],
   );
@@ -141,6 +147,20 @@ export function EditorView({
   const issues = useMemo(() => entryWarnings(schedule), [schedule]);
   const marks = useMemo(() => chartMarks(issues), [issues]);
   const silent = warnings.some((warning) => warning.kind === 'nothing-to-play');
+
+  /**
+   * What each lane's axis would cover if nobody overrode it — what the range fields show, and what
+   * they start from when one is first typed into.
+   *
+   * The same call the chart makes, on the same arguments, so the two cannot disagree; it costs
+   * 0.04 ms on the densest bundled document and runs once per commit, not per frame.
+   */
+  const fitted = useMemo(() => {
+    const model = buildChartModel(schedule, lanes, EDITOR_DOMAIN_PADDING);
+    return Object.fromEntries(
+      model.lanes.map((lane) => [lane.id, lane.domain]),
+    ) as Partial<Record<LaneId, readonly [number, number]>>;
+  }, [lanes, schedule]);
 
   const title = schedule.title.trim() || 'Untitled program';
 
@@ -184,8 +204,9 @@ export function EditorView({
           </label>
         ))}
 
-        {/* There is no modifier key on a phone, so the squeeze/ripple choice is a control rather
-            than a chord. Alt is a momentary override on a keyboard, handled in `EditSurface`. */}
+        {/* There is no modifier key on a phone, so both of these are controls rather than chords.
+            On a keyboard Alt overrides the first and Shift the second, momentarily and fixed at
+            pointerdown; `EditSurface` handles both. */}
         <label className="editor__check editor__mode">
           <input
             type="checkbox"
@@ -194,7 +215,23 @@ export function EditorView({
           />
           <span>Ripple — move everything after the node too</span>
         </label>
+
+        {/* Off by default: the grid follows the zoom, and at 1× on a long programme its step is
+            around a hundred times the gap between that document's own nodes, so snapping before
+            zooming in would pin whole clusters onto their neighbours. */}
+        <label className="editor__check editor__mode">
+          <input type="checkbox" checked={snap} onChange={(event) => setSnap(event.target.checked)} />
+          <span>Snap to the grid</span>
+        </label>
       </div>
+
+      <LaneRanges
+        lanes={lanes}
+        labels={LANE_LABELS}
+        domains={domains}
+        fitted={fitted}
+        onChange={setDomains}
+      />
 
       <EditSurface
         schedule={schedule}
@@ -203,6 +240,8 @@ export function EditorView({
         currentTime={player.offset}
         selected={editor.selection}
         mode={mode}
+        snap={snap}
+        domains={domains}
         marks={marks}
         onSelect={editor.select}
         onCommit={commitEdit}
@@ -214,7 +253,11 @@ export function EditorView({
       {/* Under the chart rather than above it, which is where the player puts the same statement:
           the marks these rows explain are on the chart, and a list that grew above it would shift
           the chart itself downwards at the instant a drag commits. */}
-      <ValidationPanel schedule={warnings} entries={issues} onSelect={editor.select} />
+      <ValidationPanel
+        schedule={warnings}
+        entries={issues}
+        onSelect={(node) => editor.select([node])}
+      />
 
       <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
 
@@ -245,13 +288,25 @@ export function EditorView({
         onToggleSolo={player.toggleSolo}
       />
 
-      <NodePanel
-        schedule={schedule}
-        selected={editor.selection}
-        mode={mode}
-        onCommit={commitEdit}
-        onCommitAt={commitEditAt}
-      />
+      {/* Exact values are what §6.1 asks for and they only mean something for one node; with a
+          marquee's worth selected, what generalises is the operation rather than the value. */}
+      {editor.selection.length > 1 ? (
+        <GroupPanel
+          schedule={schedule}
+          selected={editor.selection}
+          mode={mode}
+          onCommit={commitEdit}
+          onCommitAt={commitEditAt}
+        />
+      ) : (
+        <NodePanel
+          schedule={schedule}
+          selected={editor.selection[0] ?? null}
+          mode={mode}
+          onCommit={commitEdit}
+          onCommitAt={commitEditAt}
+        />
+      )}
 
       <section className="editor__fields">
         <h2>Program</h2>
@@ -342,10 +397,6 @@ export function EditorView({
   );
 }
 
-function numberOr(value: string, fallback: number): number {
-  const parsed = Number(value.trim());
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
 
 /**
  * Which lane each rule is about. `null` is "no particular lane" — a duration is not a value in one
@@ -454,10 +505,12 @@ function usePlaybackOfEdits(
   return { preview };
 }
 
-/** Where a node's voice ended up. A voice the edit deleted takes the selection with it. */
-function followVoice(node: NodeRef, map: VoiceMap): NodeRef | null {
-  const voice = map[node.voice];
-  return voice === undefined || voice < 0 ? null : { voice, entry: node.entry };
+/** Where each selected node's voice ended up. A voice the edit deleted takes its nodes with it. */
+function followVoices(selection: Selection, map: VoiceMap): Selection {
+  return selection.flatMap((node) => {
+    const voice = map[node.voice];
+    return voice === undefined || voice < 0 ? [] : [{ voice, entry: node.entry }];
+  });
 }
 
 function affectsAudio(previous: Schedule, next: Schedule): boolean {

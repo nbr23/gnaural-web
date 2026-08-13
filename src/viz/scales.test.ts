@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { linearScale, niceTicks, timeTicks } from './scales';
+import {
+  gridLines,
+  linearScale,
+  niceTicks,
+  snapToStep,
+  timeGridStep,
+  timeTicks,
+  timeTicksIn,
+} from './scales';
 
 describe('linearScale', () => {
   it('maps the domain onto the range', () => {
@@ -67,5 +75,67 @@ describe('timeTicks', () => {
   it('never overshoots the duration', () => {
     const ticks = timeTicks(3600, 6);
     expect(ticks[ticks.length - 1]).toBeLessThanOrEqual(3600);
+  });
+});
+
+describe('timeTicksIn', () => {
+  it('labels a zoomed window in values measured from schedule zero', () => {
+    // A 100-second window a long way in still gets round labels — multiples of the 30-second step
+    // measured from zero, not offsets from the window's own start.
+    expect(timeTicksIn(1000, 1100, 4)).toEqual([1020, 1050, 1080]);
+  });
+
+  it('is the whole-schedule case when the window is the whole schedule', () => {
+    expect(timeTicksIn(0, 1200, 6)).toEqual(timeTicks(1200, 6));
+  });
+});
+
+/**
+ * The snap grid. It follows the zoom, which is the only thing that makes snapping usable: the
+ * labelled x-ticks are chosen for label spacing, and at 1x on a 73-minute programme their step is
+ * around a hundred times the gap between that document's own nodes.
+ */
+describe('timeGridStep', () => {
+  it('picks the finest clock-round step still far enough apart to aim between', () => {
+    // 600s across 600px at a 14px floor wants 14s, which rounds up to the 15-second step.
+    expect(timeGridStep(600, 600)).toBe(15);
+    // Zoomed in ten times, the same plot gets a one-second grid.
+    expect(timeGridStep(60, 600)).toBe(2);
+  });
+
+  it('goes below a second once the window is small enough, since a grid carries no label', () => {
+    expect(timeGridStep(5, 600)).toBe(0.25);
+    expect(timeGridStep(0.5, 600)).toBe(0.02);
+  });
+
+  it('tops out rather than inventing a step, however far out the view is', () => {
+    expect(timeGridStep(10_000_000, 600)).toBe(3600);
+  });
+
+  it('never divides by a degenerate span or width', () => {
+    expect(timeGridStep(0, 600)).toBeGreaterThan(0);
+    expect(timeGridStep(600, 0)).toBeGreaterThan(0);
+  });
+});
+
+describe('snapToStep', () => {
+  it('rounds to the nearest multiple', () => {
+    expect(snapToStep(13, 5)).toBe(15);
+    expect(snapToStep(12, 5)).toBe(10);
+  });
+
+  it('passes a value through untouched when there is no grid', () => {
+    expect(snapToStep(13.7, 0)).toBe(13.7);
+  });
+});
+
+describe('gridLines', () => {
+  it('lists the multiples inside the window, at absolute times', () => {
+    expect(gridLines(10, 25, 5)).toEqual([10, 15, 20, 25]);
+  });
+
+  it('draws nothing rather than thousands of lines for a degenerate step', () => {
+    expect(gridLines(0, 3600, 0.01)).toEqual([]);
+    expect(gridLines(0, 10, 0)).toEqual([]);
   });
 });

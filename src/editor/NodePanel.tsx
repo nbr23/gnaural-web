@@ -1,4 +1,4 @@
-import { formatClock } from '../app/format';
+import { formatClock, numberOr } from '../app/format';
 import type { MoveMode } from '../document/edit';
 import { insertEntry, moveEntry, removeEntry, updateEntry } from '../document/edit';
 import { entryStartTimes } from '../document/timing';
@@ -12,7 +12,7 @@ export interface NodePanelProps {
   mode: MoveMode;
   onCommit(schedule: Schedule, label: string): void;
   /** An edit that moves the node indices, so it says where the selection should land. */
-  onCommitAt(schedule: Schedule, label: string, selection: NodeRef | null): void;
+  onCommitAt(schedule: Schedule, label: string, selection: readonly NodeRef[]): void;
 }
 
 /**
@@ -74,7 +74,7 @@ export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: No
             onCommitAt(
               insertEntry(schedule, { voice: selected.voice, after: selected.entry }),
               'Insert node',
-              { voice: selected.voice, entry: selected.entry + 1 },
+              [{ voice: selected.voice, entry: selected.entry + 1 }],
             )
           }
         >
@@ -88,7 +88,7 @@ export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: No
             onCommitAt(
               removeEntry(schedule, { voice: selected.voice, entry: selected.entry }),
               'Delete node',
-              { voice: selected.voice, entry: Math.max(0, selected.entry - 1) },
+              [{ voice: selected.voice, entry: Math.max(0, selected.entry - 1) }],
             )
           }
         >
@@ -200,7 +200,3 @@ function round(value: number): number {
   return Math.round(value * 1e4) / 1e4;
 }
 
-function numberOr(value: string, fallback: number): number {
-  const parsed = Number(value.trim());
-  return Number.isFinite(parsed) ? parsed : fallback;
-}

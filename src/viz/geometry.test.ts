@@ -4,12 +4,20 @@ import { loadFixture } from '../document/test-fixtures';
 import type { Entry, Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
 import {
+  MIN_VIEW_SECONDS,
   buildChartModel,
+  clampView,
+  drawnDuration,
   layoutChart,
   nearestBreakpoint,
+  nodesInRect,
+  panView,
   polylinePath,
   seriesValueAt,
   timeAtPixel,
+  visibleRange,
+  zoomFactor,
+  zoomView,
 } from './geometry';
 
 function makeEntry(partial: Partial<Entry>): Entry {
@@ -337,5 +345,184 @@ describe('hit-testing for the editor', () => {
     expect(hitAt(terminal, false)?.entry).toBeNull();
     expect(hitAt(terminal, false)?.index).toBe(terminal);
     expect(hitAt(terminal, true)).toBeNull();
+  });
+});
+
+/**
+ * §6.1's zoom and pan, as arithmetic on a window rather than as a redraw.
+ *
+ * The window lives on the *layout*, so the compiled model above it is untouched by a zoom — which
+ * is the whole reason a zoom does not recompile every voice. What it does still cost is a React
+ * rebuild of the picture, measured at 10.7 ms for the densest bundled document at four lanes; see
+ * PROGRESS.md for why that is what rate-limits the gesture.
+ */
+describe('the view window', () => {
+  const model = buildChartModel(makeSchedule([twoEntryVoice]));
+
+  it('draws the whole schedule when nobody has zoomed', () => {
+    const layout = layoutChart(model, 640, 280);
+    expect(layout.view).toEqual({ start: 0, end: 20 });
+    expect(layout.timeScale.toPixel(0)).toBe(layout.lanes[0].x);
+  });
+
+  it('maps the window onto the plot, so a zoomed axis spreads the same pixels over less time', () => {
+    const layout = layoutChart(model, 640, 280, undefined, { start: 5, end: 10 });
+    const lane = layout.lanes[0];
+
+    expect(layout.timeScale.toPixel(5)).toBeCloseTo(lane.x, 6);
+    expect(layout.timeScale.toPixel(10)).toBeCloseTo(lane.x + lane.width, 6);
+    expect(timeAtPixel(layout, lane.x + lane.width / 2)).toBeCloseTo(7.5, 6);
+  });
+
+  it('slides a window that runs off either end back inside the schedule', () => {
+    expect(clampView({ start: -5, end: 5 }, 20)).toEqual({ start: 0, end: 10 });
+    expect(clampView({ start: 18, end: 28 }, 20)).toEqual({ start: 10, end: 20 });
+    expect(clampView({ start: 0, end: 100 }, 20)).toEqual({ start: 0, end: 20 });
+  });
+
+  /** The floor is what keeps the corpus's 0.001 s entries from being chased to infinity. */
+  it('will not narrow past the minimum span', () => {
+    const tight = clampView({ start: 10, end: 10 }, 20);
+    expect(tight.end - tight.start).toBe(MIN_VIEW_SECONDS);
+  });
+
+  it('keeps the anchored instant under the pointer while zooming about it', () => {
+    const zoomed = zoomView({ start: 0, end: 20 }, 20, 2, 5);
+    expect(zoomed.end - zoomed.start).toBeCloseTo(10, 6);
+    // 5 s was a quarter of the way across the old window, so it stays a quarter across the new one.
+    expect(zoomed.start).toBeCloseTo(2.5, 6);
+  });
+
+  it('is reversible, so scrolling back undoes scrolling forward exactly', () => {
+    const there = zoomView({ start: 0, end: 20 }, 20, 3, 7);
+    const back = zoomView(there, 20, 1 / 3, 7);
+    expect(back.start).toBeCloseTo(0, 6);
+    expect(back.end).toBeCloseTo(20, 6);
+  });
+
+  it('pans without changing the span, and stops at the ends', () => {
+    expect(panView({ start: 5, end: 10 }, 20, 3)).toEqual({ start: 8, end: 13 });
+    expect(panView({ start: 5, end: 10 }, 20, 999)).toEqual({ start: 15, end: 20 });
+    expect(panView({ start: 5, end: 10 }, 20, -999)).toEqual({ start: 0, end: 5 });
+  });
+
+  it('reports how far in it is, which is what the control shows', () => {
+    expect(zoomFactor({ start: 0, end: 20 }, 20)).toBe(1);
+    expect(zoomFactor({ start: 5, end: 10 }, 20)).toBe(4);
+  });
+});
+
+/**
+ * Culling. The saving that matters is elements not created: at 4x zoom only 6 of
+ * `oobe-lucid-dreams-2`'s 80 points are inside the window.
+ */
+describe('visibleRange', () => {
+  const points = [0, 10, 20, 30, 40, 50].map((time) => ({ time, value: time }));
+
+  it('keeps the point either side of the window, so a line enters from off screen', () => {
+    const [from, to] = visibleRange(points, { start: 22, end: 38 });
+    expect(points.slice(from, to).map((p) => p.time)).toEqual([20, 30, 40]);
+  });
+
+  it('keeps everything when the window is the whole extent', () => {
+    expect(visibleRange(points, { start: 0, end: 50 })).toEqual([0, points.length]);
+  });
+
+  it('keeps the bracketing pair for a window with no point inside it at all', () => {
+    const [from, to] = visibleRange(points, { start: 12, end: 18 });
+    expect(points.slice(from, to).map((p) => p.time)).toEqual([10, 20]);
+  });
+
+  it('survives an empty series', () => {
+    expect(visibleRange([], { start: 0, end: 1 })).toEqual([0, 0]);
+  });
+});
+
+/** §6.1's marquee: a rectangle, and every authored node under it. */
+describe('nodesInRect', () => {
+  const second = makeVoice({
+    id: 1,
+    description: 'Second',
+    entries: [
+      makeEntry({ duration: 10, baseFreq: 210, beatFreq: 9 }),
+      makeEntry({ duration: 10, baseFreq: 110, beatFreq: 5 }),
+    ],
+  });
+  const layout = layoutChart(
+    buildChartModel(makeSchedule([twoEntryVoice, second]), ['beat', 'base']),
+    640,
+    280,
+  );
+
+  function rectOver(lanes: number[], times: [number, number]) {
+    const first = layout.lanes[lanes[0]];
+    const last = layout.lanes[lanes[lanes.length - 1]];
+    return {
+      x0: layout.timeScale.toPixel(times[0]),
+      x1: layout.timeScale.toPixel(times[1]),
+      y0: first.y,
+      y1: last.y + last.height,
+    };
+  }
+
+  it('spans voices, because empty space cannot name one', () => {
+    const found = nodesInRect(layout, rectOver([0], [-1, 21]));
+    expect(found).toEqual([
+      { voice: 0, entry: 0 },
+      { voice: 0, entry: 1 },
+      { voice: 1, entry: 0 },
+      { voice: 1, entry: 1 },
+    ]);
+  });
+
+  it('takes the union across lanes, since a node is the same node in each', () => {
+    // A rectangle over both lanes finds each entry once, not once per lane.
+    const found = nodesInRect(layout, rectOver([0, 1], [-1, 21]));
+    expect(found).toHaveLength(4);
+  });
+
+  it('excludes anything outside the rectangle in time', () => {
+    const found = nodesInRect(layout, rectOver([0], [-1, 5]));
+    expect(found).toEqual([
+      { voice: 0, entry: 0 },
+      { voice: 1, entry: 0 },
+    ]);
+  });
+
+  /** §3.5's wrap point is derived rather than authored, so a selection cannot contain it. */
+  it('never selects the terminal wrap point', () => {
+    const found = nodesInRect(layout, rectOver([0, 1], [-1, 100]));
+    expect(found.every((node) => node.entry < 2)).toBe(true);
+  });
+
+  it('finds nothing under a rectangle drawn over empty space', () => {
+    const lane = layout.lanes[0];
+    expect(nodesInRect(layout, { x0: 0, x1: 5, y0: lane.y, y1: lane.y + 5 })).toEqual([]);
+  });
+});
+
+/** §6.1's manual axis override, which is what makes a value outside the data draggable at all. */
+describe('lane domain overrides', () => {
+  it('replaces the fitted domain for the lane it names, and leaves the others fitted', () => {
+    const fitted = buildChartModel(makeSchedule([twoEntryVoice]), ['beat', 'base']);
+    const forced = buildChartModel(makeSchedule([twoEntryVoice]), ['beat', 'base'], 0.1, {
+      beat: [0, 40],
+    });
+
+    expect(forced.lanes[0].domain).toEqual([0, 40]);
+    expect(forced.lanes[1].domain).toEqual(fitted.lanes[1].domain);
+  });
+});
+
+describe('drawnDuration', () => {
+  it('is the longest voice that is actually drawn', () => {
+    const short = makeVoice({ id: 1, entries: [makeEntry({ duration: 5 })] });
+    expect(drawnDuration(makeSchedule([twoEntryVoice, short]))).toBe(20);
+  });
+
+  it('ignores hidden and empty voices, exactly as the model does', () => {
+    const hidden = makeVoice({ id: 1, hidden: true, entries: [makeEntry({ duration: 900 })] });
+    const empty = makeVoice({ id: 2, entries: [] });
+    expect(drawnDuration(makeSchedule([twoEntryVoice, hidden, empty]))).toBe(20);
   });
 });

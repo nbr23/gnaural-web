@@ -217,6 +217,25 @@
   stroke-dasharray: 3 3;
 }
 
+/* The snap grid, drawn only while snapping is on. Fainter than the labelled grid it sits between:
+   it is a ruler to aim at, not a reading. */
+.schedule-chart__snap-grid {
+  stroke: var(--viz-grid);
+  stroke-width: 1;
+  opacity: 0.45;
+  stroke-dasharray: 2 4;
+}
+
+/* §6.1's marquee. Deliberately neutral rather than an accent colour — it is over the top of every
+   voice at once, and belongs to none of them. */
+.schedule-chart__marquee {
+  fill: var(--viz-ink);
+  fill-opacity: 0.08;
+  stroke: var(--viz-ink);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
 .schedule-chart__overlay-series {
   fill: none;
   stroke-width: 2;

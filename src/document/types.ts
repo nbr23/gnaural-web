@@ -30,6 +30,19 @@ export interface Entry {
   preserved: Record<string, string>;
 }
 
+/**
+ * The address of one node: index into `schedule.voices`, index into that voice's entries.
+ *
+ * Indices rather than ids because §3.4's ids are not unique in real files — the same keying the
+ * engine's session mute/solo, the chart's hit results and the editor's `NodeRef` all use. It lives
+ * here so the validation surface and the edit transforms can share one type without either
+ * depending on the other, and so that neither has to reach into `src/editor/`.
+ */
+export interface EntryLocation {
+  voice: number;
+  entry: number;
+}
+
 /** Values are fixed by the Gnaural format and must never be reassigned (PLAN.md §3.3). */
 export const enum VoiceType {
   Binaural = 0,     // Phase 0

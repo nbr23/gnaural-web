@@ -133,6 +133,66 @@
   }
 }
 
+/* Zoom, and the pan rail — a real range input, for the reason `Timeline` is one: keyboard-operable
+   and a native touch target, so a phone never has to discover the pinch to reach the second half of
+   a programme. */
+.editor__view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor__view .button {
+  min-width: 2.5rem;
+}
+
+.editor__view-label {
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.editor__zoom,
+.editor__view-span {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.editor__pan {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+
+/* §6.1's manual axis override. One row per open lane, so the common two-lane case is four fields. */
+.editor__ranges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.editor__range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.editor__range-name {
+  color: var(--text-h);
+}
+
+.editor__range input {
+  width: 5.5rem;
+  padding: 4px 6px;
+  font: inherit;
+  color: var(--text-h);
+  background: var(--surface-2, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
 .editor__hint {
   max-width: 62ch;
   font-size: 14px;

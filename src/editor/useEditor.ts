@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
 import type { Schedule } from '../document/types';
 import type { VoiceMap } from '../document/voiceMap';
 import { invertVoiceMap } from '../document/voiceMap';
-import type { CommitMeta, NodeRef } from './history';
+import type { CommitMeta, NodeRef, Selection } from './history';
 import { HistoryStack } from './history';
 
 export interface Editor {
@@ -36,9 +36,15 @@ export interface Editor {
    * selection restore below documents.
    */
   voiceMap: VoiceMap | null;
-  /** The selected node, or null. Session state: changing it never pushes a commit. */
-  selection: NodeRef | null;
-  select(node: NodeRef | null): void;
+  /**
+   * The selected nodes, empty for none. Session state: changing it never pushes a commit.
+   *
+   * Plural since step 8's marquee, which is what `Selection` and `CommitMeta.selection` have been
+   * shaped for since step 4. Order is the document's, not the order they were picked in: a group
+   * edit reads it as a set of addresses, and nothing downstream cares which node was first.
+   */
+  selection: Selection;
+  select(selection: Selection): void;
   undo(): void;
   redo(): void;
   canUndo: boolean;
@@ -62,7 +68,7 @@ export interface Editor {
  */
 export function useEditor(initial: Schedule): Editor {
   const [stack] = useState(() => new HistoryStack(initial));
-  const [selection, setSelection] = useState<NodeRef | null>(null);
+  const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   // The commit needs the selection as it stands right now, not as of the render that produced the
   // callback — a drag selects and commits within one gesture.
   const selectionRef = useRef(selection);
@@ -80,16 +86,19 @@ export function useEditor(initial: Schedule): Editor {
 
   const commit = useCallback(
     (schedule: Schedule, meta: CommitMeta) => {
-      const node = selectionRef.current;
+      const nodes = selectionRef.current;
       const before = stack.present;
-      stack.commit(schedule, { selection: node ? [node] : undefined, ...meta });
+      stack.commit(schedule, { selection: nodes.length > 0 ? nodes : undefined, ...meta });
       // Only if it was taken: `commit` ignores a document that is already present.
       if (stack.present !== before) voiceMap.current = meta.voiceMap ?? null;
     },
     [stack],
   );
 
-  const select = useCallback((node: NodeRef | null) => setSelection(node), []);
+  const select = useCallback(
+    (next: Selection) => setSelection(next.length > 0 ? next : EMPTY_SELECTION),
+    [],
+  );
 
   /**
    * Navigating the history restores the selection the *commit being crossed* was made with.
@@ -109,7 +118,7 @@ export function useEditor(initial: Schedule): Editor {
     voiceMap.current = crossed?.voiceMap
       ? invertVoiceMap(crossed.voiceMap, undone.voices.length)
       : null;
-    setSelection(inRange(crossed?.selection?.[0], stack.present));
+    setSelection(inRange(crossed?.selection, stack.present));
   }, [stack]);
 
   /**
@@ -122,7 +131,7 @@ export function useEditor(initial: Schedule): Editor {
     stack.redo();
     const meta = stack.presentMeta;
     voiceMap.current = meta?.voiceMap ?? null;
-    setSelection(inRange(moveRef(meta?.selection?.[0], meta?.voiceMap), stack.present));
+    setSelection(inRange(moveSelection(meta?.selection, meta?.voiceMap), stack.present));
   }, [stack]);
 
   return {
@@ -140,29 +149,46 @@ export function useEditor(initial: Schedule): Editor {
   };
 }
 
-/** Follow a selection across a structural transition. A deleted voice takes it with it. */
-function moveRef(node: NodeRef | undefined, map: VoiceMap | undefined): NodeRef | null {
-  if (!node) return null;
-  if (!map) return node;
+/**
+ * One empty selection, shared.
+ *
+ * Not a fresh `[]` per call: `EditSurface` and the chart's `memo`'d selection layer both key off
+ * this array's identity, so a new empty one per render would rebuild every ring in the plot for a
+ * selection that has not changed.
+ */
+const EMPTY_SELECTION: Selection = [];
 
-  const voice = map[node.voice];
-  return voice === undefined || voice < 0 ? null : { voice, entry: node.entry };
+/** Follow a selection across a structural transition. A deleted voice takes its nodes with it. */
+function moveSelection(selection: Selection | undefined, map: VoiceMap | undefined): Selection {
+  if (!selection) return EMPTY_SELECTION;
+  if (!map) return selection;
+
+  return selection.flatMap((node) => {
+    const voice = map[node.voice];
+    return voice === undefined || voice < 0 ? [] : [{ voice, entry: node.entry }];
+  });
 }
 
 /**
- * Keep a restored selection pointing at something that exists.
+ * Keep a restored selection pointing at things that exist.
  *
  * A `NodeRef` is a pair of indices and a history move can land on a document with fewer of either,
- * so this is the backstop that keeps a stale one out of the views. The entry is clamped rather than
+ * so this is the backstop that keeps stale ones out of the views. Entries are clamped rather than
  * dropped: after undoing a delete the node one along is the useful place to be, and losing the
- * selection is what step 5's own selection defect felt like.
+ * selection is what step 5's own selection defect felt like. Clamping can collide two nodes onto
+ * one, so the result is deduplicated.
  */
-function inRange(node: NodeRef | null | undefined, schedule: Schedule): NodeRef | null {
-  if (!node) return null;
+function inRange(selection: Selection | null | undefined, schedule: Schedule): Selection {
+  if (!selection || selection.length === 0) return EMPTY_SELECTION;
 
-  const voice = schedule.voices[node.voice];
-  if (!voice || voice.entries.length === 0) return null;
+  const seen = new Map<string, NodeRef>();
+  for (const node of selection) {
+    const voice = schedule.voices[node.voice];
+    if (!voice || voice.entries.length === 0) continue;
 
-  const entry = Math.min(Math.max(0, node.entry), voice.entries.length - 1);
-  return entry === node.entry ? node : { voice: node.voice, entry };
+    const entry = Math.min(Math.max(0, node.entry), voice.entries.length - 1);
+    seen.set(`${node.voice}:${entry}`, entry === node.entry ? node : { voice: node.voice, entry });
+  }
+
+  return seen.size > 0 ? [...seen.values()] : EMPTY_SELECTION;
 }

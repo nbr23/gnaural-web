@@ -1,5 +1,5 @@
 import { entryStartTimes, longestVoiceDuration, scheduleDuration } from './timing';
-import type { Entry, Schedule, Voice } from './types';
+import type { Entry, EntryLocation, Schedule, Voice } from './types';
 import { VoiceType } from './types';
 import type { VoiceMap } from './voiceMap';
 import { identityVoiceMap, insertVoiceMap, moveVoiceMap, removeVoiceMap } from './voiceMap';
@@ -60,6 +60,13 @@ function changesSchedule(schedule: Schedule, patch: SchedulePatch): boolean {
 export type EntryPatch = Partial<
   Pick<Entry, 'duration' | 'baseFreq' | 'beatFreq' | 'volumeLeft' | 'volumeRight'>
 >;
+
+/**
+ * The entry fields that are a *value* on a curve, which is every one a lane can draw and every one
+ * a drag can change. `duration` is deliberately not among them: it is a length, the chart puts it on
+ * the x-axis rather than in a lane, and moving a node in time rewrites two of them at once.
+ */
+export type EntryValueField = 'baseFreq' | 'beatFreq' | 'volumeLeft' | 'volumeRight';
 
 export function updateEntry(
   schedule: Schedule,
@@ -252,6 +259,194 @@ export function removeEntry(schedule: Schedule, args: RemoveEntryArgs): Schedule
       return [entry];
     }),
   );
+}
+
+/**
+ * The contiguous run of entries a selection moves, per voice.
+ *
+ * **The block runs from the lowest selected entry to the highest, and unselected entries in between
+ * travel with it.** Moving only the selected ones would let a node pass a neighbour it was never
+ * asked about, which reorders the voice; taking the whole run keeps the ordering and is explainable
+ * in one sentence.
+ *
+ * **Entry 0 never moves in time** — its start is the sum of no durations — so a block that includes
+ * it begins at entry 1 instead, and its own duration is what absorbs the shift. That is the same
+ * rule `moveEntry` has enforced since step 5, applied to a run.
+ */
+interface Block {
+  voice: number;
+  first: number;
+  last: number;
+}
+
+function blocksOf(schedule: Schedule, nodes: readonly EntryLocation[]): Block[] {
+  const byVoice = new Map<number, { first: number; last: number }>();
+
+  for (const node of nodes) {
+    const voice = schedule.voices[node.voice];
+    if (!voice || node.entry < 0 || node.entry >= voice.entries.length) continue;
+
+    const current = byVoice.get(node.voice);
+    if (!current) byVoice.set(node.voice, { first: node.entry, last: node.entry });
+    else {
+      current.first = Math.min(current.first, node.entry);
+      current.last = Math.max(current.last, node.entry);
+    }
+  }
+
+  return [...byVoice.entries()]
+    .map(([voice, range]) => ({ voice, first: Math.max(1, range.first), last: range.last }))
+    .filter((block) => block.first <= block.last);
+}
+
+export interface MoveEntriesArgs {
+  nodes: readonly EntryLocation[];
+  /** Seconds to shift by. Positive is later. */
+  deltaTime: number;
+  mode: MoveMode;
+}
+
+/**
+ * Move a whole selection along the time axis — §6.1's "move a selection as a group".
+ *
+ * **One shift for every voice, clamped to what all of them allow.** Each voice's block can travel
+ * only so far before it would give a neighbour a negative duration, and the intersection of those
+ * ranges is what gets applied — so a group move can never silently desynchronise two voices by
+ * moving one further than another. A selection that cannot move at all (every block pinned against
+ * entry 0) returns the schedule unchanged.
+ *
+ * Squeeze gives the shift to the segment before each block and takes it back from the block's own
+ * last segment, so every voice's length is unchanged and §3.7's spread survives. Ripple only feeds
+ * the segment in front, so everything after the block slides and the voice gets longer or shorter —
+ * which **can** make a schedule ragged, exactly as a single-node ripple has been able to since
+ * step 5.
+ */
+export function moveEntries(schedule: Schedule, args: MoveEntriesArgs): Schedule {
+  const blocks = blocksOf(schedule, args.nodes);
+  if (blocks.length === 0) return schedule;
+
+  let low = -Infinity;
+  let high = Infinity;
+  for (const block of blocks) {
+    const entries = schedule.voices[block.voice].entries;
+    low = Math.max(low, -entries[block.first - 1].duration);
+    const trailing = entries[block.last];
+    if (args.mode === 'squeeze' && block.last < entries.length - 1) {
+      high = Math.min(high, trailing.duration);
+    }
+  }
+
+  const delta = Math.min(Math.max(args.deltaTime, low), high);
+  if (delta === 0 || !Number.isFinite(delta)) return schedule;
+
+  return blocks.reduce(
+    (next, block) =>
+      replaceEntries(next, block.voice, (entries) =>
+        entries.map((entry, index) => {
+          if (index === block.first - 1) return { ...entry, duration: entry.duration + delta };
+          if (index === block.last && args.mode === 'squeeze' && block.last < entries.length - 1) {
+            return { ...entry, duration: entry.duration - delta };
+          }
+          return entry;
+        }),
+      ),
+    schedule,
+  );
+}
+
+export interface ScaleEntriesArgs {
+  nodes: readonly EntryLocation[];
+  /** Multiplier on the selection's own span. 1 changes nothing. */
+  factor: number;
+  mode: MoveMode;
+}
+
+/**
+ * Stretch or compress a selection about its own start — §6.1's "scale a selection as a group".
+ *
+ * **This is not §6.1's "duration scaling" authoring aid, which is step 9's.** That one takes a whole
+ * document to a target length, proportionally, across every voice so the §3.7 spread survives. This
+ * is a factor over the selected run inside each voice, and the two coexist rather than overlap.
+ *
+ * The block's first node stays where it is and the durations inside it scale, so a block of one
+ * node has no span and nothing to scale. What happens past the block is the mode's business again:
+ * squeeze takes the difference out of the following segment (clamped at zero, so a compression
+ * cannot be undone by an expansion that ran out of room), ripple lets everything after slide.
+ */
+export function scaleEntries(schedule: Schedule, args: ScaleEntriesArgs): Schedule {
+  if (!(args.factor > 0)) return schedule;
+
+  const blocks = blocksOf(schedule, args.nodes).filter((block) => block.last > block.first);
+  if (blocks.length === 0) return schedule;
+
+  return blocks.reduce((next, block) => {
+    const entries = next.voices[block.voice].entries;
+    const span = entries
+      .slice(block.first, block.last)
+      .reduce((total, entry) => total + entry.duration, 0);
+    let growth = span * (args.factor - 1);
+
+    const squeezing = args.mode === 'squeeze' && block.last < entries.length - 1;
+    if (squeezing) growth = Math.min(growth, entries[block.last].duration);
+    const factor = span > 0 ? (span + growth) / span : 1;
+    if (factor === 1) return next;
+
+    return replaceEntries(next, block.voice, (list) =>
+      list.map((entry, index) => {
+        if (index >= block.first && index < block.last) {
+          return { ...entry, duration: entry.duration * factor };
+        }
+        if (index === block.last && squeezing) {
+          return { ...entry, duration: entry.duration - growth };
+        }
+        return entry;
+      }),
+    );
+  }, schedule);
+}
+
+export interface AdjustEntriesArgs {
+  nodes: readonly EntryLocation[];
+  field: EntryValueField;
+  /** Added to every selected node's value, so the shape of the selection is preserved. */
+  delta: number;
+  min?: number;
+  max?: number;
+}
+
+/**
+ * Shift one value on every node of a selection by the same amount.
+ *
+ * A delta rather than an assignment: a group drag in a lane raises a curve without flattening it,
+ * and "set all of these to 8 Hz" is a different intention that nothing has asked for. Clamping is
+ * the caller's lane domain, so a drag cannot author a value it could not then see.
+ */
+export function adjustEntries(schedule: Schedule, args: AdjustEntriesArgs): Schedule {
+  if (args.delta === 0) return schedule;
+
+  const min = args.min ?? -Infinity;
+  const max = args.max ?? Infinity;
+
+  return args.nodes.reduce((next, node) => {
+    const entry = next.voices[node.voice]?.entries[node.entry];
+    if (!entry) return next;
+
+    const value = Math.min(Math.max(entry[args.field] + args.delta, min), max);
+    return updateEntry(next, node.voice, node.entry, { [args.field]: value });
+  }, schedule);
+}
+
+/**
+ * Delete a whole selection, by folding `removeEntry` over it from the highest index down.
+ *
+ * Deliberately a fold rather than a second implementation: it inherits step 6's absorb-the-duration
+ * rule, its length preservation, and its hard floor of one entry per voice — which a group delete
+ * meets by leaving the lowest-indexed node of a fully-selected voice standing rather than emptying
+ * it. Descending order is what keeps the indices valid as the list shrinks under it.
+ */
+export function removeEntries(schedule: Schedule, nodes: readonly EntryLocation[]): Schedule {
+  const ordered = [...nodes].sort((a, b) => b.voice - a.voice || b.entry - a.entry);
+  return ordered.reduce((next, node) => removeEntry(next, node), schedule);
 }
 
 /**

@@ -45,7 +45,7 @@ const testRoot = setupRoot();
 
 interface Harness {
   commits: { schedule: Schedule; label: string }[];
-  commitsAt: { schedule: Schedule; label: string; selection: NodeRef | null }[];
+  commitsAt: { schedule: Schedule; label: string; selection: readonly NodeRef[] }[];
 }
 
 function mount(schedule: Schedule, selected: NodeRef | null) {
@@ -91,7 +91,7 @@ describe('NodePanel', () => {
     expect(after.voices[0].entries.map((entry) => entry.duration)).toEqual([50, 50, 60]);
     expect(voiceDuration(after.voices[0])).toBe(voiceDuration(schedule.voices[0]));
     // The new node is the one to carry on editing.
-    expect(selection).toEqual({ voice: 0, entry: 1 });
+    expect(selection).toEqual([{ voice: 0, entry: 1 }]);
   });
 
   it('deletes the selected node and leaves the neighbour selected', () => {
@@ -103,7 +103,7 @@ describe('NodePanel', () => {
     const { schedule: after, label, selection } = harness.commitsAt[0];
     expect(label).toBe('Delete node');
     expect(after.voices[0].entries.map((entry) => entry.duration)).toEqual([160]);
-    expect(selection).toEqual({ voice: 0, entry: 0 });
+    expect(selection).toEqual([{ voice: 0, entry: 0 }]);
   });
 
   /** A voice with no entries mis-assigns every later voice's properties when Gnaural reopens it. */

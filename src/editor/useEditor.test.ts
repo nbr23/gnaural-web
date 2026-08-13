@@ -94,8 +94,8 @@ describe('useEditor', () => {
   it('carries the selection with a commit and restores it on undo and redo', () => {
     const hook = renderHook(() => useEditor(schedule('one')));
 
-    act(() => hook.current.select({ voice: 0, entry: 3 }));
-    expect(hook.current.selection).toEqual({ voice: 0, entry: 3 });
+    act(() => hook.current.select([{ voice: 0, entry: 3 }]));
+    expect(hook.current.selection).toEqual([{ voice: 0, entry: 3 }]);
 
     act(() => {
       hook.current.commit(updateSchedule(hook.current.document, { title: 'two' }), {
@@ -103,14 +103,14 @@ describe('useEditor', () => {
       });
     });
 
-    act(() => hook.current.select({ voice: 1, entry: 0 }));
+    act(() => hook.current.select([{ voice: 1, entry: 0 }]));
     act(() => hook.current.undo());
     // The commit's own selection, not the opening document's absence of one: undoing an edit and
     // finding the node deselected is exactly wrong when the next action is to try again.
-    expect(hook.current.selection).toEqual({ voice: 0, entry: 3 });
+    expect(hook.current.selection).toEqual([{ voice: 0, entry: 3 }]);
 
     act(() => hook.current.redo());
-    expect(hook.current.selection).toEqual({ voice: 0, entry: 3 });
+    expect(hook.current.selection).toEqual([{ voice: 0, entry: 3 }]);
 
     hook.unmount();
   });
@@ -119,8 +119,8 @@ describe('useEditor', () => {
   it('never pushes a commit for a selection change', () => {
     const hook = renderHook(() => useEditor(schedule('one')));
 
-    act(() => hook.current.select({ voice: 0, entry: 1 }));
-    act(() => hook.current.select(null));
+    act(() => hook.current.select([{ voice: 0, entry: 1 }]));
+    act(() => hook.current.select([]));
 
     expect(hook.current.canUndo).toBe(false);
     hook.unmount();
@@ -173,17 +173,17 @@ describe('useEditor', () => {
   it('carries a restored selection across a structural redo', () => {
     const hook = renderHook(() => useEditor(schedule('one')));
 
-    act(() => hook.current.select({ voice: 0, entry: 2 }));
+    act(() => hook.current.select([{ voice: 0, entry: 2 }]));
     act(() => {
       const edit = moveVoice(hook.current.document, { from: 0, to: 1 });
       hook.current.commit(edit.schedule, { label: 'Move voice', voiceMap: edit.voiceMap });
     });
 
     act(() => hook.current.undo());
-    expect(hook.current.selection).toEqual({ voice: 0, entry: 2 });
+    expect(hook.current.selection).toEqual([{ voice: 0, entry: 2 }]);
 
     act(() => hook.current.redo());
-    expect(hook.current.selection).toEqual({ voice: 1, entry: 2 });
+    expect(hook.current.selection).toEqual([{ voice: 1, entry: 2 }]);
 
     hook.unmount();
   });
@@ -191,17 +191,17 @@ describe('useEditor', () => {
   it('drops a restored selection whose voice the commit deleted', () => {
     const hook = renderHook(() => useEditor(schedule('one')));
 
-    act(() => hook.current.select({ voice: 0, entry: 1 }));
+    act(() => hook.current.select([{ voice: 0, entry: 1 }]));
     act(() => {
       const edit = removeVoice(hook.current.document, 0);
       hook.current.commit(edit.schedule, { label: 'Delete voice', voiceMap: edit.voiceMap });
     });
 
     act(() => hook.current.undo());
-    expect(hook.current.selection).toEqual({ voice: 0, entry: 1 });
+    expect(hook.current.selection).toEqual([{ voice: 0, entry: 1 }]);
 
     act(() => hook.current.redo());
-    expect(hook.current.selection).toBeNull();
+    expect(hook.current.selection).toEqual([]);
 
     hook.unmount();
   });
@@ -213,7 +213,7 @@ describe('useEditor', () => {
   it('clamps a restored selection that points past the end of its voice', () => {
     const hook = renderHook(() => useEditor(schedule('one')));
 
-    act(() => hook.current.select({ voice: 0, entry: 3 }));
+    act(() => hook.current.select([{ voice: 0, entry: 3 }]));
     act(() => {
       hook.current.commit(removeEntry(hook.current.document, { voice: 0, entry: 0 }), {
         label: 'Delete node',
@@ -221,10 +221,98 @@ describe('useEditor', () => {
     });
 
     act(() => hook.current.undo());
-    expect(hook.current.selection).toEqual({ voice: 0, entry: 3 });
+    expect(hook.current.selection).toEqual([{ voice: 0, entry: 3 }]);
 
     act(() => hook.current.redo());
-    expect(hook.current.selection).toEqual({ voice: 0, entry: 2 });
+    expect(hook.current.selection).toEqual([{ voice: 0, entry: 2 }]);
+
+    hook.unmount();
+  });
+});
+
+/**
+ * The plural selection §6.1's marquee needs. `Selection` and `CommitMeta.selection` have been
+ * `readonly NodeRef[]` since step 4; step 8 is what finally puts more than one node in them.
+ */
+describe('useEditor with a selection of many nodes', () => {
+  it('records the whole selection with a commit and restores all of it', () => {
+    const hook = renderHook(() => useEditor(schedule('one')));
+    const group = [
+      { voice: 0, entry: 1 },
+      { voice: 1, entry: 2 },
+    ];
+
+    act(() => hook.current.select(group));
+    act(() => {
+      hook.current.commit(updateSchedule(hook.current.document, { title: 'two' }), {
+        label: 'Move nodes',
+      });
+    });
+
+    act(() => hook.current.select([]));
+    act(() => hook.current.undo());
+    expect(hook.current.selection).toEqual(group);
+
+    hook.unmount();
+  });
+
+  /** Each node is carried across the map separately; only the ones whose voice went are dropped. */
+  it('follows a group across a structural redo, dropping what the edit deleted', () => {
+    const hook = renderHook(() => useEditor(schedule('one')));
+
+    act(() =>
+      hook.current.select([
+        { voice: 0, entry: 1 },
+        { voice: 1, entry: 1 },
+      ]),
+    );
+    act(() => {
+      const edit = removeVoice(hook.current.document, 0);
+      hook.current.commit(edit.schedule, { label: 'Delete voice', voiceMap: edit.voiceMap });
+    });
+
+    act(() => hook.current.undo());
+    act(() => hook.current.redo());
+    expect(hook.current.selection).toEqual([{ voice: 0, entry: 1 }]);
+
+    hook.unmount();
+  });
+
+  /** Clamping can land two nodes on the same entry, and a selection is a set of addresses. */
+  it('deduplicates a restored selection that clamping collapsed', () => {
+    const hook = renderHook(() => useEditor(schedule('one')));
+
+    act(() =>
+      hook.current.select([
+        { voice: 0, entry: 2 },
+        { voice: 0, entry: 3 },
+      ]),
+    );
+    act(() => {
+      let next = removeEntry(hook.current.document, { voice: 0, entry: 0 });
+      next = removeEntry(next, { voice: 0, entry: 0 });
+      hook.current.commit(next, { label: 'Delete nodes' });
+    });
+
+    act(() => hook.current.undo());
+    act(() => hook.current.redo());
+    expect(hook.current.selection).toEqual([{ voice: 0, entry: 1 }]);
+
+    hook.unmount();
+  });
+
+  /** Identity-stable, because the chart's `memo`'d ring layer is keyed on this array. */
+  it('keeps one empty selection rather than a fresh array each time', () => {
+    const hook = renderHook(() => useEditor(schedule('one')));
+
+    act(() => hook.current.select([{ voice: 0, entry: 1 }]));
+    const empty = hook.current.selection;
+    act(() => hook.current.select([]));
+    const first = hook.current.selection;
+    act(() => hook.current.select([]));
+
+    expect(first).not.toBe(empty);
+    expect(hook.current.selection).toBe(first);
 
     hook.unmount();
   });

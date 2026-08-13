@@ -175,3 +175,134 @@ describe('ScheduleChart', () => {
     expect(onSeek.mock.calls[1][0]).toBeGreaterThan(onSeek.mock.calls[0][0]);
   });
 });
+
+/**
+ * The gestures the chart recognises but does not own.
+ *
+ * It has the layout and the element's rect, so it is the only thing that can turn two fingers or a
+ * wheel into a factor and an anchor; the *window* belongs to the caller, which is what keeps this
+ * component controlled and lets the caller rate-limit a redraw that costs 10.7 ms at four lanes.
+ */
+describe('ScheduleChart gestures', () => {
+  function mountEditable(handlers: Record<string, unknown> = {}) {
+    const zooms: { factor: number; anchor: number }[] = [];
+    const pans: number[] = [];
+    const cancels: number[] = [];
+
+    render(
+      <ScheduleChart
+        schedule={makeSchedule([makeVoice({})])}
+        interaction={{
+          onZoom: (factor, anchor) => zooms.push({ factor, anchor }),
+          onPan: (seconds) => pans.push(seconds),
+          onGestureCancel: () => cancels.push(1),
+          ...handlers,
+        }}
+      />,
+    );
+
+    const svg = testRoot.query('svg') as SVGSVGElement;
+    stubRect(svg, TEST_WIDTH, 280);
+    return { svg, zooms, pans, cancels };
+  }
+
+  /**
+   * happy-dom's `WheelEvent` constructor ignores the `MouseEvent` half of its init dict —
+   * `ctrlKey`, `metaKey` and `clientX` all come back undefined — so they are defined on the
+   * instance instead. Same class of harness gap as step 5's overridable `getBoundingClientRect`,
+   * and worth knowing before writing another modifier-driven test.
+   */
+  function wheel(init: Partial<WheelEvent>): WheelEvent {
+    const event = new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      deltaX: init.deltaX ?? 0,
+      deltaY: init.deltaY ?? 0,
+    });
+    for (const [key, value] of Object.entries(init)) {
+      if (key === 'deltaX' || key === 'deltaY') continue;
+      Object.defineProperty(event, key, { value, configurable: true });
+    }
+    return event;
+  }
+
+  /** A trackpad pinch arrives as ctrl+wheel, which is why this branch is the important one. */
+  it('zooms on ctrl+wheel, about the time under the pointer', () => {
+    const { svg, zooms } = mountEditable();
+
+    act(() => {
+      svg.dispatchEvent(wheel({ ctrlKey: true, deltaY: -100, clientX: 300 }));
+    });
+
+    expect(zooms).toHaveLength(1);
+    expect(zooms[0].factor).toBeGreaterThan(1);
+    expect(zooms[0].anchor).toBeGreaterThan(0);
+  });
+
+  it('pans on a horizontal wheel and leaves a plain vertical one to the page', () => {
+    const { svg, pans, zooms } = mountEditable();
+
+    act(() => {
+      svg.dispatchEvent(wheel({ deltaX: 40, clientX: 300 }));
+    });
+    expect(pans).toHaveLength(1);
+    expect(pans[0]).toBeGreaterThan(0);
+
+    const scroll = wheel({ deltaY: 100, clientX: 300 });
+    act(() => {
+      svg.dispatchEvent(scroll);
+    });
+    expect(pans).toHaveLength(1);
+    expect(zooms).toHaveLength(0);
+    expect(scroll.defaultPrevented).toBe(false);
+  });
+
+  /**
+   * Two fingers are the chart's own gesture: `touch-action: none` is on the plot while editing, so
+   * if this component does not implement the pinch, nothing does.
+   */
+  it('turns two fingers apart into a zoom and two fingers moving into a pan', () => {
+    const { svg, zooms, pans, cancels } = mountEditable();
+
+    pointer(svg, 'pointerdown', { x: 200, y: 60, id: 1 });
+    pointer(svg, 'pointerdown', { x: 300, y: 60, id: 2 });
+    // The one-finger gesture that was in flight is dropped rather than half-committed.
+    expect(cancels).toHaveLength(1);
+
+    pointer(svg, 'pointermove', { x: 200, y: 60, id: 1 });
+    pointer(svg, 'pointermove', { x: 400, y: 60, id: 2 });
+
+    expect(zooms.at(-1)?.factor).toBeGreaterThan(1);
+    expect(pans.length).toBeGreaterThan(0);
+  });
+
+  it('does not end a drag with the finger that ends a pinch', () => {
+    const ups: number[] = [];
+    const { svg } = mountEditable({ onPointerUp: () => ups.push(1) });
+
+    pointer(svg, 'pointerdown', { x: 200, y: 60, id: 1 });
+    pointer(svg, 'pointerdown', { x: 300, y: 60, id: 2 });
+    pointer(svg, 'pointerup', { x: 300, y: 60, id: 2 });
+
+    // A pointerup the caller acted on here would commit an edit nobody made.
+    expect(ups).toHaveLength(0);
+  });
+});
+
+/** The view window, as the chart draws it. */
+describe('ScheduleChart with a view window', () => {
+  it('draws only the window, and hides a playhead that is outside it', () => {
+    const schedule = makeSchedule([makeVoice({})]);
+
+    render(<ScheduleChart schedule={schedule} currentTime={2} view={{ start: 12, end: 18 }} />);
+    expect(testRoot.query('line.schedule-chart__playhead')).toBeNull();
+
+    render(<ScheduleChart schedule={schedule} currentTime={15} view={{ start: 12, end: 18 }} />);
+    expect(testRoot.query('line.schedule-chart__playhead')).not.toBeNull();
+  });
+
+  it('clips each lane, so a culled neighbour cannot draw over the axis labels', () => {
+    render(<ScheduleChart schedule={makeSchedule([makeVoice({})])} view={{ start: 12, end: 18 }} />);
+    expect(testRoot.queryAll('clipPath').length).toBeGreaterThan(0);
+  });
+});

@@ -145,7 +145,7 @@ export function stubRect(element: Element, width: number, height: number, left =
 export function pointer(
   element: Element,
   type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
-  position: { x: number; y: number; id?: number; altKey?: boolean },
+  position: { x: number; y: number; id?: number; altKey?: boolean; shiftKey?: boolean },
 ): void {
   act(() => {
     element.dispatchEvent(
@@ -154,7 +154,10 @@ export function pointer(
         clientX: position.x,
         clientY: position.y,
         pointerId: position.id ?? 1,
+        // Both modifiers the editing surface reads at pointerdown: Alt inverts squeeze/ripple and
+        // Shift inverts snapping, or adds to the selection when the gesture is a marquee.
         altKey: position.altKey ?? false,
+        shiftKey: position.shiftKey ?? false,
       }),
     );
   });

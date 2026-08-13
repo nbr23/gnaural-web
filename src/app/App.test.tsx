@@ -900,6 +900,73 @@ describe('the editor (§6.1)', () => {
     root.click(root.byText('.button', 'Undo'));
     expect(root.byText('.button', 'Undo')?.hasAttribute('disabled')).toBe(true);
   });
+
+  /**
+   * §6.1's marquee, group move and group undo, end to end — and the point of the whole step: the
+   * densest bundled voice puts 26 of its 44 node gaps inside the 12 px hit radius, so selecting a
+   * region and operating on it is how a real document is edited, not tapping one node at a time.
+   */
+  it('marquees a group of nodes, moves them together, and undoes it in one step', async () => {
+    await openDraftOf();
+
+    const svg = root.query('.editor__chart svg') as SVGSVGElement;
+    stubRect(svg, TEST_WIDTH, 262);
+    const markers = root.queryAll('circle.schedule-chart__node');
+    const at = (index: number) => ({
+      x: Number(markers[index].getAttribute('cx')),
+      y: Number(markers[index].getAttribute('cy')),
+    });
+
+    // A box from empty space above the curve, down and across the first three nodes.
+    pointer(svg, 'pointerdown', { x: at(0).x - 10, y: 2 });
+    pointer(svg, 'pointermove', { x: at(2).x + 4, y: 250 });
+    pointer(svg, 'pointerup', { x: at(2).x + 4, y: 250 });
+
+    // The group panel replaces the exact-values panel, because exact values need one node.
+    expect(root.text()).toContain('3 nodes in 1 voice');
+    expect(root.text()).not.toContain('Tap a node on the chart');
+
+    const before = root.queryAll('circle.schedule-chart__node').map((n) => n.getAttribute('cx'));
+    root.act(() =>
+      setInputValue(root.query('.editor__fields input[type="number"]') as HTMLInputElement, '30'),
+    );
+    root.click(root.byText('button', 'Later →'));
+    await wait(200);
+
+    expect(root.byText('.button', 'Undo')?.textContent).toContain('move nodes');
+    const after = root.queryAll('circle.schedule-chart__node').map((n) => n.getAttribute('cx'));
+    expect(after).not.toEqual(before);
+
+    // One commit for the group, and the selection it was made with comes back with the undo.
+    root.click(root.byText('.button', 'Undo'));
+    expect(root.queryAll('circle.schedule-chart__node').map((n) => n.getAttribute('cx'))).toEqual(
+      before,
+    );
+    expect(root.text()).toContain('3 nodes in 1 voice');
+  });
+
+  /** §6.1's zoom, and the manual axis override that lands with it. */
+  it('zooms the time axis and overrides a lane range', async () => {
+    await openDraftOf();
+
+    const zoom = (label: string) => root.byText('.editor__view button', label) as HTMLButtonElement;
+    expect(root.query('.editor__zoom')?.textContent).toBe('1.0×');
+    expect(root.query('input.editor__pan')).toBeNull();
+
+    root.click(zoom('+'));
+    expect(root.query('.editor__zoom')?.textContent).toBe('2.0×');
+    expect(root.query('input.editor__pan')).not.toBeNull();
+
+    root.click(zoom('Fit'));
+    expect(root.query('.editor__zoom')?.textContent).toBe('1.0×');
+
+    // The axis override: a lane fitted to its data cannot be dragged past it, and this is the way
+    // out that step 5 recorded as owed to step 8.
+    const max = root.query('input[aria-label="Beat maximum"]') as HTMLInputElement;
+    expect(Number(max.value)).toBeLessThan(30);
+    root.act(() => setInputValue(max, '40'));
+    expect((root.query('input[aria-label="Beat maximum"]') as HTMLInputElement).value).toBe('40');
+  });
 });
 
 describe('the app-level noise layer (§4.5b)', () => {

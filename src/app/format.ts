@@ -28,3 +28,16 @@ export function formatBytes(bytes: number): string {
 export function formatHz(value: number): string {
   return value >= 100 ? value.toFixed(0) : value.toFixed(2).replace(/\.?0+$/, '');
 }
+
+/**
+ * A typed number, or the value it is replacing when the field says nothing usable.
+ *
+ * The inverse of the formatters above, and shared by every numeric field in the editor: falling back
+ * to the current value is what makes a half-typed or emptied field a no-op rather than a NaN in the
+ * document, which §3.4's "never fail hard on a malformed field" asks of the parser and the editor
+ * has exactly as much reason to do.
+ */
+export function numberOr(value: string, fallback: number): number {
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) ? parsed : fallback;
+}

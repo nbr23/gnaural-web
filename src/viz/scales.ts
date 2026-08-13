@@ -64,10 +64,65 @@ const TIME_STEPS = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
 
 /** Round time ticks (in seconds) from 0 to `duration`, at roughly `count` intervals. */
 export function timeTicks(duration: number, count: number): number[] {
-  const rough = duration / Math.max(1, count);
-  const step = TIME_STEPS.find((s) => s >= rough) ?? TIME_STEPS[TIME_STEPS.length - 1];
+  return timeTicksIn(0, duration, count);
+}
 
-  const ticks: number[] = [];
-  for (let t = 0; t <= duration; t += step) ticks.push(t);
-  return ticks;
+/**
+ * The same, over an arbitrary window — what a zoomed axis labels.
+ *
+ * The step is chosen from the window's own span, so labels stay about as far apart however far in
+ * the view is; the values themselves stay round multiples measured from schedule zero, so a label
+ * means the same instant at every zoom level.
+ */
+export function timeTicksIn(start: number, end: number, count: number): number[] {
+  const rough = (end - start) / Math.max(1, count);
+  const step = TIME_STEPS.find((s) => s >= rough) ?? TIME_STEPS[TIME_STEPS.length - 1];
+  return gridLines(start, end, step);
+}
+
+/**
+ * Steps for the snap grid — the clock ladder again, extended below a second because a grid is not
+ * labelled and can therefore be far finer than `TIME_STEPS`, and because zoomed in far enough the
+ * interesting distances are fractions of a second.
+ */
+const GRID_STEPS = [
+  0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600,
+];
+
+/** Roughly the narrowest grid a finger can aim between, and the floor the step is chosen against. */
+export const MIN_GRID_PX = 14;
+
+/**
+ * The grid interval for a window, in seconds: the finest clock-round step still at least
+ * `minPixels` apart on screen.
+ *
+ * **The grid follows the zoom**, which is the whole reason snapping is usable at all here: the
+ * x-ticks are chosen for label spacing and are far too coarse to snap to (at 1× on a 73-minute
+ * programme the labelled step is 300 s, about 100× the median gap between that document's nodes).
+ * Zooming in is what makes the grid mean something, and is why the snap control ships off.
+ */
+export function timeGridStep(span: number, pixels: number, minPixels = MIN_GRID_PX): number {
+  if (span <= 0 || pixels <= 0) return GRID_STEPS[0];
+  const rough = (span * minPixels) / pixels;
+  return GRID_STEPS.find((step) => step >= rough) ?? GRID_STEPS[GRID_STEPS.length - 1];
+}
+
+/** Round to the nearest multiple of `step`, guarding a degenerate step. */
+export function snapToStep(value: number, step: number): number {
+  return step > 0 ? Math.round(value / step) * step : value;
+}
+
+/** The grid lines inside a window, for drawing. */
+export function gridLines(start: number, end: number, step: number): number[] {
+  if (step <= 0 || end <= start) return [];
+
+  const lines: number[] = [];
+  const first = Math.ceil(start / step);
+  const last = Math.floor(end / step);
+  // A window narrow enough to be all grid would draw thousands of lines; the step is chosen
+  // against MIN_GRID_PX so this is a guard, not a path anything normally takes.
+  if (last - first > 400) return [];
+
+  for (let i = first; i <= last; i++) lines.push(Number((i * step).toPrecision(12)));
+  return lines;
 }

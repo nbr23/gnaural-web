@@ -1,6 +1,6 @@
 import { entryParent } from './serializer';
 import { DURATION_EPSILON, scheduleDuration, voiceDuration } from './timing';
-import type { Entry, Schedule, Voice } from './types';
+import type { Entry, EntryLocation, Schedule, Voice } from './types';
 import { VoiceType } from './types';
 
 /**
@@ -159,11 +159,12 @@ export const BEAT_CEILING = 40;
  */
 const TONAL = new Set<VoiceType>([VoiceType.Binaural, VoiceType.IsoPulse, VoiceType.IsoPulseAlt]);
 
-/** Where a warning is, addressed the way the document and the editor's selection address a node. */
-export interface EntryLocation {
-  voice: number;
-  entry: number;
-}
+/**
+ * Where a warning is, addressed the way the document and the editor's selection address a node.
+ * Declared in `types.ts` since step 8, so the edit transforms can take the same addresses a warning
+ * hands out without either module importing the other.
+ */
+export type { EntryLocation };
 
 export interface EntryWarning extends ScheduleWarning {
   /**

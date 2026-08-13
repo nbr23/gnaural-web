@@ -3,12 +3,16 @@ import { compileVoice, eventBaseFreq, eventBeatFreq, valueAtTime } from '../engi
 import { DEFAULT_LIVE_VALUES } from '../live/liveSchedule';
 import {
   NEW_VOICE_SECONDS,
+  adjustEntries,
   insertEntry,
   insertVoice,
+  moveEntries,
   moveEntry,
   moveVoice,
+  removeEntries,
   removeEntry,
   removeVoice,
+  scaleEntries,
   updateEntry,
   updateSchedule,
   updateVoice,
@@ -115,7 +119,7 @@ describe('updateSchedule', () => {
     expect(after.masterVolume).toEqual(louder);
   });
 
-  /** §3.4: unrecognised data survives a round-trip, including one that goes through the editor. */
+  /** Â§3.4: unrecognised data survives a round-trip, including one that goes through the editor. */
   it('leaves preserved data intact through a serialize', () => {
     const before = fixture();
     const after = updateSchedule(before, { author: 'Someone else' });
@@ -189,7 +193,7 @@ describe('moveEntry', () => {
   });
 
   /**
-   * §3.7 in the small: a drag is not allowed to invent a negative duration, and the presets' 0.001 s
+   * Â§3.7 in the small: a drag is not allowed to invent a negative duration, and the presets' 0.001 s
    * entries make reaching a neighbour the common case rather than an edge one.
    */
   it('clamps at zero duration in both directions rather than passing a neighbour', () => {
@@ -320,8 +324,8 @@ describe('insertEntry', () => {
   });
 
   /**
-   * §3.5's unconditional wrap *is* the last entry's segment, so splitting it is the ordinary
-   * operation rather than a special case — and the value at the split is on the way back to
+   * Â§3.5's unconditional wrap *is* the last entry's segment, so splitting it is the ordinary
+   * operation rather than a special case â and the value at the split is on the way back to
    * entry[0], not a hold at the last entry's own value.
    */
   it('splits the final segment, where the curve is heading back to entry 0', () => {
@@ -345,7 +349,7 @@ describe('insertEntry', () => {
     expect(voiceDuration(after.voices[0])).toBe(600);
   });
 
-  /** An imported file can carry one; §3.7 says the repair is the length the rest of it plays to. */
+  /** An imported file can carry one; Â§3.7 says the repair is the length the rest of it plays to. */
   it('gives an empty voice its first entry rather than splitting nothing', () => {
     const before = ramp([10, 20, 30]);
     const emptied: Schedule = {
@@ -418,7 +422,7 @@ describe('removeEntry', () => {
   /**
    * Refused rather than warned. Gnaural groups entries into voices by the `parent` attribute and
    * takes voice properties by document order, so a voice with no entries does not merely vanish on
-   * reopen — every voice after it takes the wrong slot's description, type and flags.
+   * reopen â every voice after it takes the wrong slot's description, type and flags.
    */
   it('refuses to empty a voice', () => {
     const single = ramp([600]);
@@ -462,7 +466,7 @@ describe('insertVoice', () => {
 
     expect(entry.baseFreq).toBe(DEFAULT_LIVE_VALUES.baseFreq);
     expect(entry.beatFreq).toBe(DEFAULT_LIVE_VALUES.beatFreq);
-    // Deliberately not 1.0 — a new voice at full scale on top of a programme already near it clips.
+    // Deliberately not 1.0 â a new voice at full scale on top of a programme already near it clips.
     expect(entry.volumeLeft).toBe(0.5);
     expect(entry.volumeRight).toBe(0.5);
     expect(schedule.voices[3].type).toBe(VoiceType.Binaural);
@@ -507,7 +511,7 @@ describe('insertVoice', () => {
     expect(voiceMap).toEqual([]);
   });
 
-  /** §6.3: what this editor writes has to reopen in Gnaural desktop, which groups by `parent`. */
+  /** Â§6.3: what this editor writes has to reopen in Gnaural desktop, which groups by `parent`. */
   it('round-trips through the serializer with the parent attribute written', () => {
     const { schedule } = insertVoice(fixture(), { kind: 'noise' });
     const reparsed = parseSchedule(serializeSchedule(schedule));
@@ -587,5 +591,275 @@ describe('moveVoice', () => {
       before.voices[0].description,
       before.voices[2].description,
     ]);
+  });
+});
+
+/**
+ * Â§6.1's "move a selection as a group" â the block rule, and the reason it is a block.
+ *
+ * The run from the lowest selected entry to the highest travels together, unselected entries
+ * included: moving only the selected ones would let a node pass a neighbour nobody asked about,
+ * which reorders the voice.
+ */
+describe('moveEntries', () => {
+  it('moves the block and holds the voice’s length under a squeeze', () => {
+    const before = ramp([10, 20, 30, 40]);
+    const after = moveEntries(before, {
+      nodes: [
+        { voice: 0, entry: 1 },
+        { voice: 0, entry: 2 },
+      ],
+      deltaTime: 5,
+      mode: 'squeeze',
+    });
+
+    expect(starts(after)).toEqual([0, 15, 35, 60]);
+    expect(voiceDuration(after.voices[0])).toBe(voiceDuration(before.voices[0]));
+  });
+
+  it('carries the unselected nodes inside the run along, so nothing changes order', () => {
+    const before = ramp([10, 20, 30, 40]);
+    const after = moveEntries(before, {
+      nodes: [
+        { voice: 0, entry: 1 },
+        { voice: 0, entry: 3 },
+      ],
+      deltaTime: 5,
+      mode: 'squeeze',
+    });
+
+    // Entry 2 was never selected and still moved: it sits inside the run.
+    expect(starts(after)).toEqual([0, 15, 35, 65]);
+  });
+
+  /** Â§3.7: a ripple changes how long the program plays, and squeeze is the default for that reason. */
+  it('lengthens the voice under a ripple, since nothing gives the time back', () => {
+    const before = ramp([10, 20, 30, 40]);
+    const after = moveEntries(before, {
+      nodes: [{ voice: 0, entry: 1 }],
+      deltaTime: 5,
+      mode: 'ripple',
+    });
+
+    expect(starts(after)).toEqual([0, 15, 35, 65]);
+    expect(voiceDuration(after.voices[0])).toBe(voiceDuration(before.voices[0]) + 5);
+  });
+
+  /** One shift for every voice: a group move must not silently desynchronise two of them. */
+  it('clamps to the tightest voice and applies that one shift everywhere', () => {
+    const before = ramp([10, 20, 30, 40]);
+    before.voices[1] = { ...before.voices[1], entries: [
+      { ...before.voices[1].entries[0], duration: 2 },
+      ...before.voices[1].entries.slice(1),
+    ] };
+
+    const after = moveEntries(before, {
+      nodes: [
+        { voice: 0, entry: 1 },
+        { voice: 1, entry: 1 },
+      ],
+      deltaTime: -8,
+      mode: 'squeeze',
+    });
+
+    // Voice 1 can only give up 2 s, so both voices move by 2 s and stay aligned.
+    expect(starts(after, 0)).toEqual([0, 8, 30, 60]);
+    expect(starts(after, 1)[1]).toBe(0);
+  });
+
+  /** Entry 0's start is the sum of no durations, so a block that reaches it starts at entry 1. */
+  it('never moves a first node, and a selection of only first nodes moves nothing', () => {
+    const before = ramp([10, 20, 30]);
+    const withFirst = moveEntries(before, {
+      nodes: [
+        { voice: 0, entry: 0 },
+        { voice: 0, entry: 1 },
+      ],
+      deltaTime: 5,
+      mode: 'squeeze',
+    });
+    // Entry 0 is pinned, so the run begins at entry 1 and entry 0's own duration absorbs the shift.
+    expect(starts(withFirst)).toEqual([0, 15, 30]);
+
+    expect(
+      moveEntries(before, { nodes: [{ voice: 0, entry: 0 }], deltaTime: 5, mode: 'squeeze' }),
+    ).toBe(before);
+  });
+
+  it('clamps at the neighbour rather than letting a block pass it', () => {
+    const before = ramp([10, 20, 30]);
+    const after = moveEntries(before, {
+      nodes: [{ voice: 0, entry: 1 }],
+      deltaTime: 1000,
+      mode: 'squeeze',
+    });
+
+    expect(starts(after)).toEqual([0, 30, 30]);
+    expect(after.voices[0].entries[1].duration).toBe(0);
+  });
+
+  it('returns its input for a selection that changes nothing', () => {
+    const before = ramp([10, 20, 30]);
+    expect(moveEntries(before, { nodes: [], deltaTime: 5, mode: 'squeeze' })).toBe(before);
+    expect(
+      moveEntries(before, { nodes: [{ voice: 0, entry: 1 }], deltaTime: 0, mode: 'squeeze' }),
+    ).toBe(before);
+  });
+
+  it('reuses every voice and entry it did not touch', () => {
+    const before = fixture();
+    const after = moveEntries(before, {
+      nodes: [{ voice: 0, entry: 2 }],
+      deltaTime: 1,
+      mode: 'squeeze',
+    });
+
+    expect(after).not.toBe(before);
+    expect(after.voices[1]).toBe(before.voices[1]);
+    expect(after.voices[0].entries[5]).toBe(before.voices[0].entries[5]);
+  });
+});
+
+/** Â§6.1's "scale a selection as a group", which is not Â§6.1's whole-program duration scaling. */
+describe('scaleEntries', () => {
+  const selection = [
+    { voice: 0, entry: 1 },
+    { voice: 0, entry: 3 },
+  ];
+
+  it('stretches the time inside the selection about its own start', () => {
+    const before = ramp([10, 20, 30, 40]);
+    const after = scaleEntries(before, { nodes: selection, factor: 2, mode: 'ripple' });
+
+    // The block spans 10..60; doubled it spans 10..110, and its first node has not moved.
+    expect(starts(after)).toEqual([0, 10, 50, 110]);
+  });
+
+  /**
+   * A block ending on the voice's last entry has no following segment, so it necessarily ripples —
+   * the same rule a single-node drag has obeyed since step 5. These two need a node after the block
+   * for the squeeze to have anywhere to put the time.
+   */
+  it('gives the difference back to the following segment under a squeeze', () => {
+    const before = ramp([10, 20, 30, 40, 50]);
+    const after = scaleEntries(before, { nodes: selection, factor: 1.5, mode: 'squeeze' });
+
+    expect(voiceDuration(after.voices[0])).toBe(voiceDuration(before.voices[0]));
+    expect(starts(after)).toEqual([0, 10, 40, 85, 100]);
+  });
+
+  it('compresses on a factor below one', () => {
+    const before = ramp([10, 20, 30, 40]);
+    const after = scaleEntries(before, { nodes: selection, factor: 0.5, mode: 'ripple' });
+
+    expect(starts(after)).toEqual([0, 10, 20, 35]);
+  });
+
+  it('stops at the neighbour rather than pushing a squeeze past it', () => {
+    const before = ramp([10, 20, 30, 40, 50]);
+    const after = scaleEntries(before, { nodes: selection, factor: 100, mode: 'squeeze' });
+
+    expect(after.voices[0].entries[3].duration).toBe(0);
+    expect(voiceDuration(after.voices[0])).toBe(voiceDuration(before.voices[0]));
+  });
+
+  it('needs a span, so one node in a voice scales nothing', () => {
+    const before = ramp([10, 20, 30]);
+    expect(scaleEntries(before, { nodes: [{ voice: 0, entry: 1 }], factor: 2, mode: 'ripple' })).toBe(
+      before,
+    );
+  });
+
+  it('refuses a factor that is not a positive number', () => {
+    const before = ramp([10, 20, 30]);
+    expect(scaleEntries(before, { nodes: selection, factor: 0, mode: 'ripple' })).toBe(before);
+    expect(scaleEntries(before, { nodes: selection, factor: -1, mode: 'ripple' })).toBe(before);
+    expect(scaleEntries(before, { nodes: selection, factor: 1, mode: 'ripple' })).toBe(before);
+  });
+});
+
+/** The group value drag: one delta on every node, so the shape of the selection survives. */
+describe('adjustEntries', () => {
+  it('shifts every selected node by the same amount', () => {
+    const before = ramp([10, 20, 30]);
+    const after = adjustEntries(before, {
+      nodes: [
+        { voice: 0, entry: 0 },
+        { voice: 1, entry: 2 },
+      ],
+      field: 'beatFreq',
+      delta: 2,
+    });
+
+    expect(after.voices[0].entries[0].beatFreq).toBe(12);
+    expect(after.voices[1].entries[2].beatFreq).toBe(10);
+    // Untouched nodes keep their identity, which is what the history budget rests on.
+    expect(after.voices[0].entries[1]).toBe(before.voices[0].entries[1]);
+  });
+
+  it('clamps to the bounds it is given, so a drag cannot author what it cannot draw', () => {
+    const before = ramp([10, 20, 30]);
+    const after = adjustEntries(before, {
+      nodes: [{ voice: 0, entry: 0 }],
+      field: 'volumeLeft',
+      delta: 5,
+      min: 0,
+      max: 1,
+    });
+
+    expect(after.voices[0].entries[0].volumeLeft).toBe(1);
+  });
+
+  it('returns its input for a delta of zero', () => {
+    const before = ramp([10, 20, 30]);
+    expect(
+      adjustEntries(before, { nodes: [{ voice: 0, entry: 0 }], field: 'baseFreq', delta: 0 }),
+    ).toBe(before);
+  });
+});
+
+/**
+ * A group delete folds `removeEntry`, so it inherits step 6's absorb rule and its hard floor: a
+ * voice contributing no entry does not vanish on reopen in Gnaural, it takes every later voice's
+ * identity with it (`SG_RestoreBackupData`, ScheduleGUI.c:2213).
+ */
+describe('removeEntries', () => {
+  it('removes every selected node and preserves each voice’s length', () => {
+    const before = ramp([10, 20, 30, 40]);
+    const after = removeEntries(before, [
+      { voice: 0, entry: 1 },
+      { voice: 0, entry: 2 },
+    ]);
+
+    expect(after.voices[0].entries).toHaveLength(2);
+    expect(voiceDuration(after.voices[0])).toBe(voiceDuration(before.voices[0]));
+  });
+
+  it('leaves one node standing rather than emptying a voice', () => {
+    const before = ramp([10, 20, 30]);
+    const after = removeEntries(before, [
+      { voice: 0, entry: 0 },
+      { voice: 0, entry: 1 },
+      { voice: 0, entry: 2 },
+    ]);
+
+    expect(after.voices[0].entries).toHaveLength(1);
+    expect(voiceDuration(after.voices[0])).toBe(60);
+  });
+
+  it('spans voices, and touches no voice it was not asked about', () => {
+    const before = ramp([10, 20, 30]);
+    const after = removeEntries(before, [
+      { voice: 0, entry: 1 },
+      { voice: 1, entry: 2 },
+    ]);
+
+    expect(after.voices[0].entries).toHaveLength(2);
+    expect(after.voices[1].entries).toHaveLength(2);
+  });
+
+  it('returns its input for an empty selection', () => {
+    const before = ramp([10, 20, 30]);
+    expect(removeEntries(before, [])).toBe(before);
   });
 });
