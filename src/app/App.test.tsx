@@ -902,6 +902,92 @@ describe('the editor (§6.1)', () => {
   });
 
   /**
+   * §6.1's authoring aids, against a running engine. Generating is a *structural* edit — it adds a
+   * voice — so this is `update()`'s crossfade path reached from a second caller, and the invariant
+   * is the one every step since 4 has pinned: the transport must not reload.
+   */
+  it('generates a voice while playing, without reloading the graph', async () => {
+    await openDraftOf();
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(1);
+
+    root.click(root.byText('.authoring button', 'Generate'));
+    await wait(200);
+
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(2);
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+    // Generating never overwrites: the voice that was there is still there, and the new one spans
+    // what the schedule already played, so §3.7's warning does not fire on the user's own command.
+    expect(root.text()).toContain('Ramp');
+    expect(root.text()).not.toContain('not the same length');
+
+    root.click(root.byText('.button', 'Undo generate voice'));
+    await wait(200);
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(1);
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+  });
+
+  it('duplicates a voice while playing, and the copy does not merge back on reopen', async () => {
+    await openDraftOf();
+    root.click(root.byText('.button--primary', 'Play'));
+    await flush();
+
+    root.click(root.byText('.authoring button', 'Duplicate'));
+    await wait(200);
+
+    expect(root.queryAll('.voice-rows__row')).toHaveLength(2);
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+    // §6.3: what the editor writes has to reopen in Gnaural desktop as the same two voices.
+    expect(root.text()).not.toContain('merge into one voice');
+  });
+
+  it('scales the whole program to a target length', async () => {
+    await openDraftOf();
+
+    const target = root
+      .queryAll('.authoring .editor__field span')
+      .find((node) => node.textContent === 'Target length (s)')
+      ?.parentElement?.querySelector('input') as HTMLInputElement;
+    root.act(() => setInputValue(target, '600'));
+    root.click(root.byText('button', 'Scale program'));
+    await wait(200);
+
+    expect(root.byText('.button', 'Undo')?.textContent).toContain('scale program');
+    expect(root.text()).toContain('Now 10:00');
+  });
+
+  /**
+   * §3.7's one-click fix, deferred by step 6 and landed here, end to end — including that the row
+   * offering it is the row that raised the warning, and that both are gone afterwards.
+   */
+  it('pads a ragged schedule to its longest voice, from the warning that reports it', async () => {
+    await openDraftOf();
+
+    // Add a voice — which lands at the playing length, so the schedule is still even — and then
+    // shorten it. Adding leaves its one node selected, so the numeric panel is already pointed at
+    // it, and a duration always ripples within its own voice. That is the whole of how this app can
+    // make a schedule ragged, and the reason §3.7's repair is owed at all.
+    root.click(root.byText('button', 'Add tone voice'));
+    await wait(200);
+    expect(root.text()).not.toContain('not the same length');
+
+    type('Duration (s)', '400');
+    await wait(200);
+    expect(root.text()).toContain('not the same length');
+
+    root.click(root.byText('.validation__fix', 'Pad to longest'));
+    await wait(200);
+
+    expect(root.text()).not.toContain('not the same length');
+    expect(root.byText('.validation__fix', 'Pad to longest')).toBeUndefined();
+    expect(root.byText('.button', 'Undo')?.textContent).toContain('pad voices');
+    // Padded up to the longest voice — the drafted one — rather than down to the short one.
+    expect(root.text()).toContain('20:00');
+  });
+
+  /**
    * §6.1's marquee, group move and group undo, end to end — and the point of the whole step: the
    * densest bundled voice puts 26 of its 44 node gaps inside the 12 px hit radius, so selecting a
    * region and operating on it is how a real document is edited, not tapping one node at a time.
@@ -927,8 +1013,10 @@ describe('the editor (§6.1)', () => {
     expect(root.text()).not.toContain('Tap a node on the chart');
 
     const before = root.queryAll('circle.schedule-chart__node').map((n) => n.getAttribute('cx'));
+    // Scoped to the group panel: the authoring aids added in step 9 carry number fields of their
+    // own, and an unscoped `.editor__fields input` would silently start driving one of those.
     root.act(() =>
-      setInputValue(root.query('.editor__fields input[type="number"]') as HTMLInputElement, '30'),
+      setInputValue(root.query('.group-panel input[type="number"]') as HTMLInputElement, '30'),
     );
     root.click(root.byText('button', 'Later →'));
     await wait(200);

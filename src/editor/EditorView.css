@@ -257,6 +257,14 @@
   cursor: pointer;
 }
 
+/* The repair reads as the primary thing to do on a row that has one — it is the whole point of §3.7's
+   "one-click fix" — while **Show** stays the quieter way to go and look. */
+.validation__fix {
+  color: var(--text-h);
+  border-color: var(--accent-border, var(--border));
+  background: var(--accent-bg, var(--bg));
+}
+
 .validation__notices > summary {
   font-size: 14px;
   cursor: pointer;
@@ -354,4 +362,59 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* §6.1's authoring aids. Three groups under one heading rather than three sections, because they are
+   one answer to one question — "give me something to start from" — and a phone should not have to
+   scroll past three headings to find it. */
+.editor__subhead {
+  margin: 12px 0 0;
+  font-size: 15px;
+  color: var(--text-h);
+}
+
+.editor__fields h3:first-of-type {
+  margin-top: 0;
+}
+
+.editor__field select {
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.authoring__tone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.authoring__bands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* One press per band, the same affordance Live mode's chips are — and the frequency is on the chip
+   because the band name alone does not say where it lands. */
+.authoring__band {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.authoring__band span {
+  color: var(--text);
 }

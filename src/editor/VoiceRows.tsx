@@ -1,6 +1,6 @@
 import { formatClock } from '../app/format';
 import type { VoiceEdit, VoiceKind } from '../document/edit';
-import { insertVoice, moveVoice, removeVoice, updateVoice } from '../document/edit';
+import { insertEntry, insertVoice, moveVoice, removeVoice, updateVoice } from '../document/edit';
 import { DURATION_EPSILON, scheduleDuration, voiceDuration } from '../document/timing';
 import type { Schedule } from '../document/types';
 import { VoiceType } from '../document/types';
@@ -140,6 +140,19 @@ export function VoiceRows({
                     onStructural(moveVoice(schedule, { from: index, to: index + 1 }), 'Move voice')
                   }
                 />
+                {/* The one shape the `gnaural-regroup` repair cannot reach: a voice with no
+                    entries contributes no datapoint whatever its id, so Gnaural loses it on reopen
+                    and every voice after it takes the wrong name, type and flags. Giving it a node
+                    or deleting it are the only two answers, and both are here.
+                    `insertEntry` has repaired an empty voice since step 6. */}
+                {nodes === 0 && (
+                  <Action
+                    label="Add node"
+                    onClick={() =>
+                      onCommit(insertEntry(schedule, { voice: index, after: 0 }), 'Insert node')
+                    }
+                  />
+                )}
                 <Action
                   label="Delete"
                   onClick={() => onStructural(removeVoice(schedule, index), 'Delete voice')}

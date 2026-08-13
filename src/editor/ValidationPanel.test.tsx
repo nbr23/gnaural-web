@@ -1,15 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import type { EntryWarning, ScheduleWarning } from '../document/warnings';
+import type { EntryWarning, ScheduleWarning, WarningKind } from '../document/warnings';
 import { setupRoot } from '../test-utils';
+import type { WarningRepair } from './ValidationPanel';
 import { ValidationPanel } from './ValidationPanel';
 import type { NodeRef } from './history';
 
 const testRoot = setupRoot();
 
-function mount(schedule: ScheduleWarning[], entries: EntryWarning[]) {
+function mount(
+  schedule: ScheduleWarning[],
+  entries: EntryWarning[],
+  repairs?: Partial<Record<WarningKind, WarningRepair>>,
+) {
   const selections: NodeRef[] = [];
   testRoot.render(
-    <ValidationPanel schedule={schedule} entries={entries} onSelect={(node) => selections.push(node)} />,
+    <ValidationPanel
+      schedule={schedule}
+      entries={entries}
+      repairs={repairs}
+      onSelect={(node) => selections.push(node)}
+    />,
   );
   return selections;
 }
@@ -91,5 +101,47 @@ describe('ValidationPanel', () => {
 
     expect(testRoot.queryAll('.validation__item')).toHaveLength(2);
     expect(testRoot.queryAll('.validation__show')).toHaveLength(0);
+  });
+});
+
+/**
+ * §3.7's "one-click fix" and the reopen-in-Gnaural repair, both deferred to step 9 and both offered
+ * on the row that states the problem — which is the argument for putting them here rather than in a
+ * menu: the sentence and the button that answers it are the same object.
+ */
+describe('ValidationPanel repairs', () => {
+  it('offers a fix on the row whose rule has one, and nowhere else', () => {
+    let padded = 0;
+    mount([ragged], [volume], {
+      'unequal-durations': { label: 'Pad to longest', run: () => (padded += 1) },
+    });
+
+    const fixes = testRoot.queryAll('.validation__fix');
+    expect(fixes).toHaveLength(1);
+    expect(fixes[0].textContent).toBe('Pad to longest');
+
+    testRoot.click(fixes[0]);
+    expect(padded).toBe(1);
+  });
+
+  /**
+   * The caller offers a repair only when running it would change something, which is how the third
+   * `gnaural-regroup` shape — a voice with no entries, which renumbering cannot help — ends up with
+   * a warning and no button.
+   */
+  it('shows no fix when the caller offers none for that rule', () => {
+    mount([], [{ severity: 'warning', kind: 'gnaural-regroup', message: 'Voice a is empty.', nodes: [] }], {
+      'unequal-durations': { label: 'Pad to longest', run: () => undefined },
+    });
+
+    expect(testRoot.queryAll('.validation__fix')).toHaveLength(0);
+  });
+
+  it('offers a fix on a notice too, since severity says nothing about being actionable', () => {
+    mount([], [gamma], {
+      'beat-above-band': { label: 'Bring into band', run: () => undefined },
+    });
+
+    expect(testRoot.query('.validation__notices .validation__fix')).not.toBeNull();
   });
 });

@@ -1,12 +1,28 @@
 import { useState } from 'react';
-import type { EntryWarning, ScheduleWarning } from '../document/warnings';
+import type { EntryWarning, ScheduleWarning, WarningKind } from '../document/warnings';
 import type { NodeRef } from './history';
+
+/**
+ * A one-click fix for the rule on this row.
+ *
+ * Only two rules have one, and both were deferred to step 9 for the same reason: a repair is a
+ * command, and a command belongs where the problem is stated rather than in a menu somewhere else.
+ * The caller decides whether one is available at all — it offers a repair only when running it
+ * would actually change the document, which is how `gnaural-regroup` raised by a voice with no
+ * entries ends up with no button, since renumbering cannot help that shape.
+ */
+export interface WarningRepair {
+  label: string;
+  run(): void;
+}
 
 export interface ValidationPanelProps {
   /** Schedule-scoped, from `scheduleWarnings`: unsupported types, §3.7's raggedness, nothing to play. */
   schedule: ScheduleWarning[];
   /** Value-scoped, from `entryWarnings`: §6.1's own list, each one locatable. */
   entries: EntryWarning[];
+  /** Keyed by rule, since a repair fixes the rule rather than one of the nodes that tripped it. */
+  repairs?: Partial<Record<WarningKind, WarningRepair>>;
   onSelect(node: NodeRef): void;
 }
 
@@ -26,7 +42,7 @@ export interface ValidationPanelProps {
  *
  * It renders nothing at all for a clean document, which is every bundled program.
  */
-export function ValidationPanel({ schedule, entries, onSelect }: ValidationPanelProps) {
+export function ValidationPanel({ schedule, entries, repairs, onSelect }: ValidationPanelProps) {
   const all = [...schedule, ...entries];
   const alerts = all.filter((warning) => warning.severity === 'warning');
   const notices = all.filter((warning) => warning.severity === 'notice');
@@ -38,7 +54,12 @@ export function ValidationPanel({ schedule, entries, onSelect }: ValidationPanel
       {alerts.length > 0 && (
         <ul className="validation__list" role="alert">
           {alerts.map((warning, index) => (
-            <Row key={`${warning.kind}-${index}`} warning={warning} onSelect={onSelect} />
+            <Row
+              key={`${warning.kind}-${index}`}
+              warning={warning}
+              repair={repairs?.[warning.kind]}
+              onSelect={onSelect}
+            />
           ))}
         </ul>
       )}
@@ -50,7 +71,12 @@ export function ValidationPanel({ schedule, entries, onSelect }: ValidationPanel
           </summary>
           <ul className="validation__list">
             {notices.map((warning, index) => (
-              <Row key={`${warning.kind}-${index}`} warning={warning} onSelect={onSelect} />
+              <Row
+                key={`${warning.kind}-${index}`}
+                warning={warning}
+                repair={repairs?.[warning.kind]}
+                onSelect={onSelect}
+              />
             ))}
           </ul>
         </details>
@@ -68,9 +94,11 @@ export function ValidationPanel({ schedule, entries, onSelect }: ValidationPanel
  */
 function Row({
   warning,
+  repair,
   onSelect,
 }: {
   warning: ScheduleWarning | EntryWarning;
+  repair?: WarningRepair;
   onSelect(node: NodeRef): void;
 }) {
   const nodes = 'nodes' in warning ? warning.nodes : [];
@@ -80,6 +108,11 @@ function Row({
   return (
     <li className="validation__item">
       <span>{warning.message}</span>
+      {repair && (
+        <button type="button" className="validation__show validation__fix" onClick={repair.run}>
+          {repair.label}
+        </button>
+      )}
       {nodes.length > 0 && (
         <button
           type="button"

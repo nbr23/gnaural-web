@@ -3,7 +3,7 @@ import { formatClock, numberOr } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
 import { useThrottled } from '../app/useThrottled';
 import type { MoveMode, VoiceEdit } from '../document/edit';
-import { updateSchedule } from '../document/edit';
+import { padVoicesToLongest, repairVoiceGrouping, updateSchedule } from '../document/edit';
 import type { Schedule } from '../document/types';
 import type { VoiceMap } from '../document/voiceMap';
 import { composeVoiceMaps } from '../document/voiceMap';
@@ -15,11 +15,13 @@ import { Timeline } from '../player/Timeline';
 import type { Player } from '../player/usePlayer';
 import type { ChartMark, LaneDomains, LaneId } from '../viz/geometry';
 import { ALL_LANES, DEFAULT_LANES, EDITOR_DOMAIN_PADDING, buildChartModel } from '../viz/geometry';
+import { AuthoringPanel } from './AuthoringPanel';
 import { CommittedField } from './CommittedField';
 import { EditSurface } from './EditSurface';
 import { GroupPanel } from './GroupPanel';
 import { LaneRanges } from './LaneRanges';
 import { NodePanel } from './NodePanel';
+import type { WarningRepair } from './ValidationPanel';
 import { ValidationPanel } from './ValidationPanel';
 import { VoiceRows } from './VoiceRows';
 import type { NodeRef, Selection } from './history';
@@ -155,6 +157,40 @@ export function EditorView({
    * The same call the chart makes, on the same arguments, so the two cannot disagree; it costs
    * 0.04 ms on the densest bundled document and runs once per commit, not per frame.
    */
+  /**
+   * The two one-click repairs (§3.7's "pad to longest", and the reopen-in-Gnaural hazard step 7
+   * detected and deferred), offered on the row that states the problem.
+   *
+   * **Each is offered only when it would change something**, which is a real distinction rather
+   * than a guard: `gnaural-regroup` is also raised for a voice with no entries, and renumbering
+   * cannot help that shape — the voice contributes no datapoint whatever its id. That row keeps its
+   * warning and gets no button, and the voice list carries the two answers it does have.
+   *
+   * Memoised on the document alone, like the warnings above and for the same reason: this view
+   * re-renders on every playhead tick, and running both transforms ten times a second to find out
+   * whether a button should be there is the kind of work this project has already paid to remove
+   * once. The offer objects themselves are rebuilt per render, which costs nothing — the panel is
+   * not memoised and re-renders anyway.
+   */
+  const repaired = useMemo(
+    () => ({ padded: padVoicesToLongest(schedule), regrouped: repairVoiceGrouping(schedule) }),
+    [schedule],
+  );
+
+  const repairs: Partial<Record<WarningKind, WarningRepair>> = {};
+  if (repaired.padded !== schedule) {
+    repairs['unequal-durations'] = {
+      label: 'Pad to longest',
+      run: () => commitEdit(repaired.padded, 'Pad voices'),
+    };
+  }
+  if (repaired.regrouped !== schedule) {
+    repairs['gnaural-regroup'] = {
+      label: 'Renumber voices',
+      run: () => commitEdit(repaired.regrouped, 'Renumber voices'),
+    };
+  }
+
   const fitted = useMemo(() => {
     const model = buildChartModel(schedule, lanes, EDITOR_DOMAIN_PADDING);
     return Object.fromEntries(
@@ -256,6 +292,7 @@ export function EditorView({
       <ValidationPanel
         schedule={warnings}
         entries={issues}
+        repairs={repairs}
         onSelect={(node) => editor.select([node])}
       />
 
@@ -286,6 +323,16 @@ export function EditorView({
         onCommit={commitEdit}
         onStructural={commitStructure}
         onToggleSolo={player.toggleSolo}
+      />
+
+      {/* §6.1's authoring aids. Voice- and document-scoped, so they sit with the voice list rather
+          than with the node and group panels below, which are what a selection means. */}
+      <AuthoringPanel
+        schedule={schedule}
+        selected={editor.selection}
+        onCommit={commitEdit}
+        onCommitAt={commitEditAt}
+        onStructural={commitStructure}
       />
 
       {/* Exact values are what §6.1 asks for and they only mean something for one node; with a

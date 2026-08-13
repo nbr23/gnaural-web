@@ -48,7 +48,7 @@ export function GroupPanel({ schedule, selected, mode, onCommit, onCommitAt }: G
   };
 
   return (
-    <section className="editor__fields">
+    <section className="editor__fields group-panel">
       <h2>
         {selected.length} nodes in {voices.size} {voices.size === 1 ? 'voice' : 'voices'}
       </h2>

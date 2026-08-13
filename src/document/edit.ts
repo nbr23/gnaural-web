@@ -1,4 +1,11 @@
-import { entryStartTimes, longestVoiceDuration, scheduleDuration } from './timing';
+import { entryParent } from './serializer';
+import {
+  DURATION_EPSILON,
+  entryStartTimes,
+  longestVoiceDuration,
+  scheduleDuration,
+  voiceDuration,
+} from './timing';
 import type { Entry, EntryLocation, Schedule, Voice } from './types';
 import { VoiceType } from './types';
 import type { VoiceMap } from './voiceMap';
@@ -491,6 +498,17 @@ export interface InsertVoiceArgs {
   kind: VoiceKind;
   /** Where it lands. Appended by default. */
   at?: number;
+  /**
+   * The voice's contents, for a generator (§6.1). One default entry when absent.
+   *
+   * Generators write into a **new** voice rather than over an existing one, so they come through
+   * here rather than growing a transform of their own: `id = max + 1`, the empty `preserved` that
+   * makes the serializer derive `parent`, and the voice map are all decided in one place, and a
+   * generated voice is the same kind of voice as an added one.
+   */
+  entries?: readonly Entry[];
+  /** What to call it. The kind's own default when absent. */
+  description?: string;
 }
 
 /**
@@ -520,8 +538,9 @@ export function insertVoice(schedule: Schedule, args: InsertVoiceArgs): VoiceEdi
   const duration = scheduleDuration(schedule) || NEW_VOICE_SECONDS;
 
   const voice: Voice = {
-    id: count > 0 ? Math.max(...schedule.voices.map((existing) => existing.id)) + 1 : 0,
-    description: args.kind === 'noise' ? 'Background noise' : `Voice ${at + 1}`,
+    id: nextVoiceId(schedule),
+    description:
+      args.description ?? (args.kind === 'noise' ? 'Background noise' : `Voice ${at + 1}`),
     type,
     muted: false,
     hidden: false,
@@ -531,7 +550,7 @@ export function insertVoice(schedule: Schedule, args: InsertVoiceArgs): VoiceEdi
     // until now. `state` is safely absent (Gnaural `calloc`s its datapoints, so it reads as the 0
     // all 354 corpus entries carry); `parent` is not, which is what makes that fallback
     // load-bearing rather than decorative.
-    entries: [newEntry(type, duration)],
+    entries: args.entries && args.entries.length > 0 ? [...args.entries] : [newEntry(type, duration)],
     preserved: {},
   };
 
@@ -584,6 +603,291 @@ export function moveVoice(schedule: Schedule, args: MoveVoiceArgs): VoiceEdit {
   voices.splice(to, 0, moved);
 
   return { schedule: { ...schedule, voices }, voiceMap: moveVoiceMap(count, from, to) };
+}
+
+/**
+ * Copy a voice, entries and all — §6.1's "duplicate voice".
+ *
+ * **The copy's entries must give up their stored owner, and that is the whole subtlety.** The
+ * serializer prefers `entry.preserved.parent` over the voice's id, and all 51 corpus voices carry
+ * one; a copy placed next to its source with those parents intact is exactly the *merge* shape step
+ * 7's `gnaural-regroup` warns about — Gnaural starts a new voice only where `parent` changes, so the
+ * two would come back as one. Dropping it lets the serializer derive `parent` from the new id, which
+ * differs from every other voice's, and the copy survives a round trip through Gnaural desktop.
+ *
+ * The copy lands **directly after its source**, which is where the eye expects it and which the
+ * positional palette then colours as a neighbour. (Gnaural's own `SG_DuplicateSelectedVoice`,
+ * ScheduleGUI.c:4210, appends to the end; adjacency is only safe here *because* of the strip above,
+ * which is why that is the line to keep.) Everything else is copied as Gnaural copies it —
+ * description, type, mute and mono — plus `hidden` and the voice's own preserved fields, which are
+ * this format's and not that function's to know about.
+ */
+export function duplicateVoice(schedule: Schedule, index: number): VoiceEdit {
+  const count = schedule.voices.length;
+  const source = schedule.voices[index];
+  if (!source) return { schedule, voiceMap: identityVoiceMap(count) };
+
+  const at = index + 1;
+  const copy: Voice = {
+    ...source,
+    id: nextVoiceId(schedule),
+    description: `${source.description.trim() || `Voice ${index + 1}`} copy`,
+    entries: source.entries.map(withoutParent),
+  };
+
+  const voices = [...schedule.voices.slice(0, at), copy, ...schedule.voices.slice(at)];
+  return { schedule: { ...schedule, voices }, voiceMap: insertVoiceMap(count, at) };
+}
+
+/**
+ * Play a voice backwards — §6.1's "reverse a voice".
+ *
+ * **§3.5 makes a voice a closed curve, and that is what a correct reversal has to respect.** The
+ * final segment glides back to entry[0]'s values whether or not the schedule loops, so `v(0)` and
+ * `v(T)` are the same value and the curve is a loop rather than a line. Reversing what is *heard*
+ * therefore means `r(t) = v(T − t)`, which lands on: entry 0 keeps its values, every later entry
+ * takes the values of its mirror image, and **the duration list reverses wholesale**. Simply
+ * reversing the entry array would instead move entry[0]'s values to the end, where §3.5 would put
+ * them back at the front anyway — a different curve, and not the one that was asked for.
+ *
+ * The reference agrees, arrived at from the other side: `SG_ReverseVoice` (ScheduleGUI.c:4286) leaves
+ * the first datapoint alone, mirrors every later point's x about the width of the plot, and reverses
+ * the rest of the list. Length is preserved exactly and reversing twice is the original.
+ */
+export function reverseVoice(schedule: Schedule, index: number): Schedule {
+  const voice = schedule.voices[index];
+  if (!voice || voice.entries.length < 2) return schedule;
+
+  const entries = voice.entries;
+  const last = entries.length - 1;
+  const reversed = entries.map((_entry, position) => ({
+    ...entries[position === 0 ? 0 : entries.length - position],
+    duration: entries[last - position].duration,
+  }));
+
+  if (reversed.every((entry, position) => sameEntry(entry, entries[position]))) return schedule;
+  return replaceEntries(schedule, index, () => reversed);
+}
+
+export interface OffsetVoiceArgs {
+  voice: number;
+  /** Seconds to move the voice later. Negative moves it earlier. */
+  seconds: number;
+}
+
+/**
+ * Shift a voice in time — §6.1's "offset a voice in time".
+ *
+ * **The format cannot express a start offset**: every voice begins at t=0 and there is no per-voice
+ * start field, so an offset has to be a rewrite of the entries. §3.5 decides which rewrite. Because
+ * the final segment glides back to entry[0] unconditionally, a voice is a *cycle*, and moving a cycle
+ * later is a rotation of it: the value that was at `T − s` becomes the value at 0, and everything
+ * follows round. Nothing is lost, the voice's length is unchanged so §3.7's spread survives, and
+ * offsetting by `−s` afterwards is the original curve again.
+ *
+ * The alternative — prepending a lead-in hold — was rejected for what it costs: the voice grows by
+ * `s`, which makes the schedule ragged on the user's own command, or else the tail is thrown away.
+ *
+ * At most one breakpoint is added, where the rotation lands mid-segment. It is audibly a no-op, for
+ * the same reason `insertEntry` is: the value it carries is the value the curve already had there.
+ */
+export function offsetVoice(schedule: Schedule, args: OffsetVoiceArgs): Schedule {
+  const voice = schedule.voices[args.voice];
+  if (!voice || voice.entries.length === 0 || !Number.isFinite(args.seconds)) return schedule;
+
+  const total = voiceDuration(voice);
+  if (!(total > 0)) return schedule;
+
+  // The point in the original curve that becomes the new beginning: r(t) = v(t − s), so r(0) = v(−s).
+  const from = (((-args.seconds % total) + total) % total) || 0;
+  if (from === 0) return schedule;
+
+  const starts = entryStartTimes(voice);
+  const index = starts.findLastIndex((start) => start <= from);
+  const entries = voice.entries;
+
+  // Landing exactly on a breakpoint is the case that needs no new node — rare with a typed offset,
+  // and the common case for a voice whose nodes are round numbers.
+  if (starts[index] === from) {
+    return replaceEntries(schedule, args.voice, () => [
+      ...entries.slice(index),
+      ...entries.slice(0, index),
+    ]);
+  }
+
+  const head = { ...entries[index], duration: from - starts[index] };
+  const tail: Entry = {
+    ...valuesAt(voice, index, from),
+    duration: starts[index] + entries[index].duration - from,
+    preserved: {},
+  };
+
+  return replaceEntries(schedule, args.voice, () => [
+    tail,
+    ...entries.slice(index + 1),
+    ...entries.slice(0, index),
+    head,
+  ]);
+}
+
+/**
+ * §3.7's one-click "pad to longest": bring every short voice up to the length of the longest, so the
+ * shortest stops cutting the whole programme off.
+ *
+ * **The shortfall goes onto the last entry's duration**, which is what Gnaural itself does when its
+ * `SG_TruncateSchedule` (ScheduleGUI.c:4343) is given an end time beyond a voice's own: *"lengthen
+ * the last DP to fit schedule"*. In §3.5's terms the voice's glide home takes longer; nothing is
+ * added, nothing is thrown away, and the entry count does not move.
+ *
+ * A voice with no entries is skipped — there is no segment to stretch, and its own repair is to be
+ * given a node or deleted. Voices already within `DURATION_EPSILON` of the longest are left exactly
+ * as they are, so this touches only what the warning is actually about.
+ */
+export function padVoicesToLongest(schedule: Schedule): Schedule {
+  const longest = longestVoiceDuration(schedule);
+  if (!(longest > 0)) return schedule;
+
+  let padded = false;
+  const voices = schedule.voices.map((voice) => {
+    if (voice.entries.length === 0) return voice;
+
+    const shortfall = longest - voiceDuration(voice);
+    if (shortfall <= DURATION_EPSILON) return voice;
+
+    padded = true;
+    const last = voice.entries.length - 1;
+    return {
+      ...voice,
+      entries: voice.entries.map((entry, index) =>
+        index === last ? { ...entry, duration: entry.duration + shortfall } : entry,
+      ),
+    };
+  });
+
+  return padded ? { ...schedule, voices } : schedule;
+}
+
+/**
+ * §6.1's "duration scaling — stretch or compress an entire program to a target length,
+ * proportionally".
+ *
+ * **Not step 8's group scale**, which multiplies the durations inside one selected run of one voice.
+ * This is the whole document against a target length: one factor, every duration in every voice, so
+ * the ratio between two voices — and therefore §3.7's spread, whatever it is — comes through
+ * unchanged. It is also the only transform in this file that rebuilds every entry, which is what
+ * makes it the history stack's worst snapshot (~13 kB on the densest bundled document).
+ *
+ * The target is measured against `scheduleDuration` — the shortest voice, which is what actually
+ * plays and what the timeline, the library card and the export all report — so "make this twenty
+ * minutes" means the programme runs for twenty minutes.
+ */
+export function setScheduleLength(schedule: Schedule, seconds: number): Schedule {
+  const current = scheduleDuration(schedule);
+  if (!(current > 0) || !(seconds > 0) || !Number.isFinite(seconds)) return schedule;
+
+  const factor = seconds / current;
+  if (factor === 1) return schedule;
+
+  const voices = schedule.voices.map((voice) =>
+    voice.entries.length === 0
+      ? voice
+      : {
+          ...voice,
+          entries: voice.entries.map((entry) => ({ ...entry, duration: entry.duration * factor })),
+        },
+  );
+  return { ...schedule, voices };
+}
+
+/**
+ * The repair for step 7's `gnaural-regroup`: make each voice's entries name that voice, and only
+ * that voice.
+ *
+ * **Gnaural rebuilds its voices from the entries alone.** `SG_RestoreBackupData` (ScheduleGUI.c:2213)
+ * walks the flat datapoint list in document order and starts a new voice wherever an entry's `parent`
+ * differs from the previous entry's, then takes each voice's description, type and flags by position;
+ * `<id>` is never read back at all. So a document whose entries disagree with their voice — two
+ * adjacent voices sharing a parent, or one voice carrying two — reopens as something other than what
+ * was saved, and the fix is to renumber the ids and let the serializer derive `parent` from them.
+ *
+ * **It reads `entryParent`**, the same one line the detection in `warnings.ts` reads and the
+ * serializer writes through, so the check, the repair and the file can never come to disagree.
+ *
+ * **It cannot repair the third shape**, a voice with no entries: that voice contributes no datapoint
+ * whatever its id, so it disappears on reopen and shifts every later voice's identity. Giving it a
+ * node or deleting it are the only answers, and both are already commands. The warning stays up, and
+ * the caller offers this repair only when it would change something.
+ */
+export function repairVoiceGrouping(schedule: Schedule): Schedule {
+  if (groupingSurvivesGnaural(schedule)) return schedule;
+
+  const voices = schedule.voices.map((voice, index) => {
+    const entries = voice.entries.map(withoutParent);
+    const untouched =
+      voice.id === index && entries.every((entry, at) => entry === voice.entries[at]);
+    return untouched ? voice : { ...voice, id: index, entries };
+  });
+
+  return { ...schedule, voices };
+}
+
+/**
+ * Whether this document's voices come back as themselves — one owner per voice, and a different one
+ * from the voice before it.
+ *
+ * A voice with no entries is passed over rather than judged: it has no owner to compare, it raises
+ * its own warning, and this repair cannot help it. That is also exactly how `warnings.ts` reads the
+ * boundary, which is the point — the two must agree about what is broken.
+ */
+function groupingSurvivesGnaural(schedule: Schedule): boolean {
+  let previous: string | null = null;
+
+  for (const voice of schedule.voices) {
+    if (voice.entries.length === 0) {
+      previous = null;
+      continue;
+    }
+
+    const owners = new Set(voice.entries.map((entry) => entryParent(entry, voice.id)));
+    if (owners.size > 1) return false;
+
+    const [owner] = owners;
+    if (owner === previous) return false;
+    previous = owner;
+  }
+
+  return true;
+}
+
+/** The lowest id no voice is using. Nothing is ever renumbered — see `insertVoice`. */
+function nextVoiceId(schedule: Schedule): number {
+  return schedule.voices.length > 0
+    ? Math.max(...schedule.voices.map((voice) => voice.id)) + 1
+    : 0;
+}
+
+/**
+ * An entry that no longer names an owner, so the serializer derives one from the voice it is in.
+ *
+ * Returns the entry itself when there is nothing to drop, which is what keeps a repair from
+ * rebuilding entries it has no business rebuilding.
+ */
+function withoutParent(entry: Entry): Entry {
+  if (!('parent' in entry.preserved)) return entry;
+  const { parent: _dropped, ...preserved } = entry.preserved;
+  return { ...entry, preserved };
+}
+
+/** Field equality, for transforms that can rearrange a voice into exactly what it already was. */
+function sameEntry(a: Entry, b: Entry): boolean {
+  return (
+    a.duration === b.duration &&
+    a.baseFreq === b.baseFreq &&
+    a.beatFreq === b.beatFreq &&
+    a.volumeLeft === b.volumeLeft &&
+    a.volumeRight === b.volumeRight &&
+    a.preserved === b.preserved
+  );
 }
 
 /**

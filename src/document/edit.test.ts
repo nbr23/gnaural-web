@@ -4,26 +4,33 @@ import { DEFAULT_LIVE_VALUES } from '../live/liveSchedule';
 import {
   NEW_VOICE_SECONDS,
   adjustEntries,
+  duplicateVoice,
   insertEntry,
   insertVoice,
   moveEntries,
   moveEntry,
   moveVoice,
+  offsetVoice,
+  padVoicesToLongest,
   removeEntries,
   removeEntry,
   removeVoice,
+  repairVoiceGrouping,
+  reverseVoice,
   scaleEntries,
+  setScheduleLength,
   updateEntry,
   updateSchedule,
   updateVoice,
 } from './edit';
 import { parseSchedule } from './parser';
 import { serializeSchedule } from './serializer';
-import { loadFixture } from './test-fixtures';
+import { fixtureNames, loadFixture } from './test-fixtures';
 import { entryStartTimes, scheduleDuration, voiceDuration } from './timing';
 import type { Entry, Schedule, Voice } from './types';
 import { VoiceType } from './types';
 import { REMOVED } from './voiceMap';
+import { entryWarnings } from './warnings';
 
 /** A real multi-voice document, so the structural-sharing assertions have something to share. */
 function fixture() {
@@ -863,3 +870,400 @@ describe('removeEntries', () => {
     expect(removeEntries(before, [])).toBe(before);
   });
 });
+
+describe('duplicateVoice', () => {
+  it('copies the voice next to its source and reports where everything went', () => {
+    const before = fixture();
+    const { schedule: after, voiceMap } = duplicateVoice(before, 0);
+
+    expect(after.voices).toHaveLength(4);
+    expect(after.voices[0]).toBe(before.voices[0]);
+    expect(after.voices[2]).toBe(before.voices[1]);
+    expect(after.voices[1].entries).toHaveLength(before.voices[0].entries.length);
+    expect(voiceDuration(after.voices[1])).toBe(voiceDuration(before.voices[0]));
+    expect(voiceMap).toEqual([0, 2, 3]);
+  });
+
+  it('keeps the type, the flags and the description, and says it is a copy', () => {
+    const before = fixture();
+    const source: Voice = { ...before.voices[1], muted: true, mono: true, hidden: true };
+    const { schedule } = duplicateVoice({ ...before, voices: [source] }, 0);
+    const copy = schedule.voices[1];
+
+    expect(copy.type).toBe(source.type);
+    expect([copy.muted, copy.mono, copy.hidden]).toEqual([true, true, true]);
+    expect(copy.description).toBe(`${source.description} copy`);
+  });
+
+  /**
+   * The one line this command turns on. `entryParent` prefers `preserved.parent`, and every corpus
+   * entry carries one — so a copy that kept them would sit next to its source claiming the same
+   * owner, which is exactly the *merge* shape step 7's `gnaural-regroup` warns about. This is the
+   * command authoring the bug the same step repairs, and the strip is what prevents it.
+   */
+  it('drops the copied entries’ owner, so the copy does not merge back into its source', () => {
+    const before = fixture();
+    expect(before.voices[0].entries[0].preserved.parent).toBeDefined();
+
+    const { schedule } = duplicateVoice(before, 0);
+    const copy = schedule.voices[1];
+
+    expect(copy.entries.every((entry) => !('parent' in entry.preserved))).toBe(true);
+    expect(copy.id).toBe(3);
+    expect(entryWarnings(schedule).filter((warning) => warning.kind === 'gnaural-regroup')).toEqual([]);
+  });
+
+  it('would have merged without the strip — stated so the strip cannot be quietly removed', () => {
+    const before = fixture();
+    const source = before.voices[0];
+    const naive: Voice = { ...source, id: 3, description: 'copy' };
+    const merged = { ...before, voices: [source, naive, ...before.voices.slice(1)] };
+
+    expect(entryWarnings(merged).some((warning) => warning.kind === 'gnaural-regroup')).toBe(true);
+  });
+
+  it('survives a round trip through the serializer as two separate voices', () => {
+    const { schedule } = duplicateVoice(fixture(), 0);
+    const reparsed = parseSchedule(serializeSchedule(schedule));
+
+    expect(reparsed.voices).toHaveLength(4);
+    expect(reparsed.voices[1].entries[0].preserved.parent).toBe(String(schedule.voices[1].id));
+    expect(reparsed.voices[0].entries[0].preserved.parent).not.toBe(
+      reparsed.voices[1].entries[0].preserved.parent,
+    );
+  });
+
+  it('returns its input and an identity map for a voice that is not there', () => {
+    const before = fixture();
+    const { schedule, voiceMap } = duplicateVoice(before, 9);
+
+    expect(schedule).toBe(before);
+    expect(voiceMap).toEqual([0, 1, 2]);
+  });
+});
+
+describe('reverseVoice', () => {
+  /**
+   * §3.5 makes a voice a closed curve, so reversing what is *heard* is `r(t) = v(T − t)`: entry 0
+   * keeps its values, the rest mirror, and the durations reverse wholesale. `SG_ReverseVoice`
+   * (ScheduleGUI.c:4286) does the same thing in pixel space — it leaves the first datapoint alone.
+   */
+  it('is the curve played backwards, sampled against the compiled original', () => {
+    const before = fixture();
+    const after = reverseVoice(before, 0);
+    const original = compileVoice(before.voices[0]);
+    const reversed = compileVoice(after.voices[0]);
+    const total = voiceDuration(before.voices[0]);
+
+    for (let step = 0; step <= 20; step += 1) {
+      const t = (total * step) / 20;
+      expect(eventBeatFreq(valueAtTime(reversed, t))).toBeCloseTo(
+        eventBeatFreq(valueAtTime(original, total - t)),
+        6,
+      );
+      expect(eventBaseFreq(valueAtTime(reversed, t))).toBeCloseTo(
+        eventBaseFreq(valueAtTime(original, total - t)),
+        6,
+      );
+    }
+  });
+
+  it('keeps the voice’s length, its node count and its opening values', () => {
+    const before = ramp([10, 20, 30]);
+    const after = reverseVoice(before, 0);
+
+    expect(voiceDuration(after.voices[0])).toBe(voiceDuration(before.voices[0]));
+    expect(after.voices[0].entries.map((entry) => entry.duration)).toEqual([30, 20, 10]);
+    expect(after.voices[0].entries[0].baseFreq).toBe(before.voices[0].entries[0].baseFreq);
+    expect(after.voices[0].entries[1].baseFreq).toBe(before.voices[0].entries[2].baseFreq);
+  });
+
+  it('is its own inverse', () => {
+    const before = fixture();
+    const twice = reverseVoice(reverseVoice(before, 1), 1);
+
+    expect(twice.voices[1].entries).toEqual(before.voices[1].entries);
+  });
+
+  it('touches no other voice, and returns its input where there is nothing to reverse', () => {
+    const before = fixture();
+    const after = reverseVoice(before, 1);
+
+    expect(after.voices[0]).toBe(before.voices[0]);
+    expect(after.voices[2]).toBe(before.voices[2]);
+    expect(reverseVoice(before, 9)).toBe(before);
+
+    // One entry is a constant hold, and two entries of equal length are already their own mirror —
+    // both are genuinely nothing to undo.
+    const single = ramp([10]);
+    const symmetric = ramp([20, 20]);
+    expect(reverseVoice(single, 0)).toBe(single);
+    expect(reverseVoice(symmetric, 0)).toBe(symmetric);
+  });
+});
+
+describe('offsetVoice', () => {
+  /**
+   * The format has no per-voice start, so an offset is a rotation of §3.5's closed curve: the value
+   * at `T − s` becomes the value at 0 and everything follows round. Length is preserved, which is
+   * what keeps §3.7's spread intact.
+   */
+  it('rotates the curve, so what is heard at t is what was heard at t − s', () => {
+    const before = fixture();
+    const shift = 300;
+    const after = offsetVoice(before, { voice: 0, seconds: shift });
+    const original = compileVoice(before.voices[0]);
+    const rotated = compileVoice(after.voices[0]);
+    const total = voiceDuration(before.voices[0]);
+
+    expect(voiceDuration(after.voices[0])).toBeCloseTo(total, 6);
+    for (let step = 0; step <= 20; step += 1) {
+      const t = (total * step) / 20;
+      const source = (((t - shift) % total) + total) % total;
+      expect(eventBeatFreq(valueAtTime(rotated, t))).toBeCloseTo(
+        eventBeatFreq(valueAtTime(original, source)),
+        4,
+      );
+    }
+  });
+
+  it('rotates without adding a node when it lands on a breakpoint', () => {
+    const before = ramp([10, 20, 30]);
+    const after = offsetVoice(before, { voice: 0, seconds: -10 });
+
+    expect(after.voices[0].entries).toHaveLength(3);
+    expect(after.voices[0].entries.map((entry) => entry.duration)).toEqual([20, 30, 10]);
+    expect(after.voices[0].entries[0]).toBe(before.voices[0].entries[1]);
+  });
+
+  it('splits the segment it lands inside, adding exactly one node', () => {
+    const before = ramp([10, 20, 30]);
+    const after = offsetVoice(before, { voice: 0, seconds: -15 });
+
+    expect(after.voices[0].entries).toHaveLength(4);
+    expect(voiceDuration(after.voices[0])).toBeCloseTo(60, 9);
+    expect(after.voices[0].entries[0].duration).toBe(15);
+  });
+
+  it('comes back to the same curve when offset the other way', () => {
+    const before = fixture();
+    const there = offsetVoice(before, { voice: 2, seconds: 137 });
+    const back = offsetVoice(there, { voice: 2, seconds: -137 });
+    const original = compileVoice(before.voices[2]);
+    const returned = compileVoice(back.voices[2]);
+    const total = voiceDuration(before.voices[2]);
+
+    for (let step = 0; step <= 20; step += 1) {
+      const t = (total * step) / 20;
+      expect(eventBeatFreq(valueAtTime(returned, t))).toBeCloseTo(
+        eventBeatFreq(valueAtTime(original, t)),
+        4,
+      );
+    }
+  });
+
+  it('wraps an offset longer than the voice, and returns its input for a whole number of turns', () => {
+    const before = ramp([10, 20, 30]);
+    const once = offsetVoice(before, { voice: 0, seconds: 10 });
+    const twice = offsetVoice(before, { voice: 0, seconds: 70 });
+
+    expect(twice.voices[0].entries).toEqual(once.voices[0].entries);
+    expect(offsetVoice(before, { voice: 0, seconds: 60 })).toBe(before);
+    expect(offsetVoice(before, { voice: 0, seconds: 0 })).toBe(before);
+  });
+
+  it('touches no other voice and refuses what it cannot rotate', () => {
+    const before = fixture();
+    const after = offsetVoice(before, { voice: 1, seconds: 45 });
+
+    expect(after.voices[0]).toBe(before.voices[0]);
+    expect(after.voices[2]).toBe(before.voices[2]);
+    expect(offsetVoice(before, { voice: 9, seconds: 45 })).toBe(before);
+    expect(offsetVoice(before, { voice: 0, seconds: Number.NaN })).toBe(before);
+  });
+});
+
+describe('padVoicesToLongest', () => {
+  /** §3.7's one-click fix. Gnaural pads the same way — `SG_TruncateSchedule` lengthens the last DP. */
+  it('adds the shortfall to each short voice’s last entry, and only there', () => {
+    const before = ripple(ramp([10, 20, 30]), 1, -12);
+    const after = padVoicesToLongest(before);
+
+    expect(voiceDuration(after.voices[1])).toBeCloseTo(60, 9);
+    expect(after.voices[1].entries.map((entry) => entry.duration)).toEqual([10, 20, 30]);
+    expect(after.voices[1].entries[0]).toBe(before.voices[1].entries[0]);
+    expect(after.voices[0]).toBe(before.voices[0]);
+  });
+
+  it('leaves the schedule playing its longest voice’s length', () => {
+    const before = ripple(ramp([10, 20, 30]), 1, -12);
+    const after = padVoicesToLongest(before);
+
+    expect(scheduleDuration(after)).toBeCloseTo(longest(after), 9);
+    expect(scheduleDuration(before)).toBeLessThan(longest(before));
+  });
+
+  it('returns its input for a schedule that is already even — which is all 19 bundled files', () => {
+    for (const name of fixtureNames()) {
+      const schedule = parseSchedule(loadFixture(name));
+      expect(padVoicesToLongest(schedule)).toBe(schedule);
+    }
+  });
+
+  /** There is no segment to stretch, and the repair for that voice is a node or a deletion. */
+  it('skips a voice with no entries', () => {
+    const before = fixture();
+    const empty: Voice = { ...before.voices[0], entries: [] };
+    const after = padVoicesToLongest({ ...before, voices: [empty, before.voices[1]] });
+
+    expect(after.voices[0].entries).toEqual([]);
+  });
+});
+
+describe('setScheduleLength', () => {
+  it('takes the whole programme to the target, proportionally', () => {
+    const before = fixture();
+    const after = setScheduleLength(before, 600);
+
+    expect(scheduleDuration(after)).toBeCloseTo(600, 6);
+    const factor = 600 / scheduleDuration(before);
+    expect(after.voices[0].entries[3].duration).toBeCloseTo(
+      before.voices[0].entries[3].duration * factor,
+      6,
+    );
+  });
+
+  /** One factor for every voice, so a ragged schedule stays exactly as ragged in proportion. */
+  it('scales every voice by the same factor', () => {
+    const before = ripple(ramp([10, 20, 30]), 1, 30);
+    const after = setScheduleLength(before, 120);
+    const ratio = voiceDuration(before.voices[1]) / voiceDuration(before.voices[0]);
+
+    expect(voiceDuration(after.voices[1]) / voiceDuration(after.voices[0])).toBeCloseTo(ratio, 9);
+    expect(scheduleDuration(after)).toBeCloseTo(120, 9);
+  });
+
+  it('refuses a target that is not a length, and a schedule with no length', () => {
+    const before = ramp([10, 20, 30]);
+
+    expect(setScheduleLength(before, 0)).toBe(before);
+    expect(setScheduleLength(before, -60)).toBe(before);
+    expect(setScheduleLength(before, Number.NaN)).toBe(before);
+    expect(setScheduleLength(before, 60)).toBe(before);
+    expect(setScheduleLength({ ...before, voices: [] }, 60)).toStrictEqual({ ...before, voices: [] });
+  });
+});
+
+describe('repairVoiceGrouping', () => {
+  /**
+   * Gnaural rebuilds its voices from the entries' `parent` alone (`SG_RestoreBackupData`,
+   * ScheduleGUI.c:2213), so these are the two shapes that reopen as something else — and the repair
+   * has to clear the warning step 7 raises for them.
+   */
+  it('separates two adjacent voices whose entries claim the same owner', () => {
+    const before = merged();
+    expect(entryWarnings(before).some((warning) => warning.kind === 'gnaural-regroup')).toBe(true);
+
+    const after = repairVoiceGrouping(before);
+
+    expect(entryWarnings(after).filter((warning) => warning.kind === 'gnaural-regroup')).toEqual([]);
+    expect(after.voices.map((voice) => voice.id)).toEqual([0, 1]);
+  });
+
+  it('gives a voice carrying two owners a single one', () => {
+    const before = split();
+    expect(entryWarnings(before).some((warning) => warning.kind === 'gnaural-regroup')).toBe(true);
+
+    const after = repairVoiceGrouping(before);
+
+    expect(entryWarnings(after).filter((warning) => warning.kind === 'gnaural-regroup')).toEqual([]);
+    expect(new Set(after.voices[0].entries.map((entry) => entry.preserved.parent))).toEqual(
+      new Set([undefined]),
+    );
+  });
+
+  it('changes no value, only who owns what', () => {
+    const before = merged();
+    const after = repairVoiceGrouping(before);
+
+    expect(after.voices.map((voice) => voice.entries.map((entry) => entry.duration))).toEqual(
+      before.voices.map((voice) => voice.entries.map((entry) => entry.duration)),
+    );
+    expect(scheduleDuration(after)).toBe(scheduleDuration(before));
+  });
+
+  it('is idempotent', () => {
+    const once = repairVoiceGrouping(merged());
+    expect(repairVoiceGrouping(once)).toBe(once);
+  });
+
+  /** All 51 corpus voices carry `parent == id`, so this is a no-op across the whole library. */
+  it('returns its input for every bundled file', () => {
+    for (const name of fixtureNames()) {
+      const schedule = parseSchedule(loadFixture(name));
+      expect(repairVoiceGrouping(schedule)).toBe(schedule);
+    }
+  });
+
+  /**
+   * The third shape it cannot help with: a voice with no entries contributes no datapoint whatever
+   * its id, so it disappears on reopen regardless. The warning stays, and the caller offers no
+   * button — which is what `=== schedule` is being used to decide.
+   */
+  it('does nothing for a schedule whose only fault is an empty voice', () => {
+    const before = fixture();
+    const withEmpty = {
+      ...before,
+      voices: [{ ...before.voices[0], entries: [] }, before.voices[1]],
+    };
+
+    expect(repairVoiceGrouping(withEmpty)).toBe(withEmpty);
+    expect(entryWarnings(withEmpty).some((warning) => warning.kind === 'gnaural-regroup')).toBe(true);
+  });
+});
+
+/** Two voices whose entries claim the same owner, which Gnaural would reopen as one. */
+function merged(): Schedule {
+  const base = ramp([10, 20, 30]);
+  const claim = (voice: Voice, parent: string): Voice => ({
+    ...voice,
+    entries: voice.entries.map((entry) => ({ ...entry, preserved: { parent } })),
+  });
+  return { ...base, voices: [claim(base.voices[0], '0'), claim(base.voices[1], '0')] };
+}
+
+/** One voice whose entries claim two owners, which Gnaural would reopen as two. */
+function split(): Schedule {
+  const base = ramp([10, 20, 30]);
+  const voice: Voice = {
+    ...base.voices[0],
+    entries: base.voices[0].entries.map((entry, index) => ({
+      ...entry,
+      preserved: { parent: index < 2 ? '0' : '1' },
+    })),
+  };
+  return { ...base, voices: [voice] };
+}
+
+/** Lengthen or shorten one voice, so a schedule is ragged on purpose. */
+function ripple(schedule: Schedule, voice: number, seconds: number): Schedule {
+  const target = schedule.voices[voice];
+  const last = target.entries.length - 1;
+  return {
+    ...schedule,
+    voices: schedule.voices.map((current, index) =>
+      index === voice
+        ? {
+            ...current,
+            entries: current.entries.map((entry, at) =>
+              at === last ? { ...entry, duration: entry.duration + seconds } : entry,
+            ),
+          }
+        : current,
+    ),
+  };
+}
+
+function longest(schedule: Schedule): number {
+  return Math.max(...schedule.voices.map(voiceDuration));
+}
