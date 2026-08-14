@@ -20,8 +20,9 @@
  */
 
 /** Gnaural's sine peak, `BB_SIN_SCALER` (BinauralBeat.c:71) — the reference level noise is
- *  mixed against, so dividing by it puts our floats at the same tone-to-noise ratio. */
-const SIN_SCALER = 0x3fff;
+ *  mixed against, so dividing by it puts our floats at the same tone-to-noise ratio. Shared with
+ *  `water.ts`, which mixes its drops against the same reference. */
+export const SIN_SCALER = 0x3fff;
 
 /** `BB_Rand() >> 15` (BinauralBeat.c:717) — white input in ±2^16, before the lowpass. */
 const WHITE_SHIFT = 15;
@@ -42,9 +43,10 @@ const SEAM_CROSSFADE_SECONDS = 0.05;
  * runs on `unsigned long` — 64-bit on Linux — and so cannot be reproduced faithfully in JS.
  * Only the distribution matters for noise; what does matter is that the stream is *seeded*, so
  * that a WAV export and live playback of the same schedule produce identical samples and can be
- * null-tested against each other (PLAN.md §5.3).
+ * null-tested against each other (PLAN.md §5.3). `water.ts` seeds its drop field from the same
+ * generator, for the same reason.
  */
-function xorshift32(seed: number): () => number {
+export function xorshift32(seed: number): () => number {
   let state = seed | 0 || 1; // a zero state is a fixed point of the generator
   return () => {
     state ^= state << 13;

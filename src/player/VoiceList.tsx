@@ -30,12 +30,12 @@ const TYPE_LABELS: Partial<Record<VoiceType, string>> = {
   [VoiceType.IsoPulse]: 'isochronic',
   // Named apart from type 3 because the difference is audible: the pulse swaps ears.
   [VoiceType.IsoPulseAlt]: 'isochronic (alternating)',
+  [VoiceType.WaterDrops]: 'water drops',
+  [VoiceType.Rain]: 'rain',
 };
 
 const UNRENDERED_LABELS: Partial<Record<VoiceType, string>> = {
   [VoiceType.Pcm]: 'external audio — cannot be rendered',
-  [VoiceType.WaterDrops]: 'water drops — not yet rendered',
-  [VoiceType.Rain]: 'rain — not yet rendered',
 };
 
 export function VoiceList({ schedule, gates, onToggleMute, onToggleSolo }: VoiceListProps) {

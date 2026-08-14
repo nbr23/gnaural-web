@@ -60,14 +60,16 @@ export const enum VoiceType {
  * **Stated once, here, because two readers must never disagree**: the engine skips what it cannot
  * render, and `warnings.ts` promises the listener that everything else was heard. A second copy
  * would eventually either silently drop a voice — §3.3's one prohibition — or warn about one that
- * is sounding. Types 5 and 6 (water drops, rain) are still to come; type 2 (PCM) never can, since
- * the schedule does not record where the audio file is.
+ * is sounding. Every type the format defines is here except type 2 (PCM), which never can be: the
+ * schedule does not record where the audio file is.
  */
 const RENDERABLE_TYPES = new Set<VoiceType>([
   VoiceType.Binaural,
   VoiceType.PinkNoise,
   VoiceType.IsoPulse,
   VoiceType.IsoPulseAlt,
+  VoiceType.WaterDrops,
+  VoiceType.Rain,
 ]);
 
 export function isRenderableType(type: VoiceType): boolean {
@@ -80,9 +82,14 @@ export function isRenderableType(type: VoiceType): boolean {
  * readout mean anything for.
  *
  * Noise (type 1) reads neither: all nine noise voices in the bundled corpus carry base 100 and beat
- * 0. §3.3 records that water drops (type 5) reads the *first* `beatfreq` as a drop count rather than
- * a frequency. An isochronic voice reads both, differently from a binaural one but no less
- * literally: the base is its tone and the beat is the rate that tone is switched on and off at.
+ * 0. Water drops and rain (types 5 and 6) read both, but as neither a carrier nor a rate — the base
+ * is a per-sample probability and the first `beatfreq` is a drop count (§3.3). An isochronic voice
+ * reads both, differently from a binaural one but no less literally: the base is its tone and the
+ * beat is the rate that tone is switched on and off at.
+ *
+ * It is also what the chart fits its two frequency lanes to: a probability of 0.00035 drawn beside a
+ * carrier at 200 Hz flattens every tone curve in the lane, and a drop count of 100 does the same to
+ * the beat lane. See `buildChartModel`.
  */
 const TONAL_TYPES = new Set<VoiceType>([
   VoiceType.Binaural,

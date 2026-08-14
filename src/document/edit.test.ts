@@ -520,6 +520,51 @@ describe('insertVoice', () => {
     expect(voice.entries[0].beatFreq).toBe(0);
   });
 
+  /**
+   * The two rows that are *measured* rather than decided: Gnaural's own voice-type handler writes
+   * these when the voice is created (`main.c:3788`), and 0.000352858 is the 1/2834 its source names
+   * in prose. Neither field is a frequency — the base is a per-sample probability and the beat a
+   * drop count — so a value picked to look reasonable would be a guess about a texture.
+   */
+  it('takes its water and rain values from the reference’s own defaults', () => {
+    const drops = insertVoice(fixture(), { kind: 'water' }).schedule.voices[3];
+    const rain = insertVoice(fixture(), { kind: 'rain' }).schedule.voices[3];
+
+    expect(drops.type).toBe(VoiceType.WaterDrops);
+    expect(drops.description).toBe('Water drops');
+    expect(drops.entries[0].baseFreq).toBe(0.000352858);
+    expect(drops.entries[0].beatFreq).toBe(2);
+
+    expect(rain.type).toBe(VoiceType.Rain);
+    expect(rain.description).toBe('Rain');
+    expect(rain.entries[0].baseFreq).toBe(0.1);
+    expect(rain.entries[0].beatFreq).toBe(8);
+
+    for (const voice of [drops, rain]) {
+      expect(voice.entries[0].volumeLeft).toBe(0.5);
+      expect(voice.entries[0].volumeRight).toBe(0.5);
+    }
+  });
+
+  /**
+   * §3.5's insert takes its values from the curve, but an *empty* voice has no curve to read, so it
+   * falls back to the kind's defaults — and getting the kind wrong there is not cosmetic on these
+   * two types. `voiceKindOf` used to fall through to `tone` for them, which would have written a
+   * probability of 200: every slot seeding a drop on every sample.
+   */
+  it('repairs an empty water voice with a probability rather than a frequency', () => {
+    const before = fixture();
+    const empty = {
+      ...before,
+      voices: [...before.voices, { ...before.voices[0], id: 9, type: VoiceType.Rain, entries: [] }],
+    };
+
+    const repaired = insertEntry(empty, { voice: 3, after: 0 });
+
+    expect(repaired.voices[3].entries[0].baseFreq).toBe(0.1);
+    expect(repaired.voices[3].entries[0].beatFreq).toBe(8);
+  });
+
   it('inserts in the middle and reports where everything went', () => {
     const before = fixture();
     const { schedule: after, voiceMap } = insertVoice(before, { kind: 'tone', at: 1 });

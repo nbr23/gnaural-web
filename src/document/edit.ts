@@ -489,15 +489,30 @@ export const NEW_VOICE_SECONDS = 1200;
  * because the two fields mean the same two things for it (a carrier, and a rate); a different set
  * would be asserting a difference that is not there. The same test pins all three together.
  *
+ * **`water` and `rain` are measured, and from the only place that has them.** Their two fields are a
+ * per-sample probability and a drop count, and a hand-picked pair would be a guess about a texture:
+ * `basefreq` 0 is silence, and an order of magnitude either way is a downpour or nothing. Gnaural's
+ * own voice-type handler writes a datapoint when the voice is created (`main.c:3788`), and these are
+ * its numbers — including the 1/2834 that `main.c:617` names in prose. A test pins them.
+ *
  * The offered kinds are deliberately not every renderable type: type 4 differs from type 3 only in
  * which ear each pulse lands in, which is a toggle on a voice rather than a separate thing to add.
  */
-export type VoiceKind = 'tone' | 'isochronic' | 'noise';
+export type VoiceKind = 'tone' | 'isochronic' | 'noise' | 'water' | 'rain';
 
 const VOICE_DEFAULTS: Record<VoiceKind, { type: VoiceType } & Omit<Entry, 'duration' | 'preserved'>> = {
   tone: { type: VoiceType.Binaural, baseFreq: 200, beatFreq: 10, volumeLeft: 0.5, volumeRight: 0.5 },
   isochronic: { type: VoiceType.IsoPulse, baseFreq: 200, beatFreq: 10, volumeLeft: 0.5, volumeRight: 0.5 },
   noise: { type: VoiceType.PinkNoise, baseFreq: 100, beatFreq: 0, volumeLeft: 0.4, volumeRight: 0.4 },
+  // `basefreq` is the chance per sample that one of `beatfreq` slots starts a drop, not a frequency.
+  water: {
+    type: VoiceType.WaterDrops,
+    baseFreq: 0.000352858,
+    beatFreq: 2,
+    volumeLeft: 0.5,
+    volumeRight: 0.5,
+  },
+  rain: { type: VoiceType.Rain, baseFreq: 0.1, beatFreq: 8, volumeLeft: 0.5, volumeRight: 0.5 },
 };
 
 /** What each kind of voice is called when nobody has named it. */
@@ -506,6 +521,8 @@ const VOICE_DESCRIPTIONS: Record<VoiceKind, string | null> = {
   tone: null,
   isochronic: 'Isochronic pulse',
   noise: 'Background noise',
+  water: 'Water drops',
+  rain: 'Rain',
 };
 
 function newEntry(kind: VoiceKind, duration: number): Entry {
@@ -517,10 +534,16 @@ function newEntry(kind: VoiceKind, duration: number): Entry {
  * Which set of defaults an existing voice's entries should be made from — needed when a voice
  * exists already and a *node* is being added to it. Every type this app does not offer as a kind
  * falls back to `tone`, which reads both fields the way the file most likely intends.
+ *
+ * **Types 5 and 6 have to be here, not in the fallback.** A `basefreq` of 200 on a water voice is a
+ * probability of 200 — every slot seeding a drop on every sample — so the tone row is not a harmless
+ * default there but the loudest thing the generator can make.
  */
 export function voiceKindOf(type: VoiceType): VoiceKind {
   if (type === VoiceType.PinkNoise) return 'noise';
   if (type === VoiceType.IsoPulse || type === VoiceType.IsoPulseAlt) return 'isochronic';
+  if (type === VoiceType.WaterDrops) return 'water';
+  if (type === VoiceType.Rain) return 'rain';
   return 'tone';
 }
 

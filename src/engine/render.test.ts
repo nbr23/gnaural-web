@@ -109,10 +109,10 @@ describe('renderSchedule', () => {
  * shifted by exactly that many frames.
  *
  * The schedule deliberately exercises the parts of the graph an export could plausibly get wrong:
- * two binaural voices (one of them `voice_mono`), a noise voice, an isochronic voice, asymmetric
- * `overallvolume_*` and `stereoswap`.
+ * two binaural voices (one of them `voice_mono`), a noise voice, an isochronic voice, a water
+ * voice, asymmetric `overallvolume_*` and `stereoswap`.
  *
- * **Its premises, both of which the isochronic voice extends rather than changes.**
+ * **Its premises, which the water voice tests harder than anything before it.**
  *
  * 1. *Every opening segment is flat in frequency.* `PlaybackEngine` holds frequency constant
  *    through its fade-in while the export is already ramping, so a sloping opening leaves the two
@@ -121,8 +121,13 @@ describe('renderSchedule', () => {
  *    fully on in ~2.3 ms, so a misalignment costs far more than a phase error on a sine does. Both
  *    paths start every oscillator at `t0`, and the comparison below shifts by exactly the
  *    `CLICK_FREE_RAMP` frames between them — so if this test ever fails on the isochronic voice,
- *    suspect the alignment and not the gate.
- * 2. *The summed mix stays below full scale*, or the WAV's clamp is what is being compared.
+ *    suspect the alignment and not the gate. The water voice is vacuous here, like noise: it
+ *    drives no frequency param at all.
+ * 2. *The summed mix stays below full scale*, or the WAV's clamp is what is being compared. **This
+ *    is the binding one for a water voice**, whose drops sum to as much as `2·N·v` in float units
+ *    where the reference's own defaults would already clip on their own. Its volumes and its
+ *    density were measured down against the assertion below, not chosen: at the fixture's values
+ *    the mix peaks at 0.75.
  */
 describe('WAV export null test (§5.3)', () => {
   const DURATION = 1.5;
@@ -160,6 +165,14 @@ describe('WAV export null test (§5.3)', () => {
           ],
           { id: 3, type: VoiceType.IsoPulse },
         ),
+        // Water drops: the buffer is a function of the voice's index and the sample rate alone, so
+        // both paths run the identical field — which is the whole of what this test proves about it.
+        // `basefreq` is a probability and `beatfreq` a drop count, and both are well below the
+        // reference's defaults so that premise 2 survives (see above).
+        makeVoice([makeEntry({ duration: DURATION, baseFreq: 0.0002, beatFreq: 3, volumeLeft: 0.2, volumeRight: 0.15 })], {
+          id: 4,
+          type: VoiceType.WaterDrops,
+        }),
       ],
       { masterVolume: { left: 0.9, right: 0.6 }, stereoSwap: true },
     );

@@ -458,6 +458,141 @@ describe('isochronic voices (types 3 and 4, §3.3)', () => {
   });
 });
 
+/**
+ * Types 5 and 6 (§3.3): a field of drops, seeded and looped like noise but generated from
+ * `entry[0]` alone — `basefreq` is the chance per sample that a drop starts and `beatfreq` is how
+ * many can overlap. `water.test.ts` measures the generator; what is measured here is the *voice*:
+ * that the buffer reaches the output, follows the envelope, survives the transport, and that the
+ * two things the graph rather than the generator decides — `voice_mono` and rebuilding on an edit
+ * to the field — do what the reference's arithmetic says.
+ */
+describe('water voices (types 5 and 6, §3.3)', () => {
+  /** The reference's own defaults for each type (`main.c:3788`). */
+  const DROPS = { baseFreq: 0.000352858, beatFreq: 2 };
+  const RAIN = { baseFreq: 0.1, beatFreq: 8 };
+
+  function water(entries: Entry[], overrides: Partial<Voice> = {}): Voice {
+    return makeVoice(entries, { type: VoiceType.WaterDrops, ...overrides });
+  }
+
+  async function render(schedule: Schedule, seconds = 2): Promise<AudioBuffer> {
+    const context = new OfflineAudioContext(2, seconds * SAMPLE_RATE, SAMPLE_RATE);
+    playSchedule(context, schedule);
+    return context.startRendering();
+  }
+
+  function rms(samples: Float32Array): number {
+    let sum = 0;
+    for (const sample of samples) sum += sample * sample;
+    return Math.sqrt(sum / samples.length);
+  }
+
+  it('sounds, for both types', async () => {
+    const drops = await render(makeSchedule([water([makeEntry({ duration: 2, ...DROPS })])]));
+    const rain = await render(
+      makeSchedule([water([makeEntry({ duration: 2, ...RAIN })], { type: VoiceType.Rain })]),
+    );
+
+    expect(peakAmplitude(drops.getChannelData(0))).toBeGreaterThan(0.05);
+    expect(peakAmplitude(rain.getChannelData(0))).toBeGreaterThan(0.05);
+    // One field, panned across the two channels — not the independent streams noise uses.
+    expect(Array.from(drops.getChannelData(0).subarray(0, 200))).not.toEqual(
+      Array.from(drops.getChannelData(1).subarray(0, 200)),
+    );
+  });
+
+  /** A `basefreq` of 0 is silence, not the raindrop default `main.c:617` promises in prose: the
+   *  threshold *is* `basefreq`, so no slot ever seeds. */
+  it('is silent at a basefreq of zero', async () => {
+    const buffer = await render(
+      makeSchedule([water([makeEntry({ duration: 2, baseFreq: 0, beatFreq: 8 })])]),
+    );
+
+    expect(peakAmplitude(buffer.getChannelData(0))).toBe(0);
+  });
+
+  it('follows its volume envelope like any other voice', async () => {
+    const buffer = await render(
+      makeSchedule([
+        water([
+          makeEntry({ duration: 1, ...RAIN, volumeLeft: 1, volumeRight: 1 }),
+          makeEntry({ duration: 1, ...RAIN, volumeLeft: 0, volumeRight: 0 }),
+        ], { type: VoiceType.Rain }),
+      ]),
+    );
+    const left = buffer.getChannelData(0);
+
+    const head = rms(left.subarray(0, Math.round(0.1 * SAMPLE_RATE)));
+    const tail = rms(left.subarray(Math.round(0.9 * SAMPLE_RATE), Math.round(SAMPLE_RATE)));
+    expect(tail).toBeLessThan(head * 0.3);
+  });
+
+  it('keeps sounding across transport transitions, though buffer sources are single-use', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    engine.load(makeSchedule([water([makeEntry({ duration: 30, ...RAIN })], { type: VoiceType.Rain })]));
+
+    engine.play();
+    engine.pause();
+    engine.play();
+    engine.seek(12);
+
+    const buffer = await context.startRendering();
+    expect(peakAmplitude(buffer.getChannelData(0).subarray(Math.round(0.2 * SAMPLE_RATE)))).toBeGreaterThan(0.2);
+  });
+
+  /**
+   * `voice_mono` is not free here, unlike on a type-3 voice. `BB_Water` mixes each drop into both
+   * channels *whole* when it is set (`:1201`), and the shared downmix then computes `(S + S) * 0.5`
+   * (`:835`) — so the voice comes out centred and up to twice as loud per channel. Both source
+   * nodes still have to exist for that sum to happen at all: one output connected to one input
+   * twice is a no-op, which is what step 10 found on the isochronic pair.
+   */
+  it('centres a mono water voice and leaves it louder, not quieter', async () => {
+    const entries = [makeEntry({ duration: 2, ...RAIN, volumeLeft: 0.4, volumeRight: 0.4 })];
+
+    const stereo = await render(makeSchedule([water(entries, { type: VoiceType.Rain })]));
+    const mono = await render(makeSchedule([water(entries, { type: VoiceType.Rain, mono: true })]));
+
+    for (let i = 0; i < mono.length; i += 997) {
+      expect(mono.getChannelData(1)[i]).toBeCloseTo(mono.getChannelData(0)[i], 6);
+    }
+    expect(rms(mono.getChannelData(0))).toBeGreaterThan(rms(stereo.getChannelData(0)) * 1.5);
+  });
+
+  /**
+   * The field is baked into the buffer when the voice is built, so an edit to `entry[0]` is the one
+   * kind of value change no automation can carry. `requiresVoiceRebuild` fires on it — otherwise the
+   * edit is silently ignored until the document is reloaded — and the rebuild crossfades like any
+   * other, so the change is audible without a hole in the middle of it.
+   */
+  it('rebuilds and crossfades when the density is edited mid-playback', async () => {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const engine = new PlaybackEngine(context);
+    const sparse = makeSchedule([
+      water([makeEntry({ duration: 30, baseFreq: 0.0002, beatFreq: 8, volumeLeft: 0.5, volumeRight: 0.5 })]),
+    ]);
+    engine.load(sparse);
+    engine.play();
+
+    const buffer = await renderWithEditAt(context, 0.4, () =>
+      engine.update(
+        makeSchedule([
+          water([makeEntry({ duration: 30, baseFreq: 0.05, beatFreq: 8, volumeLeft: 0.5, volumeRight: 0.5 })]),
+        ]),
+      ),
+    );
+    const left = buffer.getChannelData(0);
+
+    // Denser after the edit than before it, which only happens if the buffer was rebuilt.
+    const before = rms(left.subarray(Math.round(0.1 * SAMPLE_RATE), Math.round(0.35 * SAMPLE_RATE)));
+    const after = rms(left.subarray(Math.round(0.6 * SAMPLE_RATE)));
+    expect(after).toBeGreaterThan(before * 3);
+    // And nothing goes silent across the swap: the crossfade covers it.
+    expect(peakAmplitude(left.subarray(Math.round(0.4 * SAMPLE_RATE), Math.round(0.6 * SAMPLE_RATE)))).toBeGreaterThan(0);
+  });
+});
+
 /** A voice whose frequency ramps continuously for its whole 20s (never flat), so any offset
  *  within it has a distinct, unambiguous expected frequency — good for verifying transport. */
 function makeRampingSchedule(): { schedule: Schedule; events: ReturnType<typeof compileVoice> } {

@@ -192,6 +192,14 @@ export function VoiceRows({ schedule, onCommit, onStructural }: VoiceRowsProps) 
         <button type="button" className="button" onClick={() => add('noise')}>
           Add noise voice
         </button>
+        {/* Addable but never generatable: a generator writes `basefreq` breakpoints, which on these
+            two types is a probability curve. The authoring panel offers only the two tonal kinds. */}
+        <button type="button" className="button" onClick={() => add('water')}>
+          Add water drops voice
+        </button>
+        <button type="button" className="button" onClick={() => add('rain')}>
+          Add rain voice
+        </button>
       </div>
     </section>
   );

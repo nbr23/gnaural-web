@@ -501,6 +501,51 @@ describe('nodesInRect', () => {
   });
 });
 
+/**
+ * What the two frequency lanes fit themselves to.
+ *
+ * On every type but the tonal ones, `basefreq` and `beatfreq` are not frequencies: a water voice's
+ * base is a per-sample probability of 0.00035 and its beat a drop count, and a noise voice's are
+ * the 100 and 0 the whole corpus carries. Fitted together with a real carrier, any of them flattens
+ * the curves the lane exists to show.
+ */
+describe('fitting the frequency lanes', () => {
+  const water = makeVoice({
+    id: 1,
+    description: 'Drops',
+    type: VoiceType.WaterDrops,
+    entries: [makeEntry({ duration: 20, baseFreq: 0.000352858, beatFreq: 2 })],
+  });
+
+  it('ignores the voices whose base and beat are not a carrier and a rate', () => {
+    const alone = buildChartModel(makeSchedule([twoEntryVoice]), ['beat', 'base']);
+    const mixed = buildChartModel(makeSchedule([twoEntryVoice, water]), ['beat', 'base']);
+
+    expect(mixed.lanes[0].domain).toEqual(alone.lanes[0].domain);
+    expect(mixed.lanes[1].domain).toEqual(alone.lanes[1].domain);
+    // The curve is still drawn — it is only the axis that ignores it.
+    expect(mixed.lanes[1].series).toHaveLength(2);
+  });
+
+  it('falls back to fitting everything when no voice is tonal', () => {
+    const { lanes } = buildChartModel(makeSchedule([water]), ['base']);
+
+    // Nothing to protect here, and an empty fit would draw a bare 0–1 axis instead of the data.
+    expect(lanes[0].domain[1]).toBeGreaterThan(0);
+    expect(lanes[0].domain[1]).toBeLessThan(1);
+  });
+
+  it('leaves the volume lanes alone, since volume means the same thing on every type', () => {
+    const loudWater = makeVoice({
+      ...water,
+      entries: [makeEntry({ duration: 20, baseFreq: 0.1, beatFreq: 8, volumeLeft: 1.4, volumeRight: 1 })],
+    });
+    const { lanes } = buildChartModel(makeSchedule([twoEntryVoice, loudWater]), ['volumeLeft']);
+
+    expect(lanes[0].domain[1]).toBeGreaterThan(1);
+  });
+});
+
 /** §6.1's manual axis override, which is what makes a value outside the data draggable at all. */
 describe('lane domain overrides', () => {
   it('replaces the fitted domain for the lane it names, and leaves the others fitted', () => {

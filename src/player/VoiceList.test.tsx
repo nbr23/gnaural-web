@@ -134,4 +134,21 @@ describe('VoiceList', () => {
     expect(speaker(1).disabled).toBe(true);
     expect(solo(1).disabled).toBe(true);
   });
+
+  /** The other half of that rule: a type that *is* rendered is named rather than warned about, and
+   *  its controls work like any other voice's. Types 5 and 6 crossed that line after 3 and 4. */
+  it('names a water voice and leaves its controls live', () => {
+    const schedule = scheduleOf([
+      makeVoice({ description: 'Drops', type: VoiceType.WaterDrops }),
+      makeVoice({ id: 1, description: 'Downpour', type: VoiceType.Rain }),
+    ]);
+    mount(schedule, [AUDIBLE, AUDIBLE]);
+
+    expect(rows()[0].textContent).toContain('water drops');
+    expect(rows()[1].textContent).toContain('rain');
+    expect(testRoot.query('.voice-list')?.textContent).not.toContain('not yet rendered');
+    expect(rows()[0].className).not.toContain('voice-list__row--silent');
+    expect(speaker(0).disabled).toBe(false);
+    expect(solo(0).disabled).toBe(false);
+  });
 });

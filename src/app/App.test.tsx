@@ -1347,10 +1347,15 @@ describe('the warning surface (§3.3, §3.4, §3.7)', () => {
     </voice>`;
   }
 
+  /**
+   * Every type the format defines is now rendered except type 2, so the type this warning is *for*
+   * is one no version of Gnaural ever wrote — §3.4's dirty files, kept verbatim rather than
+   * corrected. That is the only route left into the message, and it still has to work.
+   */
   it('says a voice type it cannot render will be silent, and still plays the rest', async () => {
     root.render(<App />);
     drop(`<?xml version="1.0"?><schedule><title>Mixed</title>
-      ${voiceXml(0, 'tone', 600)}${voiceXml(5, 'drops', 600)}</schedule>`);
+      ${voiceXml(0, 'tone', 600)}${voiceXml(9, 'mystery', 600)}</schedule>`);
     await flush();
 
     expect(root.query('.warnings__list[role="alert"]')?.textContent).toContain('does not render yet');
@@ -1375,9 +1380,24 @@ describe('the warning surface (§3.3, §3.4, §3.7)', () => {
     expect(root.text()).not.toContain('not yet rendered');
   });
 
+  /** The same for types 5 and 6, which arrived after them: water drops and rain are ordinary
+   *  voices now, and the list names them rather than warning about them. */
+  it('treats a water programme as an ordinary one', async () => {
+    root.render(<App />);
+    drop(`<?xml version="1.0"?><schedule><title>Weather</title>
+      ${voiceXml(5, 'drops', 600)}${voiceXml(6, 'rain', 600)}</schedule>`);
+    await flush();
+
+    expect(root.query('.warnings')).toBeNull();
+    expect((root.byText('.button', 'Play') as HTMLButtonElement).disabled).toBe(false);
+    expect(root.text()).toContain('water drops');
+    expect(root.text()).toContain('rain');
+    expect(root.text()).not.toContain('not yet rendered');
+  });
+
   it('refuses to offer Play for a schedule with nothing renderable in it', async () => {
     root.render(<App />);
-    drop(`<?xml version="1.0"?><schedule><title>Silent</title>${voiceXml(5, 'drops', 600)}</schedule>`);
+    drop(`<?xml version="1.0"?><schedule><title>Silent</title>${voiceXml(9, 'mystery', 600)}</schedule>`);
     await flush();
 
     expect(root.text()).toContain('would play silence');

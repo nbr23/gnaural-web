@@ -113,4 +113,29 @@ describe('NodePanel', () => {
     expect(button('Delete node').disabled).toBe(true);
     expect(testRoot.text()).toContain('Delete the voice itself');
   });
+
+  /**
+   * On types 5 and 6 these two fields are a per-sample probability and a drop count, so the panel
+   * says so. The precision matters as much as the label: the reference's own default of 0.000352858
+   * reads as 0.0004 at the precision a frequency wants, and the field commits what it shows.
+   */
+  it('calls a water voice’s fields what they are, at a precision that can hold them', () => {
+    const schedule = withEntries([makeEntry({ baseFreq: 0.000352858, beatFreq: 2 })]);
+    const water = {
+      ...schedule,
+      voices: [{ ...schedule.voices[0], type: VoiceType.WaterDrops }],
+    };
+    mount(water, { voice: 0, entry: 0 });
+
+    const labels = testRoot.queryAll('.editor__field-label').map((node) => node.textContent);
+    expect(labels).toContain('Drop chance');
+    expect(labels).toContain('Drops');
+    expect(labels).not.toContain('Base (Hz)');
+
+    const values = testRoot.queryAll('input').map((node) => (node as HTMLInputElement).value);
+    expect(values).toContain('0.000353');
+
+    mount(schedule, { voice: 0, entry: 0 });
+    expect(testRoot.queryAll('.editor__field-label').map((node) => node.textContent)).toContain('Base (Hz)');
+  });
 });

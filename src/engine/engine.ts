@@ -8,6 +8,7 @@ import { compileVoice, eventBaseFreq, eventBeatFreq, valueAtTime } from './compi
 import { MIN_GATE_FREQ, cosineGateWave, gateCurve } from './isochronic';
 import type { NoiseColour } from './noise';
 import { LAYER_NOISE_SEEDS, createLayerNoiseBuffer, createNoiseBuffer, noiseSeeds } from './noise';
+import { createWaterBuffers, isWaterType, waterField } from './water';
 
 /** Anti-click gain ramp duration (PLAN.md §4.4 — ~20ms, applied on every transport transition). */
 export const CLICK_FREE_RAMP = 0.02;
@@ -282,10 +283,10 @@ function renderNoiseLayer(
  * What actually makes a voice's sound, by voice type (§3.3).
  *
  * A binaural voice's oscillator pair lives for the whole session (§4.4 — an `OscillatorNode`
- * cannot be restarted after `stop()`), so `started` records whether it is running yet. A noise
- * voice's `AudioBufferSourceNode`s are single-use by spec and so are recreated on every
- * transport transition; the buffers behind them are generated once. An isochronic voice is two
- * oscillators with the same lifetime as a binaural pair — one carrier, one gate.
+ * cannot be restarted after `stop()`), so `started` records whether it is running yet. A
+ * buffer-driven voice's `AudioBufferSourceNode`s are single-use by spec and so are recreated on
+ * every transport transition; the buffers behind them are generated once. An isochronic voice is
+ * two oscillators with the same lifetime as a binaural pair — one carrier, one gate.
  */
 type VoiceSource =
   | { kind: 'binaural'; oscL: OscillatorNode; oscR: OscillatorNode; started: boolean }
@@ -305,7 +306,12 @@ type VoiceSource =
       started: boolean;
     }
   | {
-      kind: 'noise';
+      /**
+       * A looping buffer per channel: noise (type 1) and the two water types (5 and 6), which
+       * share every part of this but the generator. Their lifetime, their seek-by-schedule-time
+       * start and their empty `frequencyTargets` are identical, so they are one kind here.
+       */
+      kind: 'buffer';
       buffers: [AudioBuffer, AudioBuffer];
       /** Where each channel's source connects — the per-channel gains, or the mono downmix. */
       inputs: [AudioNode, AudioNode];
@@ -336,7 +342,10 @@ interface VoiceNodes {
  * downmix of the voice's own content, not a pan — the per-channel volumes still apply afterwards.
  * On a type-4 voice, whose two channels are complementary, that downmix cancels the pulsing
  * entirely and leaves a steady tone at half level: the reference's own arithmetic, reproduced
- * rather than special-cased.
+ * rather than special-cased. On a water voice it is the other half of an answer that starts in the
+ * buffer: `BB_Water` mixes each drop into both channels *whole* when `mono` is set, so the downmix
+ * of two identical channels leaves the voice centred and up to twice as loud per channel — again
+ * the reference's arithmetic (`:1201` with `:835`) rather than a special case.
  */
 function buildVoiceNodes(
   context: BaseAudioContext,
@@ -373,8 +382,19 @@ function buildVoiceSource(
   if (voice.type === VoiceType.PinkNoise) {
     const [seedL, seedR] = noiseSeeds(index);
     return {
-      kind: 'noise',
+      kind: 'buffer',
       buffers: [createNoiseBuffer(context, seedL), createNoiseBuffer(context, seedR)],
+      inputs,
+      nodes: [],
+    };
+  }
+
+  // Types 5 and 6 (§3.3). The field is fixed from `entry[0]` — see `water.ts` — so the buffer is
+  // built here once and `requiresVoiceRebuild` is what notices an edit to it.
+  if (isWaterType(voice.type)) {
+    return {
+      kind: 'buffer',
+      buffers: createWaterBuffers(context, waterField(voice, index)),
       inputs,
       nodes: [],
     };
@@ -445,9 +465,9 @@ function buildIsochronicSource(
  *
  * Oscillators start once and run for the session (§4.4), at `t0` so that their phase is anchored
  * to schedule-time zero — which is what lets an offline export be compared sample-for-sample
- * against live playback (§5.3). Noise sources are single-use, so each call replaces them, seeking
- * the looping buffer to `offset`: a voice's noise is therefore a function of schedule time, and a
- * seek hears the same noise as playing straight through to that point.
+ * against live playback (§5.3). Buffer sources are single-use, so each call replaces them, seeking
+ * the looping buffer to `offset`: a voice's noise or drops are therefore a function of schedule
+ * time, and a seek hears the same sound as playing straight through to that point.
  */
 function startSource(context: BaseAudioContext, source: VoiceSource, t0: number, offset: number): void {
   const now = context.currentTime;
@@ -463,7 +483,7 @@ function startSource(context: BaseAudioContext, source: VoiceSource, t0: number,
   }
 
   const at = t0 + offset;
-  stopNoise(source, at);
+  stopBufferSources(source, at);
   source.nodes = source.buffers.map((buffer, channel) => {
     const node = context.createBufferSource();
     node.buffer = buffer;
@@ -474,16 +494,16 @@ function startSource(context: BaseAudioContext, source: VoiceSource, t0: number,
   });
 }
 
-/** Stop a noise voice's buffer sources; a no-op for oscillators, which outlive every transition. */
-function stopNoise(source: VoiceSource, when: number): void {
-  if (source.kind !== 'noise') return;
+/** Stop a buffer-driven voice's sources; a no-op for oscillators, which outlive every transition. */
+function stopBufferSources(source: VoiceSource, when: number): void {
+  if (source.kind !== 'buffer') return;
   for (const node of source.nodes) node.stop(when);
   source.nodes = [];
 }
 
 function disposeSource(source: VoiceSource, when: number): void {
-  if (source.kind === 'noise') {
-    stopNoise(source, when);
+  if (source.kind === 'buffer') {
+    stopBufferSources(source, when);
     return;
   }
   if (!source.started) return;
@@ -512,7 +532,8 @@ function oscillatorsOf(source: VoiceSource): OscillatorNode[] {
  * The gate is floored at `MIN_GATE_FREQ`, matching the reference's own clamp (`:592`): `beatfreq`
  * of zero means a steady tone, not a stopped oscillator.
  *
- * Noise reads neither value (`:553`), so it drives nothing.
+ * Noise reads neither value (`:553`), so it drives nothing — and neither does a water voice, whose
+ * two fields are a probability and a drop count that `water.ts` reads once, off `entry[0]`.
  */
 function frequencyTargets(source: VoiceSource, values: AutomationValues): [AudioParam, number][] {
   if (source.kind === 'binaural') {
@@ -636,17 +657,32 @@ function isRenderable(voice: Voice): boolean {
 /**
  * Whether an edit changes the *shape* of the voice graph rather than the values flowing through it.
  *
- * Only three things do: how many voices there are, what kind of source each one needs (`type`), and
- * whether it is downmixed (`mono`) — the one flag that changes a voice's wiring rather than a
- * param. Everything else an editor can touch — every entry, every volume, the master volumes,
- * `stereoswap`, mute flags — is a value, and values are what `rescheduleFrom` already rewrites. So
- * the common editing case, dragging a breakpoint, never rebuilds a node.
+ * Three things do in general: how many voices there are, what kind of source each one needs
+ * (`type`), and whether it is downmixed (`mono`) — the one flag that changes a voice's wiring
+ * rather than a param. Everything else an editor can touch — every entry, every volume, the master
+ * volumes, `stereoswap`, mute flags — is a value, and values are what `rescheduleFrom` already
+ * rewrites. So the common editing case, dragging a breakpoint, never rebuilds a node.
+ *
+ * **A water voice adds a fourth, and it has to.** Its drop count and density are baked into the
+ * buffer when it is built, from `entry[0]` (§3.3 — the reference reads them once), so nothing in
+ * the value path can carry an edit to them. Without this they would be silently ignored until the
+ * document was reloaded, which is §3.3's "never silently drop a voice" in a different coat. It
+ * costs only water voices anything: any other type answers `false` immediately.
  */
 function requiresVoiceRebuild(previous: Schedule, next: Schedule): boolean {
   if (previous.voices.length !== next.voices.length) return true;
-  return next.voices.some(
-    (voice, index) => voice.type !== previous.voices[index].type || voice.mono !== previous.voices[index].mono,
-  );
+  return next.voices.some((voice, index) => {
+    const before = previous.voices[index];
+    return voice.type !== before.type || voice.mono !== before.mono || waterFieldChanged(before, voice);
+  });
+}
+
+/** Whether an edit moved a water voice's `entry[0]`, which is where its buffer comes from. */
+function waterFieldChanged(previous: Voice, next: Voice): boolean {
+  if (!isWaterType(next.type)) return false;
+  const before = previous.entries[0];
+  const after = next.entries[0];
+  return before?.baseFreq !== after?.baseFreq || before?.beatFreq !== after?.beatFreq;
 }
 
 /**
@@ -660,9 +696,9 @@ function requiresVoiceRebuild(previous: Schedule, next: Schedule): boolean {
  * (`renderSchedule`), which is why this shares `buildOutputChain`/`buildVoiceNodes` with
  * `PlaybackEngine` instead of building a graph of its own.
  *
- * Voice types 0 (binaural), 1 (noise) and 3/4 (isochronic) are rendered. Types 2, 5 and 6 are
- * parsed and preserved by the document layer but silent here (§3.3), and `VoiceList`/`WarningList`
- * say so.
+ * Voice types 0 (binaural), 1 (noise), 3/4 (isochronic) and 5/6 (water drops, rain) are rendered.
+ * Type 2 is parsed and preserved by the document layer but silent here — the schedule does not
+ * record where its audio file is (§3.3) — and `VoiceList`/`WarningList` say so.
  *
  * **Exactly one pass, whatever `loops` says.** This is the export path (`renderSchedule`), and a
  * WAV of a schedule that repeats forever is not a file anyone can write. Repetition is a playback
@@ -714,9 +750,9 @@ interface VoiceState {
  * `AudioContext` is created lazily on the first `play()`, which must happen inside a
  * user-gesture handler (§4.4), then reused for the session's lifetime. Oscillators are created
  * once per loaded schedule and never stopped/restarted between transport actions (§4.4) —
- * audibility is controlled entirely by gain automation. A noise voice is the one exception the
- * API forces: `AudioBufferSourceNode`s are single-use, so they are rebuilt on each transition and
- * positioned by schedule time (see `startSource`).
+ * audibility is controlled entirely by gain automation. A buffer-driven voice (noise, water drops,
+ * rain) is the one exception the API forces: `AudioBufferSourceNode`s are single-use, so they are
+ * rebuilt on each transition and positioned by schedule time (see `startSource`).
  *
  * Every transition (play, pause, seek, stop) ramps gain over `CLICK_FREE_RAMP` (~20ms) rather
  * than jumping to the new value instantly — required for stop (§4.4: "cutting a sine mid-cycle
@@ -1370,7 +1406,7 @@ export class PlaybackEngine {
       } else {
         // Pausing or stopping: buffer sources can't be gated back on, so they are released once
         // the anti-click fade has finished and rebuilt by the next play.
-        stopNoise(nodes.source, at + CLICK_FREE_RAMP);
+        stopBufferSources(nodes.source, at + CLICK_FREE_RAMP);
       }
     }
 

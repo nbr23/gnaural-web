@@ -172,6 +172,15 @@ describe('VoiceRows', () => {
 
     testRoot.click(testRoot.byText('button', 'Add noise voice'));
     expect(harness.structural[2].edit.schedule.voices[2].type).toBe(VoiceType.PinkNoise);
+
+    testRoot.click(testRoot.byText('button', 'Add water drops voice'));
+    const drops = harness.structural[3].edit.schedule.voices[2];
+    expect(drops.type).toBe(VoiceType.WaterDrops);
+    // A probability, not a frequency — the reference's own default for a new voice.
+    expect(drops.entries[0].baseFreq).toBe(0.000352858);
+
+    testRoot.click(testRoot.byText('button', 'Add rain voice'));
+    expect(harness.structural[4].edit.schedule.voices[2].type).toBe(VoiceType.Rain);
   });
 
   /**

@@ -32,38 +32,49 @@ function kindsOf(warnings: { kind: WarningKind }[]): WarningKind[] {
 }
 
 describe('scheduleWarnings — what the program will do (§3.3, §3.7)', () => {
+  /**
+   * **The only route left into this warning is a type the format does not define.** Every type
+   * Gnaural writes is rendered now except type 2, which has its own permanent message — so what is
+   * left is §3.4's dirty data, which the parser keeps verbatim rather than correcting, and the
+   * message falls back to naming the number.
+   */
   it('warns that an unsupported voice type is silent, and names the type', () => {
     const { schedule } = parseScheduleWithWarnings(
-      xml(voice({ type: 0, description: 'tone' }, entry(60)) + voice({ type: 5, description: 'drops' }, entry(60))),
+      xml(voice({ type: 0, description: 'tone' }, entry(60)) + voice({ type: 9, description: 'odd' }, entry(60))),
     );
 
     const warnings = scheduleWarnings(schedule);
     expect(kindsOf(warnings)).toEqual(['unsupported-voice']);
     expect(warnings[0].severity).toBe('warning');
-    expect(warnings[0].message).toContain('drops');
-    expect(warnings[0].message).toContain('water drops');
+    expect(warnings[0].message).toContain('odd');
+    expect(warnings[0].message).toContain('type 9');
   });
 
-  /** Types 3 and 4 became renderable in step 10, so what is left to warn about is 5 and 6 — and
-   *  type 2, which has its own permanent message. This is the assertion that says the warning
-   *  surface and the engine agree; they read the same set (`isRenderableType`). */
-  it('says nothing about isochronic voices, which are rendered', () => {
+  /** The assertion that says the warning surface and the engine agree: they read one set
+   *  (`isRenderableType`), and it now holds every type but 2. Types 3 and 4 arrived in step 10,
+   *  types 5 and 6 after them. */
+  it('says nothing about the types that are rendered', () => {
     const { schedule } = parseScheduleWithWarnings(
-      xml(voice({ type: 3, description: 'pulse' }, entry(60)) + voice({ type: 4, id: 1, description: 'alt' }, entry(60))),
+      xml(
+        voice({ type: 3, description: 'pulse' }, entry(60)) +
+          voice({ type: 4, id: 1, description: 'alt' }, entry(60)) +
+          voice({ type: 5, id: 2, description: 'drops' }, entry(60)) +
+          voice({ type: 6, id: 3, description: 'rain' }, entry(60)),
+      ),
     );
 
     expect(scheduleWarnings(schedule)).toEqual([]);
   });
 
   it('agrees the verb with the number of voices it is talking about', () => {
-    const one = parseScheduleWithWarnings(xml(voice({ type: 0 }, entry(60)) + voice({ type: 5, id: 1, description: 'a' }, entry(60))));
+    const one = parseScheduleWithWarnings(xml(voice({ type: 0 }, entry(60)) + voice({ type: 9, id: 1, description: 'a' }, entry(60))));
     expect(scheduleWarnings(one.schedule)[0].message).toContain('Voice a uses a voice type');
 
     const many = parseScheduleWithWarnings(
       xml(
         voice({ type: 0 }, entry(60)) +
-          voice({ type: 5, id: 1, description: 'a' }, entry(60)) +
-          voice({ type: 6, id: 2, description: 'b' }, entry(60)),
+          voice({ type: 9, id: 1, description: 'a' }, entry(60)) +
+          voice({ type: 10, id: 2, description: 'b' }, entry(60)),
       ),
     );
     expect(scheduleWarnings(many.schedule)[0].message).toContain('Voices a and b use a voice type');
@@ -125,7 +136,7 @@ describe('scheduleWarnings — what the program will do (§3.3, §3.7)', () => {
   });
 
   it('reports a schedule with nothing renderable in it', () => {
-    const { schedule } = parseScheduleWithWarnings(xml(voice({ type: 5 }, entry(60))));
+    const { schedule } = parseScheduleWithWarnings(xml(voice({ type: 2 }, entry(60))));
 
     expect(kindsOf(scheduleWarnings(schedule))).toContain('nothing-to-play');
   });

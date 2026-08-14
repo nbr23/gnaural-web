@@ -3,6 +3,7 @@ import type { MoveMode } from '../document/edit';
 import { insertEntry, moveEntry, removeEntry, updateEntry } from '../document/edit';
 import { entryStartTimes } from '../document/timing';
 import type { Schedule } from '../document/types';
+import { VoiceType } from '../document/types';
 import { CommittedField } from './CommittedField';
 import type { NodeRef } from './history';
 
@@ -53,6 +54,10 @@ export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: No
   // vanish on reopen — every voice after it takes the wrong slot's name, type and flags.
   const isOnly = voice.entries.length === 1;
   const label = voice.description.trim() || `Voice ${voice.id}`;
+  // On a water voice these two fields are not a carrier and a rate at all: `basefreq` is the chance
+  // per sample that a drop starts and `beatfreq` is how many can overlap, read from the first node
+  // alone (§3.3). Labelling them in Hz would be the panel stating something untrue.
+  const drops = voice.type === VoiceType.WaterDrops || voice.type === VoiceType.Rain;
 
   const patch = (commitLabel: string, next: Schedule) => onCommit(next, commitLabel);
 
@@ -139,9 +144,10 @@ export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: No
 
       <div className="editor__row">
         <CommittedField
-          label="Base (Hz)"
-          value={String(round(entry.baseFreq))}
+          label={drops ? 'Drop chance' : 'Base (Hz)'}
+          value={String(drops ? round(entry.baseFreq, 1e6) : round(entry.baseFreq))}
           numeric
+          hint={drops ? 'Chance per sample that a drop starts' : undefined}
           onCommit={(value) =>
             patch(
               'Change base frequency',
@@ -152,9 +158,10 @@ export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: No
           }
         />
         <CommittedField
-          label="Beat (Hz)"
+          label={drops ? 'Drops' : 'Beat (Hz)'}
           value={String(round(entry.beatFreq))}
           numeric
+          hint={drops && !isFirst ? 'Only the first node’s count is used' : undefined}
           onCommit={(value) =>
             patch(
               'Change beat frequency',
@@ -196,7 +203,9 @@ export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: No
 }
 
 /** Enough digits for the presets' 0.001 s entries, without showing a float's full tail. */
-function round(value: number): number {
-  return Math.round(value * 1e4) / 1e4;
+/** Enough digits for a frequency or a volume. A water voice's drop chance needs more: the
+ *  reference default is 0.000352858, which reads as 0.0004 at the shared precision. */
+function round(value: number, precision = 1e4): number {
+  return Math.round(value * precision) / precision;
 }
 

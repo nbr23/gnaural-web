@@ -12,7 +12,7 @@ import { formatHz } from '../app/format';
 import type { EntryValueField } from '../document/edit';
 import { DURATION_EPSILON, scheduleDuration, voiceDuration } from '../document/timing';
 import type { Schedule, Voice } from '../document/types';
-import { VoiceType } from '../document/types';
+import { VoiceType, isTonalType } from '../document/types';
 import type { AutomationEvent } from '../engine/compiler';
 import { compileVoice, eventBaseFreq, eventBeatFreq } from '../engine/compiler';
 import type { Scale } from './scales';
@@ -99,6 +99,12 @@ interface LaneDefinition {
   field: EntryValueField;
   valueOf(event: AutomationEvent): number;
   domainOf(values: number[], padding: number): [number, number];
+  /**
+   * Whether a fitted domain looks only at voices whose `basefreq`/`beatfreq` mean a carrier and a
+   * rate (`isTonalType`) — see `fittedValues`. Volume means the same thing on every type, so only
+   * the two frequency lanes set it.
+   */
+  tonalFit?: boolean;
   format(value: number): string;
 }
 
@@ -122,6 +128,7 @@ const LANE_DEFINITIONS: Record<LaneId, LaneDefinition> = {
     field: 'beatFreq',
     valueOf: eventBeatFreq,
     domainOf: paddedDomain,
+    tonalFit: true,
     format: formatHz,
   },
   base: {
@@ -130,6 +137,7 @@ const LANE_DEFINITIONS: Record<LaneId, LaneDefinition> = {
     field: 'baseFreq',
     valueOf: eventBaseFreq,
     domainOf: paddedDomain,
+    tonalFit: true,
     format: formatHz,
   },
   volumeLeft: {
@@ -218,6 +226,29 @@ export interface ChartModel {
 
 function voiceLabel(voice: Voice): string {
   return voice.description.trim() || `Voice ${voice.id}`;
+}
+
+/**
+ * The values a lane fits its domain to.
+ *
+ * **The two frequency lanes fit to tonal voices alone**, because on every other type those fields
+ * are not frequencies: a water voice's `basefreq` is a per-sample probability of 0.00035 and its
+ * `beatfreq` a drop count of up to 100, and a noise voice's are the 100 and 0 all nine in the
+ * corpus carry. Fitted together with a carrier at 200 Hz, any of them flattens every tone curve in
+ * the lane into a few pixels — reachable with dirty data since step 5, and ordinary once types 5
+ * and 6 can be added.
+ *
+ * A schedule with no tonal voice at all falls back to fitting everything: there is then nothing to
+ * protect, and a lane fitted to no values would draw a noise-only or water-only file as an empty
+ * 0–1 axis. Values the fit excludes are still reachable — `LaneRanges` is the manual override, and
+ * `NodePanel` is the exact one.
+ */
+function fittedValues(series: VoiceSeries[], definition: LaneDefinition): number[] {
+  const flatten = (subset: VoiceSeries[]) => subset.flatMap((s) => s.points.map((p) => p.value));
+  if (!definition.tonalFit) return flatten(series);
+
+  const tonal = series.filter((s) => isTonalType(s.type));
+  return flatten(tonal.length > 0 ? tonal : series);
 }
 
 function paddedDomain(values: number[], padding: number): [number, number] {
@@ -325,7 +356,7 @@ export function buildChartModel(
       unit: definition.unit,
       domain: override
         ? [override[0], override[1]]
-        : definition.domainOf(series.flatMap((s) => s.points.map((p) => p.value)), domainPadding),
+        : definition.domainOf(fittedValues(series, definition), domainPadding),
       format: definition.format,
       series,
     };

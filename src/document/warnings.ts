@@ -56,14 +56,12 @@ export type WarningKind =
   | 'gnaural-regroup';
 
 /**
- * Names for the types this file has something to say about — which, since types 3 and 4 became
- * renderable, is types 2, 5 and 6 and no others. A row here for a type the engine plays would be
+ * Names for the types this file has something to say about — which, now that types 5 and 6 are
+ * rendered too, is type 2 and no others. A row here for a type the engine plays would be
  * unreachable, and `isRenderableType` is what decides that in one place for both.
  */
 const TYPE_NAMES: Record<number, string> = {
   [VoiceType.Pcm]: 'external audio',
-  [VoiceType.WaterDrops]: 'water drops',
-  [VoiceType.Rain]: 'rain',
 };
 
 function voiceLabel(voice: Voice, index: number): string {
@@ -95,6 +93,9 @@ export function scheduleWarnings(schedule: Schedule): ScheduleWarning[] {
     });
   }
 
+  // Every type the format defines is now either rendered or type 2, so what is left here is a
+  // number no version of Gnaural ever wrote — §3.4's dirty files, which the parser keeps verbatim
+  // rather than correcting. The `type N` fallback below is for exactly that voice.
   const unsupported = schedule.voices.filter(
     (voice) => !isRenderableType(voice.type) && voice.type !== VoiceType.Pcm,
   );
