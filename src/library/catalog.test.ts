@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ANDROID_PACKAGE, buildCatalog } from './catalog';
 import type { LibrarySection } from './catalog';
-import { PROGRAMS } from './programs';
+import { PROGRAMS, categoryColor } from './programs';
 import type { Draft, ImportedProgram, ProgramOrigin } from './storage';
 
 function imported(id: string, title: string, origin?: ProgramOrigin): ImportedProgram {
@@ -82,7 +82,26 @@ describe('buildCatalog', () => {
     expect(android?.code).toBe(ANDROID_PACKAGE);
     expect(android?.children?.[0].label).toBe('Gnaural originals');
     expect(android?.children?.flatMap((child) => child.items)).toHaveLength(PROGRAMS.length);
-    expect(android?.note).toContain("original authors' words");
+    // §2 is met by the clause in bold, and the app it credits is a link rather than a description.
+    const note = android?.note ?? [];
+    expect(note.find((segment) => segment.strong)?.text).toContain("original authors' words");
+    expect(note.find((segment) => segment.href)?.href).toContain(ANDROID_PACKAGE);
+  });
+
+  it('keys a bundled program to its category and everything else to its origin', () => {
+    const sections = buildCatalog({ ...EMPTY, imported: [imported('a', 'Dropped in')] });
+    const meditation = section(sections, 'android')?.children?.find(
+      (child) => child.label === 'Meditation',
+    );
+    const [brought] = section(sections, 'imported')?.items ?? [];
+
+    expect(meditation?.accent).toBe(categoryColor('Meditation'));
+    expect(meditation?.items[0].badge).toBe('Meditation');
+    expect(meditation?.items[0].accent).toBe(categoryColor('Meditation'));
+
+    // Nothing imported has a category, so its row keeps the origin colour the CSS gives it.
+    expect(brought.badge).toBe('Imported');
+    expect(brought.accent).toBeUndefined();
   });
 
   it('carries the conversion disclaimer on the programs it applies to', () => {

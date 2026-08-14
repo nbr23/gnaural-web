@@ -1,22 +1,19 @@
 import { formatClock } from '../app/format';
+import { SpeakerOffIcon, SpeakerOnIcon } from '../app/icons';
 import type { VoiceEdit, VoiceKind } from '../document/edit';
 import { insertEntry, insertVoice, moveVoice, removeVoice, updateVoice } from '../document/edit';
 import { DURATION_EPSILON, scheduleDuration, voiceDuration } from '../document/timing';
 import type { Schedule } from '../document/types';
 import { VoiceType } from '../document/types';
-import type { VoiceGate } from '../player/usePlayer';
 import { seriesColor } from '../viz/palette';
 import { CommittedField } from './CommittedField';
 import type { NodeRef } from './history';
 
 export interface VoiceRowsProps {
   schedule: Schedule;
-  /** Session state, read for `Solo` only — the one control here the format has no field for. */
-  gates: VoiceGate[];
   onCommit(schedule: Schedule, label: string): void;
   /** Omit `selection` to carry the current one across the edit's own voice map. */
   onStructural(edit: VoiceEdit, label: string, selection?: NodeRef | null): void;
-  onToggleSolo(index: number): void;
 }
 
 const TYPE_LABELS: Partial<Record<VoiceType, string>> = {
@@ -35,24 +32,19 @@ const TYPE_LABELS: Partial<Record<VoiceType, string>> = {
  * different thing: that list is runtime state that never touches the file, this one is mostly the
  * document. Same reasoning that gave Live mode its own view instead of a configured `PlayerView`.
  *
- * **Mute and Hide are the document's own flags; Solo is the only session control here.** That is
- * the whole rule, and the caption says it. A *session* mute is deliberately not offered beside the
- * document one: the two do the identical audible thing and differ only invisibly, in whether they
- * reach the file, and two controls that look alike and differ invisibly is worse than one. The
- * editor is the place where the document's flag is the one you mean; `adoptDocumentMutes` makes it
- * audible the moment it is toggled, without disturbing a listener's solo.
+ * **Every control here is the document; none of it is session state.** Solo lives in the player
+ * instead, and only there: it means "mute the others", so in a list whose mute *is* `voice_mute` it
+ * could only work by editing the program you are authoring — a listening gesture that lands in the
+ * undo history and in the saved file. A *session* mute is not offered beside the document one
+ * either: the two do the identical audible thing and differ only invisibly, in whether they reach
+ * the file, and two controls that look alike and differ invisibly is worse than one.
+ * `adoptDocumentMutes` makes the flag audible the moment it is toggled.
  *
  * **Reorder is buttons, not drag-and-drop**: there is no hover on a phone, a second drag system
  * beside a chart that captures the pointer is asking for trouble, buttons are keyboard-operable for
  * free, and the corpus tops out at five voices.
  */
-export function VoiceRows({
-  schedule,
-  gates,
-  onCommit,
-  onStructural,
-  onToggleSolo,
-}: VoiceRowsProps) {
+export function VoiceRows({ schedule, onCommit, onStructural }: VoiceRowsProps) {
   const voices = schedule.voices;
   const playback = scheduleDuration(schedule);
 
@@ -64,8 +56,8 @@ export function VoiceRows({
   return (
     <section className="editor__fields">
       <p className="editor__hint">
-        Mute and hide are saved with the program. Solo is just for listening and is never written to
-        the file.
+        Mute and hide are saved with the program. To silence a voice just for listening, use the
+        player.
       </p>
 
       <ul className="voice-rows">
@@ -74,8 +66,14 @@ export function VoiceRows({
           const badge = TYPE_LABELS[voice.type];
           const nodes = voice.entries.length;
 
+          const name = voice.description.trim() || `Voice ${voice.id}`;
+          const muteLabel = `${voice.muted ? 'Unmute' : 'Mute'} ${name}`;
+
           return (
-            <li className="voice-rows__row" key={index}>
+            <li
+              className={`voice-rows__row${voice.muted ? ' voice-rows__row--silent' : ''}`}
+              key={index}
+            >
               <div className="voice-rows__identity">
                 <span className="voice-rows__key" style={{ color: seriesColor(index) }} />
                 <CommittedField
@@ -98,21 +96,21 @@ export function VoiceRows({
               </p>
 
               <div className="voice-rows__controls">
-                <Toggle
-                  label="Mute"
-                  active={voice.muted}
+                <button
+                  type="button"
+                  className={`voice-rows__toggle voice-rows__toggle--icon${voice.muted ? ' is-active' : ''}`}
+                  title={muteLabel}
+                  aria-pressed={voice.muted}
                   onClick={() =>
                     onCommit(
                       updateVoice(schedule, index, { muted: !voice.muted }),
                       voice.muted ? 'Unmute voice' : 'Mute voice',
                     )
                   }
-                />
-                <Toggle
-                  label="Solo"
-                  active={gates[index]?.soloed ?? false}
-                  onClick={() => onToggleSolo(index)}
-                />
+                >
+                  {voice.muted ? <SpeakerOffIcon /> : <SpeakerOnIcon />}
+                  <span className="visually-hidden">{muteLabel}</span>
+                </button>
                 <Toggle
                   label="Hide"
                   active={voice.hidden}

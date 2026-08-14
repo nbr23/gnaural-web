@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Panel } from '../app/Panel';
-import { formatClock, numberOr } from '../app/format';
+import { numberOr } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
 import { isTypingTarget } from '../app/useKeyboardShortcuts';
 import { useCoarsePointer, useWideLayout } from '../app/useMediaQuery';
@@ -12,7 +12,7 @@ import type { VoiceMap } from '../document/voiceMap';
 import { composeVoiceMaps } from '../document/voiceMap';
 import type { EntryWarning, WarningKind } from '../document/warnings';
 import { entryWarnings, scheduleWarnings } from '../document/warnings';
-import { VolumeSlider } from '../player/Controls';
+import { PlayPauseButton, StopButton, VolumeSlider } from '../player/Controls';
 import { Readout } from '../player/Readout';
 import { Timeline } from '../player/Timeline';
 import type { Player } from '../player/usePlayer';
@@ -350,21 +350,16 @@ export function EditorView({
           {/* Disabled for the same reason the player disables it: twenty minutes of silence with no
               explanation is worse than a button that says it cannot help. The issues list says
               why. */}
-          <button
-            type="button"
-            className="button button--primary"
+          <PlayPauseButton
+            playing={player.playing}
             disabled={silent}
             onClick={() => (player.playing ? player.pause() : player.play())}
-          >
-            {player.playing ? 'Pause' : 'Play'}
-          </button>
-          <button type="button" className="button" onClick={player.stop}>
-            Stop
-          </button>
-          <span className="editor__elapsed">{formatClock(player.offset)}</span>
+          />
+          <StopButton onClick={player.stop} />
+          {/* The timeline above already says where the playhead is, against the length it is a
+              fraction of. Volume takes the space, as it does in the player. */}
+          <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
         </div>
-
-        <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
       </div>
 
       <div className="editor__aside">
@@ -399,13 +394,7 @@ export function EditorView({
         )}
 
         <Panel title="Voices" badge={schedule.voices.length} defaultOpen={wide}>
-          <VoiceRows
-            schedule={schedule}
-            gates={player.voiceGates}
-            onCommit={commitEdit}
-            onStructural={commitStructure}
-            onToggleSolo={player.toggleSolo}
-          />
+          <VoiceRows schedule={schedule} onCommit={commitEdit} onStructural={commitStructure} />
         </Panel>
 
         {/* §6.1's authoring aids. Voice- and document-scoped, so they sit with the voice list

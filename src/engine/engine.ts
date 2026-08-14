@@ -688,11 +688,17 @@ interface VoiceState {
  * arbitrary amount too. Frequency has no such click risk (`OscillatorNode` frequency changes
  * don't introduce an amplitude discontinuity), so it re-anchors directly.
  *
- * Mute and solo are **session** state, deliberately separate from the document's own
- * `voice.muted` flag (which Phase 1's editor will change): the document seeds the initial state
- * and runtime toggles override it, so silencing a voice to hear another never edits the file.
- * Muting changes no timing — a muted voice still advances through its entries and can still end
- * the schedule (§3.2).
+ * Mute is **session** state, deliberately separate from the document's own `voice.muted` flag
+ * (which the editor changes): the document seeds the initial state and runtime toggles override it,
+ * so silencing a voice to hear another never edits the file. Muting changes no timing — a muted
+ * voice still advances through its entries and can still end the schedule (§3.2).
+ *
+ * **Solo is not state.** It is the operation "mute every other voice", and a voice *is* soloed
+ * exactly when it is the only renderable one left unmuted. Holding it as a second set alongside
+ * `muted` is what produced the states nobody means to be in — several voices soloed at once, or one
+ * both muted and soloed and therefore silent under a lit Solo button. Derived, those states cannot
+ * be written down: un-muting some other voice makes solo stop being true on its own, which is the
+ * honest answer, and every row shows one reason for being quiet.
  *
  * Accepts an optional `BaseAudioContext` for deterministic testing with an `OfflineAudioContext`
  * (mirroring `playSchedule`); real usage leaves it unset so the browser `AudioContext` is
@@ -712,7 +718,8 @@ export class PlaybackEngine {
   private noise: NoiseLayerSettings = SILENT_NOISE_LAYER;
   private noiseLayer: NoiseLayer | null = null;
   private muted = new Set<number>();
-  private soloed = new Set<number>();
+  /** What `muted` held before a solo took it over, so switching solo off puts it back (§5.1). */
+  private preSolo: Set<number> | null = null;
 
   constructor(context?: BaseAudioContext) {
     this.context = context ?? null;
@@ -726,7 +733,7 @@ export class PlaybackEngine {
     this.frozenTotal = 0;
     this.playing = false;
     this.muted = new Set(schedule.voices.flatMap((voice, index) => (voice.muted ? [index] : [])));
-    this.soloed = new Set();
+    this.preSolo = null;
   }
 
   /**
@@ -759,12 +766,12 @@ export class PlaybackEngine {
    * same call that commits the edit, so forgetting *that* makes the edit not exist rather than
    * making the audio go quiet.
    *
-   * **`voiceMap` is how a structural edit keeps the session gates on the right voices.** Mute and
-   * solo are keyed by index into `schedule.voices` (§3.4 — ids are not unique in real files), so an
-   * insert, a delete or a reorder silently reassigns another voice's gates without one. The map says
-   * where each voice of the *previous* document ended up. A drag never *makes* one — it moves no
-   * voice — but it can inherit one from a structural edit whose throttled push it interrupted, so
-   * the two parameters are independent rather than mutually exclusive.
+   * **`voiceMap` is how a structural edit keeps the session gates on the right voices.** Mute is
+   * keyed by index into `schedule.voices` (§3.4 — ids are not unique in real files), so an insert, a
+   * delete or a reorder silently reassigns another voice's gate without one. The map says where each
+   * voice of the *previous* document ended up. A drag never *makes* one — it moves no voice — but it
+   * can inherit one from a structural edit whose throttled push it interrupted, so the two
+   * parameters are independent rather than mutually exclusive.
    */
   update(schedule: Schedule, horizon: Horizon = 'full', voiceMap?: VoiceMap): void {
     const previous = this.schedule;
@@ -782,9 +789,11 @@ export class PlaybackEngine {
 
     // Carry the gates across before anything reads them: `adoptDocumentMutes` compares against the
     // previous document, and `buildVoices` seeds each new node from `isVoiceAudible`.
+    // The pre-solo snapshot is dropped rather than remapped: it describes a set of voices the edit
+    // has just changed the membership of, and restoring it would be a guess.
     if (voiceMap) {
       this.muted = remapIndices(this.muted, voiceMap);
-      this.soloed = remapIndices(this.soloed, voiceMap);
+      this.preSolo = null;
     }
 
     this.adoptDocumentMutes(previous, schedule, voiceMap);
@@ -961,11 +970,26 @@ export class PlaybackEngine {
 
   setVoiceMuted(index: number, muted: boolean): void {
     setMembership(this.muted, index, muted);
+    // A mute set by hand is the listener overriding whatever solo arranged, so there is no longer a
+    // state worth restoring — and by then `isVoiceSoloed` has already stopped saying yes.
+    this.preSolo = null;
     this.applyVoiceGates();
   }
 
+  /**
+   * Solo, expressed as what it means: mute everything else, and unmute this.
+   *
+   * Switching it off restores the mutes that were set before it was switched on, so soloing one
+   * voice to check it does not lose the mute you had already set on another.
+   */
   setVoiceSoloed(index: number, soloed: boolean): void {
-    setMembership(this.soloed, index, soloed);
+    if (soloed) {
+      this.preSolo ??= new Set(this.muted);
+      this.muted = new Set(this.renderableIndices().filter((other) => other !== index));
+    } else {
+      this.muted = this.preSolo ?? new Set();
+      this.preSolo = null;
+    }
     this.applyVoiceGates();
   }
 
@@ -973,14 +997,27 @@ export class PlaybackEngine {
     return this.muted.has(index);
   }
 
+  /**
+   * Derived, never stored: this voice is audible and every other one that could be is not.
+   *
+   * Voices this app cannot render (§3.3) are excluded from the comparison. Their controls are
+   * disabled, so they can never be unmuted, and counting them would make solo underivable on any
+   * programme containing one.
+   */
   isVoiceSoloed(index: number): boolean {
-    return this.soloed.has(index);
+    const renderable = this.renderableIndices();
+    if (renderable.length < 2 || this.muted.has(index)) return false;
+    return renderable.every((other) => other === index || this.muted.has(other));
   }
 
-  /** Whether a voice is audible right now, with mute and solo both taken into account. */
+  /** Whether a voice is audible right now. Solo silences by muting, so mute is the whole answer. */
   isVoiceAudible(index: number): boolean {
-    if (this.muted.has(index)) return false;
-    return this.soloed.size === 0 || this.soloed.has(index);
+    return !this.muted.has(index);
+  }
+
+  private renderableIndices(): number[] {
+    if (!this.schedule) return [];
+    return this.schedule.voices.flatMap((voice, index) => (isRenderable(voice) ? [index] : []));
   }
 
   /**
@@ -1093,7 +1130,7 @@ export class PlaybackEngine {
   /**
    * Take on the document's own mute flags, but only where the edit actually changed one.
    *
-   * Session mute/solo is deliberately separate from `voice.muted` (§3.2): the document seeds it and
+   * Session mute is deliberately separate from `voice.muted` (§3.2): the document seeds it and
    * runtime toggles override it. Re-seeding wholesale on every edit would undo a listener's solo
    * every time they dragged a breakpoint; ignoring the document entirely would make the editor's
    * own mute control do nothing. Comparing against the previous document is what distinguishes an
@@ -1108,13 +1145,15 @@ export class PlaybackEngine {
 
     next.voices.forEach((voice, index) => {
       const before = previous.voices[cameFrom ? cameFrom[index] : index];
-      if (!before || voice.muted !== before.muted) setMembership(this.muted, index, voice.muted);
+      if (before && voice.muted === before.muted) return;
+      setMembership(this.muted, index, voice.muted);
+      // The document has just overruled part of what solo arranged, so the snapshot no longer
+      // describes a state anyone asked to come back to.
+      this.preSolo = null;
     });
 
     // Indices are the key (§3.4 — ids are not unique), so a shorter document leaves strays behind.
-    for (const set of [this.muted, this.soloed]) {
-      for (const index of [...set]) if (index >= next.voices.length) set.delete(index);
-    }
+    for (const index of [...this.muted]) if (index >= next.voices.length) this.muted.delete(index);
   }
 
   /**

@@ -1,0 +1,35 @@
+/* Pushed to the bottom of a short page by the `auto` margin, and out through `#root`'s 16px
+   padding by the negative ones, so scrolling to the end puts it against the edge of the screen
+   rather than 16px short of it. */
+.app-footer {
+  margin-top: auto;
+  margin-inline: -16px;
+  margin-bottom: -16px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.app-footer__build {
+  margin: 0;
+  font: 12px var(--mono);
+  opacity: 0.6;
+}
+
+/* Clearance for whatever is fixed to the bottom of the viewport — below the footer rather than
+   above it, since those bars are what would otherwise sit on top of it. Only while one is there:
+   reserved unconditionally it is a strip of empty page under every view. */
+.app:has(.now-playing) .app-footer {
+  margin-bottom: 0;
+  padding-bottom: 96px;
+}
+
+/* Below the two-column breakpoint the player's and editor's transports are fixed too
+   (`src/player/PlayerView.css`), and that is the width where the footer is most likely scrolled to. */
+@media (max-width: 1099px) {
+  .app:has(.player__transport) .app-footer,
+  .app:has(.editor__transport) .app-footer {
+    margin-bottom: 0;
+    padding-bottom: 88px;
+  }
+}

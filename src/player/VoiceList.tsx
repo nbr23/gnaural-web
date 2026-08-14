@@ -1,3 +1,4 @@
+import { SpeakerOffIcon, SpeakerOnIcon } from '../app/icons';
 import type { Schedule } from '../document/types';
 import { VoiceType } from '../document/types';
 import { seriesColor } from '../viz/palette';
@@ -13,6 +14,11 @@ export interface VoiceListProps {
 /**
  * Per-voice mute and solo (PLAN.md §5.1). Runtime state only — silencing a voice to hear another
  * never edits the document.
+ *
+ * **Solo mutes the others, and that is the whole of it.** The engine holds no solo state; a voice is
+ * soloed when it is the only renderable one left unmuted (`PlaybackEngine.isVoiceSoloed`). So a row
+ * that is quiet is a row with a crossed speaker, always, and un-muting any other voice drops the
+ * solo in front of you rather than leaving a lit button that is no longer true.
  *
  * Each row is keyed with the same colour the chart draws that voice in, so identity carries
  * across the two views. Voice types this app cannot render are labelled as silent rather than
@@ -39,25 +45,30 @@ export function VoiceList({ schedule, gates, onToggleMute, onToggleSolo }: Voice
         const gate = gates[index];
         const unrendered = UNRENDERED_LABELS[voice.type];
         const badge = unrendered ?? TYPE_LABELS[voice.type];
+        const name = voice.description.trim() || `Voice ${voice.id}`;
+        const muted = gate?.muted ?? false;
+        // A voice that cannot be rendered is silent whatever its gate says, so the row must not
+        // wait to be told: it never sounds, and reading as though it does is the §3.3 failure.
+        const silent = Boolean(unrendered) || muted;
+        const label = `${muted ? 'Unmute' : 'Mute'} ${name}`;
 
         return (
-          <li
-            className={`voice-list__row${gate?.audible === false ? ' voice-list__row--silent' : ''}`}
-            key={index}
-          >
+          <li className={`voice-list__row${silent ? ' voice-list__row--silent' : ''}`} key={index}>
             <span className="voice-list__key" style={{ color: seriesColor(index) }} />
             <span className="voice-list__name">
-              {voice.description.trim() || `Voice ${voice.id}`}
+              {name}
               {badge && <span className="voice-list__badge">{badge}</span>}
             </span>
             <button
               type="button"
-              className={`voice-list__toggle${gate?.muted ? ' is-active' : ''}`}
-              aria-pressed={gate?.muted ?? false}
+              className={`voice-list__toggle voice-list__toggle--icon${muted ? ' is-active' : ''}`}
+              title={label}
+              aria-pressed={muted}
               disabled={Boolean(unrendered)}
               onClick={() => onToggleMute(index)}
             >
-              Mute
+              {muted ? <SpeakerOffIcon /> : <SpeakerOnIcon />}
+              <span className="visually-hidden">{label}</span>
             </button>
             <button
               type="button"

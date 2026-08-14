@@ -2,7 +2,7 @@ import { formatDuration } from '../app/format';
 import type { Route } from '../app/routing';
 import { formatHash } from '../app/routing';
 import type { BundledProgram } from './programs';
-import { PROGRAMS, programsByCategory } from './programs';
+import { PROGRAMS, categoryColor, categoryLabel, programsByCategory } from './programs';
 import type { Draft, ImportedProgram } from './storage';
 
 /**
@@ -31,6 +31,13 @@ export interface LibraryItem {
   /** Length and credit, as one line: "20 min · Gnaural". */
   meta: string;
   origin: Origin;
+  /** What the row's chip says: a bundled program's category, or where anything else came from. */
+  badge: string;
+  /**
+   * The row's colour, as a CSS custom-property reference. Set for a bundled program, which takes
+   * its category's colour; anything else falls back to the colour of its origin.
+   */
+  accent?: string;
   /** Free text this program is searched on beyond its title — its credit and description. */
   searchText: string;
   /** A disclaimer that applies to this program alone. */
@@ -39,15 +46,26 @@ export interface LibraryItem {
   removable?: 'imported' | 'draft';
 }
 
+/** One run of a section's disclaimer: plain prose, the clause it turns on, or a link out. */
+export interface NoteSegment {
+  text: string;
+  strong?: boolean;
+  href?: string;
+}
+
 export interface LibrarySection {
   /** Stable across renders and searches — the rail scrolls to it and the settings remember it. */
   id: string;
   label: string;
+  /** A short form of `label` for the jump rail, where the column is 210px wide. */
+  railLabel?: string;
   /** A disclaimer that applies to everything in the section. */
-  note?: string;
+  note?: NoteSegment[];
   items: LibraryItem[];
   /** A leading package or file name in `label`, set as typed rather than uppercased like prose. */
   code?: string;
+  /** The colour of what this section holds — a category's, on the sub-sections that have one. */
+  accent?: string;
   /** Sub-sections, which is how the Android library keeps its own categories. */
   children?: LibrarySection[];
 }
@@ -71,10 +89,24 @@ export interface CatalogInput {
  */
 export const ANDROID_PACKAGE = 'com.ihunda.android.binauralbeat';
 
-const ANDROID_NOTE =
-  "From the Android app this one replaces. The titles and descriptions are their original " +
-  "authors' words, not claims made by this app; the converted presets play the frequencies they " +
-  'always did, without their ambient backgrounds or the old player’s fades between periods.';
+const ANDROID_APP = 'Binaural Beats Therapy';
+const ANDROID_LISTING = `https://play.google.com/store/apps/details?id=${ANDROID_PACKAGE}`;
+
+const ANDROID_NOTE: NoteSegment[] = [
+  { text: 'From the Android app ' },
+  { text: ANDROID_APP, href: ANDROID_LISTING },
+  { text: '. ' },
+  {
+    text:
+      "The titles and descriptions are their original authors' words, not claims made by this app",
+    strong: true,
+  },
+  {
+    text:
+      '; the converted presets play the frequencies they always did, without their ambient ' +
+      'backgrounds or the old player’s fades between periods.',
+  },
+];
 
 /** `fixtures/presets/README.md`: four presets used a sampled ambient loop that was left behind. */
 const LOST_BED_NOTE = 'Ambient background not carried over — the app’s noise layer stands in for it.';
@@ -95,12 +127,14 @@ export function buildCatalog({
     // The id is persisted in `Settings.collapsed`, so it outlives whatever the label says.
     id: 'android',
     label: `${ANDROID_PACKAGE} imports`,
+    railLabel: 'binauralbeat',
     code: ANDROID_PACKAGE,
     note: ANDROID_NOTE,
     items: [],
     children: programsByCategory(bundled).map((group) => ({
       id: `android-${group.category.toLowerCase()}`,
       label: group.label,
+      accent: categoryColor(group.category),
       items: group.programs.map(bundledItem),
     })),
   };
@@ -169,6 +203,10 @@ function bundledItem(program: BundledProgram): LibraryItem {
     title: program.title,
     meta: metaLine(program.durationSeconds, program.author),
     origin: 'android',
+    // Its category rather than its origin: the section these rows sit in already says where the
+    // whole set came from, so the chip can say the thing the row does not otherwise carry.
+    badge: categoryLabel(program.category),
+    accent: categoryColor(program.category),
     searchText: `${program.author} ${program.description}`,
     note: program.lostAmbientBed ? LOST_BED_NOTE : undefined,
   };
@@ -176,13 +214,15 @@ function bundledItem(program: BundledProgram): LibraryItem {
 
 function importedItem(program: ImportedProgram): LibraryItem {
   const route: Route = { view: 'imported', id: program.id };
+  const origin: Origin = program.origin === 'authored' ? 'mine' : 'imported';
   return {
     key: formatHash(route),
     route,
     title: program.title,
     // The file it came from, since an imported program often has no author of its own.
     meta: metaLine(program.durationSeconds, program.author || program.sourceName),
-    origin: program.origin === 'authored' ? 'mine' : 'imported',
+    origin,
+    badge: ORIGIN_LABELS[origin],
     searchText: `${program.author} ${program.sourceName} ${program.description}`,
     removable: 'imported',
   };
@@ -197,6 +237,7 @@ function draftItem(draft: Draft): LibraryItem {
     // Where it was forked from. A draft has no author until someone gives it one.
     meta: metaLine(draft.durationSeconds, `from ${draft.sourceName}`),
     origin: 'draft',
+    badge: ORIGIN_LABELS.draft,
     searchText: draft.sourceName,
     removable: 'draft',
   };

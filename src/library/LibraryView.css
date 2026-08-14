@@ -1,6 +1,6 @@
-/* Room for the fixed now-playing bar, so the last row is never trapped underneath it. */
 .library {
-  padding-bottom: 96px;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Kept short on purpose: the measurement that matters here is how far down the page the first
@@ -10,7 +10,6 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
-  margin-bottom: 12px;
 }
 
 .library__header h1 {
@@ -53,7 +52,7 @@
 
 .library__body {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .library__sections {
@@ -143,12 +142,32 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The colour of whatever it sits on — a category, in the heading and in the rail. Never the only
+   signal: the name it stands next to is always there. */
+.library__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--origin, var(--border));
+}
+
 /* Full width, because it is a caption for the rows below it: measured any narrower it reads as a
    column beside them rather than as something they belong to. */
 .library__note {
   margin-bottom: 10px;
   font-size: 13px;
   color: var(--text);
+
+  /* The app's only link out. Accent rather than the UA's blue, which belongs to no palette here. */
+  & a {
+    color: var(--accent);
+
+    &:focus-visible {
+      outline: 2px solid var(--accent-border);
+      outline-offset: 2px;
+    }
+  }
 }
 
 .library__empty {
@@ -156,12 +175,6 @@
   margin-bottom: 10px;
   font-size: 13px;
   color: var(--text);
-}
-
-.library__build {
-  margin-top: 24px;
-  font: 12px var(--mono);
-  opacity: 0.6;
 }
 
 .library__list {
@@ -242,12 +255,17 @@
   color: var(--text);
 }
 
+/* A tinted chip rather than coloured text: the categorical palette is validated to 3:1, which
+   carries a bar or a background but not 11px letters. The tint is the colour, the word is the key. */
 .program-row__badge {
   flex: none;
   font-size: 11px;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  color: var(--origin, var(--text));
+  color: var(--text-h);
+  background: color-mix(in oklab, var(--origin, var(--border)) 22%, transparent);
+  border-radius: 999px;
+  padding: 3px 9px;
 }
 
 .program-row__star,
@@ -314,10 +332,26 @@
 }
 
 @media (min-width: 1000px) {
+  /* The rail runs the height of the page beside the list, and the title, lede and search belong to
+     the list rather than to the whole page — spanning them across the rail left the search field
+     sitting over a jump list it has nothing to do with. */
   .library__body {
     grid-template-columns: 210px minmax(0, 1fr);
-    gap: 28px;
+    grid-template-rows: auto 1fr;
+    gap: 16px 28px;
     align-items: start;
+  }
+
+  .library__header {
+    grid-area: 1 / 2;
+  }
+
+  .library__rail {
+    grid-area: 1 / 1 / span 2;
+  }
+
+  .library__sections {
+    grid-area: 2 / 2;
   }
 
   .library__rail {
@@ -330,16 +364,12 @@
     background: none;
   }
 
-  /* The column is 210px and one label is a package name, so wrapping is the only way it fits —
-     unlike the phone strip above, where a chip has the whole page to scroll sideways in. */
   .library__rail-link {
     justify-content: space-between;
     border-radius: 8px;
     border-color: transparent;
     background: none;
     text-align: left;
-    white-space: normal;
-    overflow-wrap: anywhere;
   }
 
   .library__rail-link--child {

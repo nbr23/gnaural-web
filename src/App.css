@@ -1,6 +1,11 @@
+/* A column so `AppFooter` can take the space no view claimed and sit at the foot of the page. The
+   32px is `#root`'s padding, which this sits inside — subtracted so a short view does not invent a
+   scrollbar's worth of overflow. */
 .app {
   position: relative;
-  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100svh - 32px);
 }
 
 .app--dragging {

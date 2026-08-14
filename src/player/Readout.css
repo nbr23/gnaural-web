@@ -6,10 +6,15 @@
   gap: 12px 28px;
 }
 
+/* Fixed slots. These figures change ten times a second while a beat ramps, and a tile that grows
+   by a character pushes every tile after it — a line of text rearranging itself continuously, in
+   an app whose whole purpose is to stop you attending to the screen. Wide enough for "100.00 Hz"
+   and for "Gamma", so nothing ever has to move. */
 .readout__tile {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 9ch;
 }
 
 .readout__label {
@@ -19,10 +24,23 @@
 }
 
 .readout__value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 26px;
   color: var(--text-h);
   font-weight: 600;
-  /* Proportional figures deliberately: tabular digits look loose at this size. */
+  /* Tabular figures for the same reason as the fixed width above: a 1 must occupy what a 0 does. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* The band's colour, from the same palette the chart draws voices in. The name is right beside it. */
+.readout__dot {
+  align-self: center;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
 }
 
 .readout__source {

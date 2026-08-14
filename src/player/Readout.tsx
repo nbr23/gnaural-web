@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import { formatHz } from '../app/format';
+import { formatHzFixed } from '../app/format';
 import type { Schedule, Voice } from '../document/types';
 import { isTonalType } from '../document/types';
 import { compileVoice, eventBaseFreq, eventBeatFreq, valueAtTime } from '../engine/compiler';
 import { bandFor } from '../viz/bands';
+import { bandColor } from '../viz/palette';
 import './Readout.css';
 
 export interface ReadoutProps {
@@ -36,19 +37,24 @@ export function Readout({ schedule, offset }: ReadoutProps) {
 
   return (
     <div className="readout">
-      <Tile label="Beat" value={`${formatHz(beat)} Hz`} />
-      <Tile label="Base" value={`${formatHz(eventBaseFreq(values))} Hz`} />
-      <Tile label="Band" value={band?.name ?? '—'} />
+      <Tile label="Beat" value={`${formatHzFixed(beat)} Hz`} />
+      <Tile label="Base" value={`${formatHzFixed(eventBaseFreq(values))} Hz`} />
+      <Tile label="Band" value={band?.name ?? '—'} accent={band && bandColor(band.name)} />
       {primary.multiple && <p className="readout__source">for {primary.label}</p>}
     </div>
   );
 }
 
-function Tile({ label, value }: { label: string; value: string }) {
+function Tile({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
     <div className="readout__tile">
       <span className="readout__label">{label}</span>
-      <span className="readout__value">{value}</span>
+      <span className="readout__value">
+        {accent && (
+          <span className="readout__dot" style={{ background: accent }} aria-hidden="true" />
+        )}
+        {value}
+      </span>
     </div>
   );
 }

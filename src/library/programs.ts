@@ -1,6 +1,7 @@
 import manifest from '../../fixtures/presets/manifest.json';
 import type { ParseResult } from '../document/parser';
 import { parseScheduleWithWarnings } from '../document/parser';
+import { seriesColor } from '../viz/palette';
 
 /**
  * The bundled program library: the 17 converted presets described by
@@ -129,6 +130,29 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 export function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category;
+}
+
+/**
+ * A colour per category, so nineteen bundled programs are not nineteen grey rows.
+ *
+ * The slot is fixed to the category rather than to its position in the list: a search that filters
+ * the library must not repaint what is left of it, and a program's colour is a property of the
+ * program. Categories beyond these eight fall back to the de-emphasis gray, as a ninth voice does.
+ */
+const CATEGORY_SLOTS: Record<string, number> = {
+  Gnaural: 6,
+  Sleep: 0,
+  Meditation: 2,
+  Hypnosis: 4,
+  Healing: 5,
+  Learning: 3,
+  Stimulation: 1,
+  Oobe: 7,
+};
+
+export function categoryColor(category: string): string {
+  const slot = CATEGORY_SLOTS[category];
+  return slot === undefined ? 'var(--viz-series-overflow)' : seriesColor(slot);
 }
 
 export interface ProgramCategory {

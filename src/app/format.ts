@@ -30,6 +30,17 @@ export function formatHz(value: number): string {
 }
 
 /**
+ * The same number with its trailing zeros kept, for a figure that updates ten times a second.
+ *
+ * `formatHz` drops them, which is right in prose and in a field but means a ramping beat runs
+ * `9.85 → 10 → 10.25` — three widths in a second. Paired with tabular figures, a fixed number of
+ * decimals is what stops a live readout from shuffling itself and everything beside it.
+ */
+export function formatHzFixed(value: number): string {
+  return value >= 100 ? value.toFixed(0) : value.toFixed(2);
+}
+
+/**
  * A typed number, or the value it is replacing when the field says nothing usable.
  *
  * The inverse of the formatters above, and shared by every numeric field in the editor: falling back

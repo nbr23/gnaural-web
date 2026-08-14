@@ -32,6 +32,32 @@
   --origin-imported: #60a5fa;
   --origin-android: #94a3b8;
 
+  /*
+   * The categorical palette, shared by the chart's voices, the library's categories and the EEG
+   * bands. One validated set rather than three invented ones: these are the dataviz reference
+   * slots, re-validated against *this app's* surfaces (#ffffff / #16171d) rather than the
+   * palette's own defaults. All 8 slots, both modes: lightness band PASS, chroma floor PASS,
+   * worst adjacent CVD dE 8.4 (protan), worst adjacent normal-vision dE 19.3, contrast vs
+   * surface all >= 3:1.
+   *
+   * That 3:1 is the *graphic* threshold. A slot may carry a bar, a dot or a tint behind text —
+   * never small text itself, which is why every surface using one also spells the thing out.
+   *
+   * Slots 3/4/5 (aqua, yellow, magenta) use the palette's *dark* steps in BOTH modes: their light
+   * steps fall below 3:1 on pure white (2.82 / 2.17 / 2.69), and the darker steps clear it.
+   */
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
+  --viz-series-3: #199e70;
+  --viz-series-4: #c98500;
+  --viz-series-5: #d55181;
+  --viz-series-6: #008300;
+  --viz-series-7: #9085e9;
+  --viz-series-8: #e66767;
+  /* A 9th voice is never a generated hue: it falls back to de-emphasis gray and takes its
+     identity from the legend and the readout instead. */
+  --viz-series-overflow: #898781;
+
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
@@ -61,6 +87,16 @@
     --origin-mine: #047857;
     --origin-imported: #1d4ed8;
     --origin-android: #52606d;
+
+    --viz-series-1: #2a78d6;
+    --viz-series-2: #eb6834;
+    --viz-series-3: #199e70;
+    --viz-series-4: #c98500;
+    --viz-series-5: #d55181;
+    --viz-series-6: #008300;
+    --viz-series-7: #4a3aa7;
+    --viz-series-8: #e34948;
+
     --shadow:
       rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
@@ -128,6 +164,17 @@ p {
     opacity: 0.4;
     cursor: default;
   }
+}
+
+/* A transport button: the glyph is the label, so the box is square and the 44px target is kept by
+   the width rather than by the text inside it. */
+.button--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 10px;
+  font-size: 20px;
 }
 
 /* Off the screen, still in the accessibility tree — for a control whose visible context already

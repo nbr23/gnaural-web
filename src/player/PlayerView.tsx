@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { Panel } from '../app/Panel';
-import { formatClock } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
 import { useCoarsePointer, useWideLayout } from '../app/useMediaQuery';
 import type { Schedule } from '../document/types';
@@ -9,7 +8,13 @@ import { scheduleWarnings } from '../document/warnings';
 import type { NoiseLayerSettings } from '../engine/engine';
 import { ScheduleChart } from '../viz/ScheduleChart';
 import { WarningList } from './WarningList';
-import { VolumeSlider, WakeLockToggle } from './Controls';
+import {
+  PlayPauseButton,
+  SeekButton,
+  StopButton,
+  VolumeSlider,
+  WakeLockToggle,
+} from './Controls';
 import { ExportPanel } from './ExportPanel';
 import { NoisePanel } from './NoisePanel';
 import { Readout } from './Readout';
@@ -124,37 +129,27 @@ export function PlayerView({
         {/* Sticky to the bottom of the viewport on a phone: the panels below run long, and the one
             control nobody should have to scroll for is the one that stops the sound. */}
         <div className="player__transport">
-          <button
-            type="button"
-            className="button"
+          <SeekButton
+            direction="back"
             onClick={() => player.seek(player.offset - SEEK_STEP_SECONDS)}
-          >
-            −{SEEK_STEP_SECONDS}s
-          </button>
+          />
           {/* Nothing renderable means Play would produce silence for the schedule's full length.
               The warning above says why; a disabled button is what stops it being a mystery. */}
-          <button
-            type="button"
-            className="button button--primary"
+          <PlayPauseButton
+            playing={player.playing}
             disabled={silent}
             onClick={() => (player.playing ? player.pause() : player.play())}
-          >
-            {player.playing ? 'Pause' : 'Play'}
-          </button>
-          <button
-            type="button"
-            className="button"
+          />
+          <SeekButton
+            direction="forward"
             onClick={() => player.seek(player.offset + SEEK_STEP_SECONDS)}
-          >
-            +{SEEK_STEP_SECONDS}s
-          </button>
-          <button type="button" className="button" onClick={player.stop}>
-            Stop
-          </button>
-          <span className="player__elapsed">{formatClock(player.offset)}</span>
+          />
+          <StopButton onClick={player.stop} />
+          {/* The elapsed time is on the timeline directly above, where it sits against the
+              duration it is a fraction of. Volume takes the space it used to: it belongs with the
+              controls you reach for while listening, and on a phone that row is the fixed one. */}
+          <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
         </div>
-
-        <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
       </div>
 
       {/* Everything *about* the program. Folded away by default on a phone, where the page would

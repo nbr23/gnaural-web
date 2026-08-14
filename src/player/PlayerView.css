@@ -84,19 +84,21 @@
   gap: 8px;
 }
 
+/* Transport, then volume in what is left of the row. There is no clock here: the timeline directly
+   above carries the elapsed time beside the duration it is a fraction of, and two running clocks a
+   few pixels apart is one of them too many. */
 .player__transport,
 .editor__transport {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
 
-.player__elapsed,
-.editor__elapsed {
-  margin-inline-start: auto;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-h);
+  & .volume {
+    flex: 1 1 160px;
+    min-width: 0;
+    margin-inline-start: 8px;
+  }
 }
 
 /* Pinned to the bottom of the viewport on a phone, where the panels below run several screens
@@ -201,8 +203,13 @@
   font-size: 14px;
 }
 
+/* Only what names the voice, never the controls: the button that brings it back must not be the
+   dimmest thing in the row. The crossed speaker is the state; this is the echo of it. */
 .voice-list__row--silent {
-  opacity: 0.5;
+  & .voice-list__key,
+  & .voice-list__name {
+    opacity: 0.5;
+  }
 }
 
 .voice-list__key {
@@ -248,4 +255,15 @@
     opacity: 0.4;
     cursor: default;
   }
+}
+
+/* Square, and sized from the glyph rather than from a word, so the speaker and Solo still line up
+   along one baseline of boxes. */
+.voice-list__toggle--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  padding: 6px;
+  font-size: 18px;
 }

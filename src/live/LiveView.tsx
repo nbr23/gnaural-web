@@ -1,9 +1,16 @@
+import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { formatClock, formatHz } from '../app/format';
+import { formatClock, formatHz, formatHzFixed } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
 import type { Schedule } from '../document/types';
 import type { NoiseLayerSettings } from '../engine/engine';
-import { VolumeSlider, WakeLockToggle } from '../player/Controls';
+import { bandColor } from '../viz/palette';
+import {
+  PlayPauseButton,
+  StopButton,
+  VolumeSlider,
+  WakeLockToggle,
+} from '../player/Controls';
 import { NoisePanel } from '../player/NoisePanel';
 import { Readout } from '../player/Readout';
 import type { Player } from '../player/usePlayer';
@@ -126,22 +133,17 @@ export function LiveView({
       <div className="live__transport">
         {/* Play/Pause and Stop only: ±30 s on a constant hold moves the clock and changes nothing
             anyone can hear. */}
-        <button
-          type="button"
-          className="button button--primary"
+        <PlayPauseButton
+          playing={player.playing}
           onClick={() => (player.playing ? player.pause() : player.play())}
-        >
-          {player.playing ? 'Pause' : 'Play'}
-        </button>
-        <button type="button" className="button" onClick={player.stop}>
-          Stop
-        </button>
+        />
+        <StopButton onClick={player.stop} />
         <span className="live__elapsed">{formatClock(player.offset)}</span>
       </div>
 
       <label className="live__slider">
         <span className="live__slider-label">
-          Base frequency <strong>{formatHz(values.baseFreq)} Hz</strong>
+          Base frequency <strong>{formatHzFixed(values.baseFreq)} Hz</strong>
         </span>
         <input
           type="range"
@@ -159,7 +161,7 @@ export function LiveView({
       <div className="live__beat">
         <label className="live__slider">
           <span className="live__slider-label">
-            Beat frequency <strong>{formatHz(values.beatFreq)} Hz</strong>
+            Beat frequency <strong>{formatHzFixed(values.beatFreq)} Hz</strong>
           </span>
           <input
             type="range"
@@ -192,9 +194,11 @@ export function LiveView({
               key={band.name}
               type="button"
               className="live__band"
+              style={{ '--band': bandColor(band.name) } as CSSProperties}
               aria-pressed={values.beatFreq >= band.min && values.beatFreq < band.max}
               onClick={() => change({ ...values, beatFreq })}
             >
+              <span className="live__band-dot" aria-hidden="true" />
               {band.name}
             </button>
           ))}
@@ -252,7 +256,8 @@ function KeepPanel({ values, onKeep }: KeepPanelProps) {
     <section className="live__keep">
       <h2>Keep this as a program</h2>
       <p className="live__keep-note">
-        Saves the current settings as a constant {formatHz(values.beatFreq)} Hz beat, in your
+        Saves the current settings as a constant{' '}
+        <span className="live__figure">{formatHzFixed(values.beatFreq)}</span> Hz beat, in your
         library alongside anything you have opened — with a share link and a WAV export like any
         other program. The background noise layer is the app&rsquo;s, not the program&rsquo;s, so it
         is not part of it.

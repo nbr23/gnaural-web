@@ -61,12 +61,19 @@ describe('library view', () => {
     expect(root.text()).toContain('OOBE');
   });
 
-  it('shows which build it is running', () => {
+  it('shows which build it is running, on whatever view is open', async () => {
     // With `registerType: 'prompt'` an installed PWA can serve a build older than the one just
-    // deployed, and this is the only always-visible answer to "which one is this?".
+    // deployed, and this is the only always-visible answer to "which one is this?" — asked from
+    // wherever the bug was noticed, which is usually the player rather than the library.
     root.render(<App />);
+    const stamp = /^build \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
 
-    expect(root.query('.library__build')?.textContent).toMatch(/^build \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(root.query('.app-footer__build')?.textContent).toMatch(stamp);
+
+    window.location.hash = '#/p/powernap';
+    await flush();
+
+    expect(root.query('.app-footer__build')?.textContent).toMatch(stamp);
   });
 
   it('attributes the bundled descriptions to their authors rather than to the app', () => {
@@ -76,6 +83,8 @@ describe('library view', () => {
     root.render(<App />);
 
     expect(root.query('.library__note')?.textContent).toContain("original authors' words");
+    // In bold, because it is the sentence the rule is met by and not a footnote to the rest.
+    expect(root.query('.library__note strong')?.textContent).toContain("original authors' words");
   });
 
   it('credits each program on its card', () => {
@@ -96,7 +105,7 @@ describe('library view', () => {
     expect(root.text()).toContain('Schumann Resonance');
     // The rail is built from the same filtered tree, so it cannot offer an empty section.
     expect(root.queryAll('.library__rail-link').map((link) => link.textContent)).toEqual([
-      'com.ihunda.android.binauralbeat imports1',
+      'binauralbeat1',
       'Meditation1',
     ]);
   });
@@ -450,8 +459,12 @@ describe('opening a file', () => {
     root.click(root.byText('.back-link', 'Library'));
     await flush();
 
-    const badges = root.queryAll('.program-row__badge').map((tag) => tag.textContent);
-    expect(new Set(badges)).toEqual(new Set(['Android', 'Imported']));
+    // A bundled row says its category, which the section it sits in does not; an imported one says
+    // where it came from, which nothing else on the row does.
+    const badges = new Set(root.queryAll('.program-row__badge').map((tag) => tag.textContent));
+    expect(badges).toContain('Imported');
+    expect(badges).toContain('Sleep');
+    expect(badges).not.toContain('Android');
     expect(root.query('.program-row--imported')).not.toBeNull();
   });
 
@@ -759,7 +772,8 @@ describe('live mode (§6.1)', () => {
     root.remount(<App />);
     await flush();
 
-    expect(root.query('.readout')?.textContent).toContain('40 Hz');
+    // Two decimals always, so a ramping figure keeps its width — see `formatHzFixed`.
+    expect(root.query('.readout')?.textContent).toContain('40.00 Hz');
   });
 
   it('keeps a session as a program, by the same path an import takes', async () => {
@@ -913,27 +927,26 @@ describe('the editor (§6.1)', () => {
   });
 
   /**
-   * The gates are derived per voice, and the editor deliberately never re-hands `usePlayer` its
-   * `schedule` prop — so anything reading that prop for a voice count is reading the document as it
-   * was when the draft opened, not as it is.
+   * The editor deliberately never re-hands `usePlayer` its `schedule` prop, so anything reading
+   * that prop for a voice count reads the document as it was when the draft opened. A voice a
+   * structural edit added must still be mutable, and must still say so.
    */
-  it('keeps a solo on the voice a structural edit added', async () => {
+  it('mutes a voice a structural edit added', async () => {
     await openDraftOf();
     root.click(root.byText('button', 'Add noise voice'));
     await flush();
 
-    const rows = root.queryAll('.voice-rows__row');
-    expect(rows).toHaveLength(2);
+    const added = () => root.queryAll('.voice-rows__row')[1];
+    const mute = () =>
+      [...added().querySelectorAll('button')].find((b) => b.textContent?.startsWith('Mute')) ??
+      [...added().querySelectorAll('button')].find((b) => b.textContent?.startsWith('Unmute'));
 
-    const solo = [...rows[1].querySelectorAll('button')].find((b) => b.textContent === 'Solo');
-    root.click(solo);
+    root.click(mute());
     await flush();
 
     expect(root.queryAll('.voice-rows__row')).toHaveLength(2);
-    const after = root.queryAll('.voice-rows__row')[1].querySelectorAll('button');
-    expect([...after].find((b) => b.textContent === 'Solo')?.getAttribute('aria-pressed')).toBe(
-      'true',
-    );
+    expect(mute()?.getAttribute('aria-pressed')).toBe('true');
+    expect(added().className).toContain('voice-rows__row--silent');
   });
 
   it('saves a draft to the library by the same path an import takes', async () => {

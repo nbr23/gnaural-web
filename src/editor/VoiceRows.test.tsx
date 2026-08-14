@@ -3,7 +3,6 @@ import type { VoiceEdit } from '../document/edit';
 import { scheduleDuration, voiceDuration } from '../document/timing';
 import type { Entry, Schedule, Voice } from '../document/types';
 import { VoiceType } from '../document/types';
-import type { VoiceGate } from '../player/usePlayer';
 import { setInputValue, setupRoot } from '../test-utils';
 import { VoiceRows } from './VoiceRows';
 import type { NodeRef } from './history';
@@ -52,21 +51,18 @@ const testRoot = setupRoot();
 interface Harness {
   commits: { schedule: Schedule; label: string }[];
   structural: { edit: VoiceEdit; label: string; selection?: NodeRef | null }[];
-  solos: number[];
 }
 
-function mount(schedule: Schedule, gates: VoiceGate[] = []) {
-  const harness: Harness = { commits: [], structural: [], solos: [] };
+function mount(schedule: Schedule) {
+  const harness: Harness = { commits: [], structural: [] };
 
   testRoot.render(
     <VoiceRows
       schedule={schedule}
-      gates={gates}
       onCommit={(next, label) => harness.commits.push({ schedule: next, label })}
       onStructural={(edit, label, selection) =>
         harness.structural.push({ edit, label, selection })
       }
-      onToggleSolo={(index) => harness.solos.push(index)}
     />,
   );
 
@@ -98,39 +94,31 @@ describe('VoiceRows', () => {
     expect(rows()[0].textContent).toContain('10:00');
   });
 
-  /**
-   * The rule the caption states, asserted: everything here is the document except Solo, which the
-   * format has no field for.
-   */
-  it('writes mute and hide into the document and routes solo to the session', () => {
-    const schedule = twoVoices();
-    const harness = mount(schedule, [
-      { muted: false, soloed: false, audible: true },
-      { muted: false, soloed: false, audible: true },
-    ]);
+  /** The rule the caption states, asserted: every control here writes to the document. */
+  it('writes mute and hide into the document', () => {
+    const harness = mount(twoVoices());
 
-    testRoot.click(control(0, 'Mute'));
+    testRoot.click(control(0, 'Mute Voice 1'));
     expect(harness.commits[0].label).toBe('Mute voice');
     expect(harness.commits[0].schedule.voices[0].muted).toBe(true);
 
     testRoot.click(control(1, 'Hide'));
     expect(harness.commits[1].label).toBe('Hide voice');
     expect(harness.commits[1].schedule.voices[1].hidden).toBe(true);
-
-    testRoot.click(control(0, 'Solo'));
-    expect(harness.solos).toEqual([0]);
-    // A session control must never reach the document.
-    expect(harness.commits).toHaveLength(2);
   });
 
-  it('reflects the session solo state it is given', () => {
-    mount(twoVoices(), [
-      { muted: false, soloed: false, audible: false },
-      { muted: false, soloed: true, audible: true },
-    ]);
+  /**
+   * Solo means "mute the others", so in a list whose mute is `voice_mute` it could only work by
+   * editing the file. It lives in the player instead, and its absence here is the rule.
+   */
+  it('offers no solo, and shows a muted voice as muted', () => {
+    const schedule = twoVoices();
+    schedule.voices[1] = { ...schedule.voices[1], muted: true };
+    mount(schedule);
 
-    expect(control(0, 'Solo').getAttribute('aria-pressed')).toBe('false');
-    expect(control(1, 'Solo').getAttribute('aria-pressed')).toBe('true');
+    expect(testRoot.queryAll('.voice-rows__row--silent')).toHaveLength(1);
+    expect(control(1, 'Unmute Second').getAttribute('aria-pressed')).toBe('true');
+    expect(rows()[0].textContent).not.toContain('Solo');
   });
 
   it('renames on blur, like every other committed field', () => {

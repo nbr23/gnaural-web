@@ -25,8 +25,8 @@ export const SEEK_STEP_SECONDS = 30;
 
 export interface VoiceGate {
   muted: boolean;
+  /** Derived by the engine, not stored: this voice is the only renderable one left unmuted. */
   soloed: boolean;
-  audible: boolean;
 }
 
 export interface Player {
@@ -64,7 +64,7 @@ export interface Player {
    * see `PlaybackEngine.update` for why the default is the one that cannot be got wrong.
    *
    * `voiceMap` is required of a structural edit and of nothing else — without it the engine's
-   * session mute/solo gates stay on the slots they were, which after a reorder or a delete is a
+   * session mute gates stay on the slots they were, which after a reorder or a delete is a
    * different voice.
    */
   update(schedule: Schedule, horizon?: Horizon, voiceMap?: VoiceMap): void;
@@ -110,7 +110,6 @@ export function usePlayer(
     return of.voices.map((_voice, index) => ({
       muted: engine.isVoiceMuted(index),
       soloed: engine.isVoiceSoloed(index),
-      audible: engine.isVoiceAudible(index),
     }));
   }, []);
 
@@ -289,7 +288,6 @@ export function usePlayer(
       apply(instance, {
         muted: instance.isVoiceMuted(index),
         soloed: instance.isVoiceSoloed(index),
-        audible: instance.isVoiceAudible(index),
       });
       setVoiceGates(readGates(instance, current));
     },

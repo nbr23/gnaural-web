@@ -1,6 +1,7 @@
 import type { DragEvent as ReactDragEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Route } from './app/routing';
+import { AppFooter } from './app/AppFooter';
 import { HeadphoneNotice } from './app/HeadphoneNotice';
 import { LIBRARY, formatHash, navigate, redirect, useRoute } from './app/routing';
 import { UpdatePrompt } from './app/UpdatePrompt';
@@ -343,6 +344,8 @@ function App() {
       )}
 
       {dragging && <div className="app__drop-hint">Drop a .gnaural file to play it</div>}
+
+      <AppFooter />
     </div>
   );
 }

@@ -397,6 +397,26 @@
   }
 }
 
+/* Square, and sized from the glyph rather than from a word, so a row of icon and text toggles
+   still lines up along one baseline of boxes. */
+.voice-rows__toggle--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  padding: 6px;
+  font-size: 18px;
+}
+
+/* Only what names the voice, never the controls: the button that brings it back must not be the
+   dimmest thing in the row. The crossed speaker is the state; this is the echo of it. */
+.voice-rows__row--silent {
+  & .voice-rows__identity,
+  & .voice-rows__meta {
+    opacity: 0.5;
+  }
+}
+
 .node-panel__actions {
   display: flex;
   flex-wrap: wrap;

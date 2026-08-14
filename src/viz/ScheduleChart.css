@@ -2,16 +2,10 @@
  * Chart roles as custom properties, so the light/dark values swap in one place and the markup is
  * written against roles rather than raw hex.
  *
- * Categorical slots are the dataviz reference palette, re-validated against *this app's* surfaces
- * (#ffffff / #16171d from index.css) rather than the palette's own defaults — contrast is only
- * meaningful against the surface a chart actually renders on. Result, all 8 slots, both modes:
- * lightness band PASS, chroma floor PASS, worst adjacent CVD dE 8.4 (protan), worst adjacent
- * normal-vision dE 19.3, contrast vs surface all >= 3:1.
- *
- * Slots 3/4/5 (aqua, yellow, magenta) use the palette's *dark* steps in BOTH modes: their light
- * steps fall below 3:1 on pure white (2.82 / 2.17 / 2.69), and the darker steps clear it. Passing
- * contrast outright is preferable to the relief rule here, which would otherwise oblige an
- * always-visible label on every series — untenable on a 77-breakpoint schedule.
+ * The categorical slots the series are drawn in (`--viz-series-*`) live in `src/index.css`: the
+ * library colours its categories and the readout its bands from the same eight, and one validated
+ * palette beats three invented ones. What stays here is what only a chart has — its surface, grid,
+ * axis and band shading.
  *
  * Dark is the default and light is the media-query opt-out, matching index.css: the chart must
  * follow the app's own dark-by-default choice (§5.1) rather than the OS setting.
@@ -25,18 +19,6 @@
   --viz-axis: #343643;
   --viz-band: rgba(255, 255, 255, 0.04);
 
-  --viz-series-1: #3987e5;
-  --viz-series-2: #d95926;
-  --viz-series-3: #199e70;
-  --viz-series-4: #c98500;
-  --viz-series-5: #d55181;
-  --viz-series-6: #008300;
-  --viz-series-7: #9085e9;
-  --viz-series-8: #e66767;
-  /* A 9th voice is never a generated hue: it falls back to de-emphasis gray and takes its
-     identity from the legend and the readout instead. */
-  --viz-series-overflow: #898781;
-
   position: relative;
   width: 100%;
   text-align: left;
@@ -48,15 +30,6 @@
     --viz-grid: #eceaf0;
     --viz-axis: #d5d3da;
     --viz-band: rgba(107, 99, 117, 0.05);
-
-    --viz-series-1: #2a78d6;
-    --viz-series-2: #eb6834;
-    --viz-series-3: #199e70;
-    --viz-series-4: #c98500;
-    --viz-series-5: #d55181;
-    --viz-series-6: #008300;
-    --viz-series-7: #4a3aa7;
-    --viz-series-8: #e34948;
   }
 }
 

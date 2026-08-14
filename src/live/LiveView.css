@@ -58,10 +58,22 @@
   gap: 12px;
   font-size: 14px;
 
+  /* A fixed slot, as in the readout above: a value that changes width as you drag drags the label
+     around with it. */
   & strong {
     color: var(--text-h);
     font-variant-numeric: tabular-nums;
+    min-width: 8ch;
+    text-align: right;
   }
+}
+
+/* Same reason, mid-sentence: prose that reflows while a slider moves is the same distraction in a
+   paragraph as it is in a tile. */
+.live__figure {
+  display: inline-block;
+  min-width: 5ch;
+  font-variant-numeric: tabular-nums;
 }
 
 .live__beat {
@@ -80,6 +92,9 @@
    band the beat is currently in, which is a statement about where you are rather than about what
    you last pressed. */
 .live__band {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font: inherit;
   font-size: 13px;
   padding: 6px 12px;
@@ -90,11 +105,21 @@
   color: var(--text);
   cursor: pointer;
 
+  /* The band's own colour rather than the app accent: the same five hues the readout's dot and the
+     chart's lanes use, so a band is one thing wherever it is named. */
   &[aria-pressed='true'] {
-    color: var(--accent);
-    background: var(--accent-bg);
-    border-color: var(--accent-border);
+    color: var(--text-h);
+    background: color-mix(in oklab, var(--band) 20%, transparent);
+    border-color: color-mix(in oklab, var(--band) 55%, transparent);
   }
+}
+
+.live__band-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--band, var(--border));
 }
 
 .live__keep {

@@ -1,8 +1,8 @@
+import type { CSSProperties } from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { BUILD_ID } from '../app/build';
 import { LIVE, navigate } from '../app/routing';
-import type { LibraryItem, LibrarySection } from './catalog';
-import { ORIGIN_LABELS, buildCatalog } from './catalog';
+import type { LibraryItem, LibrarySection, NoteSegment } from './catalog';
+import { buildCatalog } from './catalog';
 import type { Draft, ImportedProgram } from './storage';
 import './LibraryView.css';
 
@@ -96,36 +96,37 @@ export function LibraryView({
 
   return (
     <div className="library">
-      <header className="library__header">
-        <h1>Gnaural Web</h1>
-        <p className="library__lede">
-          Binaural beat programs. Headphones are required — the effect only exists between two
-          ears.
-        </p>
-
-        <div className="library__actions">
-          <input
-            type="search"
-            className="library__search"
-            value={query}
-            placeholder="Search programs"
-            aria-label="Search programs"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <button type="button" className="button" onClick={onOpenFile}>
-            Open a file
-          </button>
-          <button type="button" className="button" onClick={onNewProgram}>
-            New program
-          </button>
-          {/* Not a program, so not a program row: it has no author, no length and nothing to load. */}
-          <button type="button" className="button button--primary" onClick={() => navigate(LIVE)}>
-            Live
-          </button>
-        </div>
-      </header>
-
       <div className="library__body">
+        <header className="library__header">
+          <h1>Gnaural Web</h1>
+          <p className="library__lede">
+            Binaural beat programs. Headphones are required — the effect only exists between two
+            ears.
+          </p>
+
+          <div className="library__actions">
+            <input
+              type="search"
+              className="library__search"
+              value={query}
+              placeholder="Search programs"
+              aria-label="Search programs"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <button type="button" className="button" onClick={onOpenFile}>
+              Open a file
+            </button>
+            <button type="button" className="button" onClick={onNewProgram}>
+              New program
+            </button>
+            {/* Not a program, so not a program row: it has no author, no length and nothing to
+                load. */}
+            <button type="button" className="button button--primary" onClick={() => navigate(LIVE)}>
+              Live
+            </button>
+          </div>
+        </header>
+
         <SectionRail sections={sections} onJump={jumpTo} />
 
         <div className="library__sections">
@@ -150,10 +151,6 @@ export function LibraryView({
           {sections.length === 0 && (
             <p className="library__empty">Nothing matches “{query}”.</p>
           )}
-
-          {/* An installed PWA can be running a build older than the one you just deployed — the
-              service worker waits to be told to swap. Say which one this is. */}
-          <p className="library__build">build {BUILD_ID}</p>
         </div>
       </div>
     </div>
@@ -188,9 +185,11 @@ function SectionRail({
           key={section.id}
           type="button"
           className={`library__rail-link${depth > 0 ? ' library__rail-link--child' : ''}`}
+          style={section.accent ? ({ '--origin': section.accent } as CSSProperties) : undefined}
           onClick={() => onJump(section.id)}
         >
-          {section.label}
+          {section.accent && <span className="library__dot" aria-hidden="true" />}
+          {section.railLabel ?? section.label}
           <span className="library__rail-count">{count(section)}</span>
         </button>
       ))}
@@ -242,8 +241,10 @@ function Section({
         else anchors.delete(section.id);
       }}
       onToggle={(event) => onToggleOpen(section.id, event.currentTarget.open)}
+      style={section.accent ? ({ '--origin': section.accent } as CSSProperties) : undefined}
     >
       <summary className="library__summary">
+        {section.accent && <span className="library__dot" aria-hidden="true" />}
         <span className="library__category">
           {section.code ? (
             <>
@@ -257,7 +258,7 @@ function Section({
         <span className="library__count">{count(section)}</span>
       </summary>
 
-      {section.note && <p className="library__note">{section.note}</p>}
+      {section.note && <Note segments={section.note} />}
 
       {section.items.length > 0 && (
         <ul className="library__list">
@@ -291,6 +292,27 @@ function Section({
   );
 }
 
+/** A section's disclaimer: prose, the clause it turns on in bold, and whatever it credits. */
+function Note({ segments }: { segments: NoteSegment[] }) {
+  return (
+    <p className="library__note">
+      {segments.map((segment, index) =>
+        segment.href ? (
+          // Off-site, and the library is a running audio app — a new tab rather than a navigation
+          // that would tear down the player to show a store page.
+          <a key={index} href={segment.href} target="_blank" rel="noreferrer">
+            {segment.text}
+          </a>
+        ) : segment.strong ? (
+          <strong key={index}>{segment.text}</strong>
+        ) : (
+          <span key={index}>{segment.text}</span>
+        ),
+      )}
+    </p>
+  );
+}
+
 /**
  * One program: a press to open it, a star, and — for the ones that can go — a two-step remove.
  *
@@ -313,7 +335,10 @@ function ProgramRow({
   const [confirming, setConfirming] = useState(false);
 
   return (
-    <div className={`program-row program-row--${item.origin}`}>
+    <div
+      className={`program-row program-row--${item.origin}`}
+      style={item.accent ? ({ '--origin': item.accent } as CSSProperties) : undefined}
+    >
       <button
         type="button"
         className="program-row__open"
@@ -324,7 +349,7 @@ function ProgramRow({
         {item.note && <span className="program-row__note">{item.note}</span>}
       </button>
 
-      <span className="program-row__badge">{ORIGIN_LABELS[item.origin]}</span>
+      <span className="program-row__badge">{item.badge}</span>
 
       <button
         type="button"

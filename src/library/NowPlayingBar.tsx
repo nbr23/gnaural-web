@@ -1,4 +1,5 @@
 import { formatClock } from '../app/format';
+import { PlayPauseButton, StopButton } from '../player/Controls';
 import type { Player } from '../player/usePlayer';
 import './NowPlayingBar.css';
 
@@ -34,17 +35,12 @@ export function NowPlayingBar({ title, player, openEnded, onOpen }: NowPlayingBa
         </span>
       </button>
 
-      <button
-        type="button"
-        className="button button--primary"
+      <PlayPauseButton
+        playing={player.playing}
         onClick={() => (player.playing ? player.pause() : player.play())}
-      >
-        {player.playing ? 'Pause' : 'Play'}
-      </button>
+      />
 
-      <button type="button" className="button" onClick={player.stop}>
-        Stop
-      </button>
+      <StopButton onClick={player.stop} />
     </div>
   );
 }

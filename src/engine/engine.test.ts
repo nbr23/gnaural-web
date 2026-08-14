@@ -662,20 +662,73 @@ describe('PlaybackEngine mixing', () => {
     expect(schedule.voices[0].muted).toBe(true);
   });
 
-  it('makes a soloed voice audible and everything else silent, mute aside', () => {
+  function threeVoiceEngine(): PlaybackEngine {
     const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
-    engine.load(twoVoiceSchedule());
+    engine.load(
+      makeSchedule([0, 1, 2].map((id) => makeVoice([makeEntry({ duration: 30 })], { id }))),
+    );
+    return engine;
+  }
 
+  it('solos by muting the others, and un-solos by putting back the mutes it found', () => {
+    const engine = threeVoiceEngine();
+    engine.setVoiceMuted(2, true);
+
+    engine.setVoiceSoloed(0, true);
+    expect([0, 1, 2].map((i) => engine.isVoiceAudible(i))).toEqual([true, false, false]);
+    expect(engine.isVoiceSoloed(0)).toBe(true);
+
+    engine.setVoiceSoloed(0, false);
+    // Voice 1 comes back; voice 2 was muted before the solo and stays that way.
+    expect([0, 1, 2].map((i) => engine.isVoiceAudible(i))).toEqual([true, true, false]);
+  });
+
+  /** The whole point of deriving it: solo cannot go on claiming to be true once it is not. */
+  it('stops reporting a solo as soon as another voice is un-muted by hand', () => {
+    const engine = threeVoiceEngine();
+    engine.setVoiceSoloed(0, true);
+
+    engine.setVoiceMuted(1, false);
+    expect(engine.isVoiceSoloed(0)).toBe(false);
+    expect([0, 1, 2].map((i) => engine.isVoiceAudible(i))).toEqual([true, true, false]);
+  });
+
+  it('moves the solo rather than adding a second one', () => {
+    const engine = threeVoiceEngine();
+    engine.setVoiceSoloed(0, true);
+    engine.setVoiceSoloed(2, true);
+
+    expect([0, 1, 2].map((i) => engine.isVoiceSoloed(i))).toEqual([false, false, true]);
+    expect([0, 1, 2].map((i) => engine.isVoiceAudible(i))).toEqual([false, false, true]);
+  });
+
+  /** Muting the soloed voice leaves nothing sounding, which is nobody's solo. */
+  it('reports no solo when the soloed voice is itself muted', () => {
+    const engine = threeVoiceEngine();
     engine.setVoiceSoloed(1, true);
-    expect(engine.isVoiceAudible(0)).toBe(false);
-    expect(engine.isVoiceAudible(1)).toBe(true);
-
-    // A voice that is both soloed and muted stays silent.
     engine.setVoiceMuted(1, true);
-    expect(engine.isVoiceAudible(1)).toBe(false);
 
-    engine.setVoiceSoloed(1, false);
-    expect(engine.isVoiceAudible(0)).toBe(true);
+    expect([0, 1, 2].map((i) => engine.isVoiceSoloed(i))).toEqual([false, false, false]);
+  });
+
+  /**
+   * A voice this app cannot render (§3.3) has its controls disabled, so it can never be un-muted.
+   * Counting it would make solo underivable on every programme that contains one.
+   */
+  it('derives solo over renderable voices only', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    engine.load(
+      makeSchedule([
+        makeVoice([makeEntry({ duration: 30 })]),
+        makeVoice([makeEntry({ duration: 30 })], { id: 1 }),
+        makeVoice([makeEntry({ duration: 30 })], { id: 2, type: VoiceType.Pcm }),
+      ]),
+    );
+
+    engine.setVoiceSoloed(0, true);
+    expect(engine.isVoiceSoloed(0)).toBe(true);
+    // Silencing it would be pointless; it never sounds either way.
+    expect(engine.isVoiceMuted(2)).toBe(false);
   });
 
   it('scales output by the app master gain, independently of the file volumes', async () => {
@@ -1244,7 +1297,12 @@ describe('update() — live re-scheduling (§6.1)', () => {
     expect(engine.isVoiceAudible(1)).toBe(false);
   });
 
-  /** The failure the map exists to prevent, asserted from the other side so it cannot be dropped. */
+  /**
+   * The failure the map exists to prevent, asserted from the other side so it cannot be dropped.
+   *
+   * On the mute indices rather than on `isVoiceSoloed`, which is derived from them: the voice that
+   * moved to slot 0 is the one that should still be heard, and without the map slot 2 is.
+   */
   it('leaves a gate on the wrong voice when a reorder arrives without its map', () => {
     const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
     const engine = new PlaybackEngine(context);
@@ -1255,7 +1313,7 @@ describe('update() — live re-scheduling (§6.1)', () => {
 
     engine.update(moveVoice(before, { from: 2, to: 0 }).schedule);
 
-    expect(engine.isVoiceSoloed(2)).toBe(true);
+    expect([0, 1, 2].map((i) => engine.isVoiceMuted(i))).toEqual([true, true, false]);
   });
 
   it('closes the gap in the gates when a voice is deleted', () => {
