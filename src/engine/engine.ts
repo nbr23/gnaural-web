@@ -255,6 +255,30 @@ function stopNoiseLayer(layer: NoiseLayer, when: number): void {
 }
 
 /**
+ * The bed for an offline render (`renderSchedule`), where `t0` carries schedule-time zero.
+ *
+ * Level is set outright rather than faded in, matching `playSchedule`'s voices, which anchor their
+ * first value at `t0` instead of ramping up to it. The end is the one `scheduleEnding` gives every
+ * voice — held flat until the schedule ends, then a `CLICK_FREE_RAMP` fade that `renderDuration`
+ * has already reserved room for — so the bed stops with the programme rather than after it.
+ */
+function renderNoiseLayer(
+  context: BaseAudioContext,
+  output: OutputChain,
+  noise: NoiseLayerSettings,
+  t0: number,
+  endOffset: number,
+): void {
+  const layer = buildNoiseLayer(context, output, noise.colour);
+  layer.gain.gain.value = noise.gain;
+  layer.gain.gain.setValueAtTime(noise.gain, t0 + endOffset);
+  layer.gain.gain.linearRampToValueAtTime(0, t0 + endOffset + CLICK_FREE_RAMP);
+
+  startNoiseLayer(context, layer, t0, 0);
+  stopNoiseLayer(layer, t0 + endOffset + CLICK_FREE_RAMP);
+}
+
+/**
  * What actually makes a voice's sound, by voice type (§3.3).
  *
  * A binaural voice's oscillator pair lives for the whole session (§4.4 — an `OscillatorNode`
@@ -644,8 +668,16 @@ function requiresVoiceRebuild(previous: Schedule, next: Schedule): boolean {
  * WAV of a schedule that repeats forever is not a file anyone can write. Repetition is a playback
  * behaviour, so it lives in `PlaybackEngine`; keeping it out of here is also what lets §5.3's null
  * test compare the two paths over the same stretch of audio.
+ *
+ * `noise` mixes the app-level bed (§4.5b) in. It is a **parameter and never a lookup**: nothing
+ * here reads a player's settings, so an export carries the bed only because the person exporting
+ * ticked the box for it, and omitting it renders the document as authored as it always did.
  */
-export function playSchedule(context: BaseAudioContext, schedule: Schedule): void {
+export function playSchedule(
+  context: BaseAudioContext,
+  schedule: Schedule,
+  noise?: NoiseLayerSettings,
+): void {
   const output = buildOutputChain(context, schedule);
   const t0 = context.currentTime;
   const endOffset = scheduleDuration(schedule);
@@ -659,6 +691,10 @@ export function playSchedule(context: BaseAudioContext, schedule: Schedule): voi
     scheduleVoice(compileVoice(voice), t0, endOffset, nodes);
     startSource(context, nodes.source, t0, 0);
   });
+
+  if (noise && noise.gain > 0 && endOffset > 0) {
+    renderNoiseLayer(context, output, noise, t0, endOffset);
+  }
 }
 
 interface VoiceState {
@@ -951,10 +987,9 @@ export class PlaybackEngine {
   /**
    * The app's own noise bed (§4.5b) — a listening preference, not part of the loaded document.
    *
-   * It therefore survives `load()` like the master volume does, follows the transport (a bed with
-   * nothing under it is just hiss), and is **absent from `playSchedule`**, which is the export
-   * path: a WAV is the document as authored, and the same program must export the same bytes
-   * whoever renders it.
+   * It therefore survives `load()` like the master volume does and follows the transport (a bed
+   * with nothing under it is just hiss). An export never reads it from here: `playSchedule` takes
+   * the bed as a parameter, so a WAV carries one only when the export was asked for one.
    */
   setNoiseLayer(settings: NoiseLayerSettings): void {
     this.noise = { colour: settings.colour, gain: Math.max(0, settings.gain) };

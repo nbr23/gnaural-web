@@ -31,9 +31,10 @@ export interface NoisePanelProps {
  * sampled audio and nothing added to the document (§4.6).
  *
  * Off unless someone turns it on, and it stays where they put it across programs — it is a
- * preference about listening, not a property of a schedule. Which is also why it is **not in the
- * WAV**: an export is the document as authored, and the same program must produce the same file
- * whoever renders it.
+ * preference about listening, not a property of a schedule. So nothing that *describes* the
+ * program carries it: not the share link, not the `.gnaural` file. A WAV is rendered audio rather
+ * than a description, so `ExportPanel` offers to mix it in, and that offer is where the choice is
+ * made — never here.
  */
 export function NoisePanel({ noise, onChange, lostAmbientBed }: NoisePanelProps) {
   const on = noise.gain > 0;
@@ -73,7 +74,8 @@ export function NoisePanel({ noise, onChange, lostAmbientBed }: NoisePanelProps)
 
       <p className="noise__note">
         {on ? 'Mixed under the program' : 'Off'} — the app&rsquo;s own layer, not part of the
-        program, so it is left out of the WAV and the share link.
+        program, so the share link and the .gnaural file never carry it. A WAV export can, if you
+        ask it to.
       </p>
 
       {lostAmbientBed && (

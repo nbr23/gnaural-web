@@ -13,3 +13,7 @@
  * is always readable.
  */
 export const BUILD_ID: string = __BUILD_ID__;
+
+/** Git short hash of the commit this was built from. Empty outside the Docker build, which is
+ * the only place `GIT_SHA` is passed through. */
+export const GIT_SHA: string = __GIT_SHA__;

@@ -7,13 +7,25 @@
   margin-bottom: -16px;
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
   text-align: center;
 }
 
-.app-footer__build {
+.app-footer__build,
+.app-footer__sha {
   margin: 0;
   font: 12px var(--mono);
   opacity: 0.6;
+}
+
+/* Only rendered when GIT_SHA is set, so the separator lives here rather than being stranded
+   in the markup when there's nothing to separate it from. */
+.app-footer__sha::before {
+  content: '·';
+  margin-right: 8px;
 }
 
 /* Clearance for whatever is fixed to the bottom of the viewport — below the footer rather than

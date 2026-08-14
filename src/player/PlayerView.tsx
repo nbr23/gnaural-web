@@ -193,7 +193,7 @@ export function PlayerView({
             schedule={schedule}
             sampleRate={exportSampleRate}
             onSampleRateChange={onExportSampleRateChange}
-            noiseActive={noise.gain > 0}
+            noise={noise}
           />
         </Panel>
 

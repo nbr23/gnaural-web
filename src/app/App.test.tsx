@@ -1300,16 +1300,23 @@ describe('the app-level noise layer (§4.5b)', () => {
     expect(root.query('.noise')?.textContent).toContain('Off');
   });
 
-  it('says it is not exported, where the omission would otherwise surprise', async () => {
+  it('offers the WAV the bed once there is one, unticked, where the choice is otherwise invisible', async () => {
     window.location.hash = '#/p/powernap';
     root.render(<App />);
     await flush();
 
-    expect(root.query('.export')?.textContent).not.toContain('background noise layer');
+    expect(root.query('.export__include')).toBeNull();
 
     root.act(() => setInputValue(root.query('.noise__level input') as HTMLInputElement, '0.3'));
 
-    expect(root.query('.export')?.textContent).toContain('background noise layer is not included');
+    const include = root.query('.export__include input') as HTMLInputElement;
+    expect(include.checked).toBe(false);
+    expect(root.query('.export__include')?.textContent).toContain('Include background noise');
+    expect(root.query('.export__include')?.textContent).toContain('program as authored');
+
+    // Ticked only by a person — the same rule the layer itself follows (§3.8 item 6).
+    root.act(() => setCheckbox(include, true));
+    expect((root.query('.export__include input') as HTMLInputElement).checked).toBe(true);
   });
 
   it('points the four presets that lost their ambient bed at it, and nothing else', async () => {

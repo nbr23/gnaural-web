@@ -11,6 +11,8 @@ export default defineConfig({
   // deployed?" needs an answer on screen. See `src/app/build.ts`.
   define: {
     __BUILD_ID__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')),
+    // Set by the Docker build (`--build-arg GIT_SHA`), empty for local dev builds.
+    __GIT_SHA__: JSON.stringify(process.env.GIT_SHA ?? ''),
   },
   plugins: [
     react(),

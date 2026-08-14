@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { LIVE, navigate } from '../app/routing';
+import { GNAURAL_EXTENSION } from '../files/openFile';
 import type { LibraryItem, LibrarySection, NoteSegment } from './catalog';
 import { buildCatalog } from './catalog';
 import type { Draft, ImportedProgram } from './storage';
@@ -113,15 +114,34 @@ export function LibraryView({
               aria-label="Search programs"
               onChange={(event) => setQuery(event.target.value)}
             />
-            <button type="button" className="button" onClick={onOpenFile}>
-              Open a file
+            {/* Named for the file it takes, not for the gesture: "Open a file" says nothing about
+                which file, and the one thing a newcomer needs to know is that this app reads
+                Gnaural's own format. The three tooltips carry what the labels cannot — none of
+                these is a program row, so none of them has a description of its own. */}
+            <button
+              type="button"
+              className="button"
+              title={`Open a ${GNAURAL_EXTENSION} schedule from this device. It is kept in your library.`}
+              onClick={onOpenFile}
+            >
+              Import {GNAURAL_EXTENSION}
             </button>
-            <button type="button" className="button" onClick={onNewProgram}>
+            <button
+              type="button"
+              className="button"
+              title="Start an empty program and author it in the editor: voices, frequency curves and timings."
+              onClick={onNewProgram}
+            >
               New program
             </button>
             {/* Not a program, so not a program row: it has no author, no length and nothing to
                 load. */}
-            <button type="button" className="button button--primary" onClick={() => navigate(LIVE)}>
+            <button
+              type="button"
+              className="button button--primary"
+              title="Play a steady tone you steer by hand — two sliders for the carrier and beat frequency, no timeline. Keep a session as a program at any point."
+              onClick={() => navigate(LIVE)}
+            >
               Live
             </button>
           </div>

@@ -4,6 +4,7 @@ import type { Schedule } from '../document/types';
 import { GNAURAL_EXTENSION } from '../files/openFile';
 import { fileNameFor, saveBlob } from '../files/saveFile';
 import { ShareTooLargeError, encodeSharePayload, shareUrl } from '../files/shareLink';
+import type { NoiseLayerSettings } from '../engine/engine';
 import { RenderCancelledError, renderFrameCount, renderSchedule } from '../engine/render';
 import { encodeWav, wavByteLength } from '../engine/wav';
 
@@ -32,9 +33,15 @@ export interface Exporter {
  * Nothing about it needs to outlive the player view, so it is held by the panel rather than
  * threaded down from `App`.
  *
- * `sampleRate` is a persisted setting passed in, not state owned here.
+ * `sampleRate` is a persisted setting passed in, not state owned here. So is `noise`: the bed the
+ * WAV is to carry (§4.5b), or nothing at all — the panel decides, and only the WAV takes it. A
+ * `.gnaural` file and a share link describe the document, which the bed is not part of.
  */
-export function useExport(schedule: Schedule, sampleRate: number): Exporter {
+export function useExport(
+  schedule: Schedule,
+  sampleRate: number,
+  noise?: NoiseLayerSettings,
+): Exporter {
   const [status, setStatus] = useState<ExportStatus>('idle');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +82,7 @@ export function useExport(schedule: Schedule, sampleRate: number): Exporter {
     try {
       const buffer = await renderSchedule(schedule, {
         sampleRate,
+        noise,
         signal: controller.signal,
         onProgress: (fraction) => {
           if (live.current) setProgress(fraction);
@@ -92,7 +100,7 @@ export function useExport(schedule: Schedule, sampleRate: number): Exporter {
       abort.current = null;
       if (live.current) setStatus('idle');
     }
-  }, [save, sampleRate, schedule]);
+  }, [noise, save, sampleRate, schedule]);
 
   const exportGnaural = useCallback(async () => {
     setError(null);

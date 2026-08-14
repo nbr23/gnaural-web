@@ -207,3 +207,93 @@ describe('WAV export null test (§5.3)', () => {
     expect(worst).toBeLessThan(tolerance);
   });
 });
+
+/**
+ * The app-level noise bed in an export (§4.5b).
+ *
+ * Level and presence are what is checked, not samples against playback: `PlaybackEngine` starts the
+ * layer's buffer sources at the transition instant while schedule-time zero is `CLICK_FREE_RAMP`
+ * later, so the two paths run the same stream from phases a fade-window apart. That is why the
+ * §5.3 null test above renders **without** a bed and is deliberately left alone.
+ */
+describe('the app-level noise bed in an export (§4.5b)', () => {
+  const DURATION = 0.5;
+
+  /** A voice that consumes time and makes no sound, so whatever is rendered is the bed alone. */
+  function silentSchedule(duration = DURATION): Schedule {
+    return makeSchedule([
+      makeVoice([makeEntry({ duration, baseFreq: 300, volumeLeft: 0, volumeRight: 0 })]),
+    ]);
+  }
+
+  function rms(samples: Float32Array): number {
+    let sum = 0;
+    for (const sample of samples) sum += sample * sample;
+    return Math.sqrt(sum / samples.length);
+  }
+
+  function peak(samples: Float32Array): number {
+    return samples.reduce((worst, sample) => Math.max(worst, Math.abs(sample)), 0);
+  }
+
+  it('is absent unless the export asked for it', async () => {
+    const buffer = await renderSchedule(silentSchedule(), { sampleRate: SAMPLE_RATE });
+
+    expect(peak(buffer.getChannelData(0))).toBe(0);
+    expect(peak(buffer.getChannelData(1))).toBe(0);
+  });
+
+  it('adds nothing at zero gain, which is the default nobody has touched', async () => {
+    const buffer = await renderSchedule(silentSchedule(), {
+      sampleRate: SAMPLE_RATE,
+      noise: { colour: 'pink', gain: 0 },
+    });
+
+    expect(peak(buffer.getChannelData(0))).toBe(0);
+  });
+
+  it('mixes the bed at the level a voice of the same volume would sit at', async () => {
+    // Long enough to measure: the Gnaural colour is a −6 dB/octave rumble, so a half-second
+    // window is a few cycles of its lowest content and its RMS wanders by a few percent.
+    const length = 3;
+    const buffer = await renderSchedule(silentSchedule(length), {
+      sampleRate: SAMPLE_RATE,
+      noise: { colour: 'gnaural', gain: 0.5 },
+    });
+
+    // NOISE_REFERENCE_RMS × 0.5, the same figure the playback layer is pinned to.
+    const to = Math.round(length * SAMPLE_RATE);
+    expect(rms(buffer.getChannelData(0).subarray(0, to))).toBeCloseTo(0.145, 2);
+    expect(rms(buffer.getChannelData(1).subarray(0, to))).toBeCloseTo(0.145, 2);
+  });
+
+  it('ends with the programme rather than running out with the file', async () => {
+    const buffer = await renderSchedule(silentSchedule(), {
+      sampleRate: SAMPLE_RATE,
+      noise: { colour: 'white', gain: 0.5 },
+    });
+
+    expect(peak(buffer.getChannelData(0).subarray(Math.ceil((DURATION + CLICK_FREE_RAMP) * SAMPLE_RATE)))).toBe(0);
+  });
+
+  it('leaves the programme itself untouched — the bed is summed on top of it', async () => {
+    const schedule = makeSchedule([
+      makeVoice([makeEntry({ duration: DURATION, baseFreq: 300, beatFreq: 8, volumeLeft: 0.3, volumeRight: 0.3 })]),
+    ]);
+
+    const plain = await renderSchedule(schedule, { sampleRate: SAMPLE_RATE });
+    const bedded = await renderSchedule(schedule, {
+      sampleRate: SAMPLE_RATE,
+      noise: { colour: 'gnaural', gain: 0.2 },
+    });
+
+    const to = Math.round(DURATION * SAMPLE_RATE);
+    const difference = new Float32Array(to);
+    for (let i = 0; i < to; i++) {
+      difference[i] = bedded.getChannelData(0)[i] - plain.getChannelData(0)[i];
+    }
+
+    // What is left over when the programme is subtracted back out is the bed, at its own level.
+    expect(rms(difference)).toBeCloseTo(0.29 * 0.2, 2);
+  });
+});

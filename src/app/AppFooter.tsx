@@ -1,4 +1,4 @@
-import { BUILD_ID } from './build';
+import { BUILD_ID, GIT_SHA } from './build';
 import './AppFooter.css';
 
 /**
@@ -16,6 +16,7 @@ export function AppFooter() {
   return (
     <footer className="app-footer">
       <p className="app-footer__build">build {BUILD_ID}</p>
+      {GIT_SHA && <p className="app-footer__sha">{GIT_SHA}</p>}
     </footer>
   );
 }

@@ -1,5 +1,6 @@
 import { scheduleDuration } from '../document/timing';
 import type { Schedule } from '../document/types';
+import type { NoiseLayerSettings } from './engine';
 import { CLICK_FREE_RAMP, playSchedule } from './engine';
 
 /**
@@ -12,6 +13,10 @@ import { CLICK_FREE_RAMP, playSchedule } from './engine';
  *
  * What is rendered is the **document as authored** — never the session's master-volume slider or
  * its runtime mute/solo. The same program always exports the same bytes.
+ *
+ * The one thing that can be added to it is the app-level noise bed (§4.5b), and only because the
+ * caller passed it in: `noise` is a parameter of the export, taken from a checkbox next to the
+ * button, not read from the player. Leave it out and the render is the document and nothing else.
  */
 
 export const DEFAULT_EXPORT_SAMPLE_RATE = 44100;
@@ -23,6 +28,8 @@ export interface RenderOptions {
   sampleRate?: number;
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
+  /** The app-level noise bed to mix in, when the export asked for one (§4.5b). */
+  noise?: NoiseLayerSettings;
 }
 
 /** Length of the rendered file: the schedule (shortest voice, §3.7) plus the tail of its
@@ -56,14 +63,14 @@ export class RenderCancelledError extends Error {
  */
 export async function renderSchedule(
   schedule: Schedule,
-  { sampleRate = DEFAULT_EXPORT_SAMPLE_RATE, onProgress, signal }: RenderOptions = {},
+  { sampleRate = DEFAULT_EXPORT_SAMPLE_RATE, onProgress, signal, noise }: RenderOptions = {},
 ): Promise<AudioBuffer> {
   const duration = renderDuration(schedule);
   if (duration <= 0) throw new Error('This program has no audio to export.');
   if (signal?.aborted) throw new RenderCancelledError();
 
   const context = createContext(renderFrameCount(schedule, sampleRate), sampleRate);
-  playSchedule(context, schedule);
+  playSchedule(context, schedule, noise);
 
   const timer = setInterval(() => {
     onProgress?.(Math.min(1, context.currentTime / duration));
