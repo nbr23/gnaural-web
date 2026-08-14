@@ -1,0 +1,10 @@
+.git
+node_modules
+dist
+dist-ssr
+coverage
+*.log
+.DS_Store
+.vscode
+.idea
+reference/gnaural_20110606.tar.xz
