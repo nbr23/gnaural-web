@@ -98,8 +98,8 @@ const ZOOM_STEP = 2;
  * **This component is the only thing that re-renders while a finger is down.** The drag's in-flight
  * state lives here rather than in `EditorView`, for the reason Live mode put its slider values in
  * `LiveView`: everything above this — the readout, the timeline, the header fields, the node panel —
- * would otherwise re-render at pointer rate, and `Readout` alone recompiles a voice when its
- * schedule changes. Below it, `ScheduleChart` keeps the committed document for the whole gesture, so
+ * would otherwise re-render at pointer rate, and `Readout` alone recompiles every audible voice
+ * when its schedule changes. Below it, `ScheduleChart` keeps the committed document for the whole gesture, so
  * its memoised model, layout and `StaticPlot` all hold; what moves is the overlay.
  *
  * **The view window lives here for the same reason, and is rate-limited for a sharper one.** A zoom

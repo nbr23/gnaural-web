@@ -342,8 +342,6 @@ export function EditorView({
           onSeek={coarse ? undefined : player.seek}
         />
 
-        <Readout schedule={schedule} offset={player.offset} />
-
         <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
 
         <div className="editor__transport">
@@ -360,6 +358,11 @@ export function EditorView({
               fraction of. Volume takes the space, as it does in the player. */}
           <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
         </div>
+
+        {/* Below the transport, as in the player: the plot above already draws these curves, and
+            what the beat is *this second* is a thing to glance down at, not to sit under the
+            chart pushing the controls further away. */}
+        <Readout schedule={schedule} offset={player.offset} gates={player.voiceGates} />
       </div>
 
       <div className="editor__aside">

@@ -99,8 +99,6 @@ export function PlayerView({
             not play the way it reads has to say so where the Play button is. */}
         <WarningList warnings={all} />
 
-        <Readout schedule={schedule} offset={player.offset} />
-
         {/* No seek on touch: a plot wide enough to read is wide enough to brush past, and the
             timeline below is the deliberate way to move the playhead. See `useCoarsePointer`. */}
         <ScheduleChart
@@ -150,6 +148,12 @@ export function PlayerView({
               controls you reach for while listening, and on a phone that row is the fixed one. */}
           <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
         </div>
+
+        {/* Below the transport, because it is not what anyone came here to look at: the chart
+            above already draws every one of these curves for the whole program, and this only
+            says where on them the playhead is. Last in the column on a phone, where the transport
+            is fixed to the viewport and this scrolls under nothing. */}
+        <Readout schedule={schedule} offset={player.offset} gates={player.voiceGates} />
       </div>
 
       {/* Everything *about* the program. Folded away by default on a phone, where the page would
