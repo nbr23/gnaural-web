@@ -119,8 +119,7 @@ export function LibraryView({
             <h1>Gnaural Web</h1>
           </div>
           <p className="library__lede">
-            Binaural beat programs. Headphones are required — the effect only exists between two
-            ears.
+            Binaural beat programs. Headphones are required.
           </p>
 
           <div className="library__actions">
