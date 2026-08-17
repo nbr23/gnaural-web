@@ -23,6 +23,7 @@ function fakePlayer(overrides: Partial<Player> = {}): Player {
     stop: vi.fn(),
     seek: vi.fn(),
     update: vi.fn(),
+    prime: vi.fn(),
     toggleMute: vi.fn(),
     toggleSolo: vi.fn(),
     ...overrides,

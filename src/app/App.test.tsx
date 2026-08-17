@@ -558,6 +558,77 @@ describe('playback outside the player', () => {
   });
 });
 
+describe('playing from the library', () => {
+  /** The row for a program, found by the title it shows. */
+  function row(title: string): Element {
+    const found = root
+      .queryAll('.program-row')
+      .find((candidate) => candidate.querySelector('.program-row__title')?.textContent === title);
+    if (!found) throw new Error(`no library row for ${title}`);
+    return found;
+  }
+
+  /** Press a row's transport, by what it is offering — which is the assertion as much as the act. */
+  function pressRow(title: string, action: 'Play' | 'Pause' | 'Stop'): void {
+    const button = row(title).querySelector(`[aria-label="${action} ${title}"]`);
+    if (!button) throw new Error(`${title} offers no ${action}`);
+    root.click(button);
+  }
+
+  async function play(title = 'Power Nap (Android)'): Promise<void> {
+    root.render(<App />);
+    await flush();
+    pressRow(title, 'Play');
+    await flush();
+  }
+
+  it('starts a program from its row, and hands it to the player when the row is opened', async () => {
+    await play();
+
+    // Still the library: the press asked for the audio, not for the page.
+    expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
+    expect(root.query('.player__title')).toBeNull();
+    expect(root.query('.now-playing__title')?.textContent).toBe('Power Nap');
+    expect(mediaSession.metadata?.title).toBe('Power Nap');
+    expect(row('Power Nap (Android)').className).toContain('is-active');
+
+    root.click(row('Power Nap (Android)').querySelector('.program-row__open'));
+    await flush();
+
+    // The same session, not a second load of the same program.
+    expect(window.location.hash).toBe('#/p/powernap');
+    expect(root.byText('.button--primary', 'Pause')).toBeDefined();
+  });
+
+  it('pauses, resumes and stops from the row', async () => {
+    await play();
+
+    pressRow('Power Nap (Android)', 'Pause');
+    await flush();
+    expect(mediaSession.playbackState).toBe('paused');
+
+    pressRow('Power Nap (Android)', 'Play');
+    await flush();
+    expect(mediaSession.playbackState).toBe('playing');
+
+    pressRow('Power Nap (Android)', 'Stop');
+    await flush();
+    expect(root.query('.now-playing')).toBeNull();
+    expect(root.query('.program-row.is-active')).toBeNull();
+  });
+
+  it('replaces what is playing when a second row is started', async () => {
+    await play();
+
+    pressRow('Schumann Resonance', 'Play');
+    // A second lazily-imported program in the one test: the default flush is not always enough.
+    await flush(60);
+
+    expect(root.queryAll('.program-row.is-active')).toHaveLength(1);
+    expect(row('Schumann Resonance').className).toContain('is-active');
+  });
+});
+
 describe('media session', () => {
   it('publishes the program as lock-screen metadata', async () => {
     window.location.hash = '#/p/powernap';

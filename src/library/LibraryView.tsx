@@ -1,12 +1,30 @@
 import type { CSSProperties } from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { PauseIcon, PlayIcon, StopIcon } from '../app/icons';
 import { Logo } from '../app/Logo';
+import type { Route } from '../app/routing';
 import { LIVE, navigate } from '../app/routing';
 import { GNAURAL_EXTENSION } from '../files/openFile';
 import type { LibraryItem, LibrarySection, NoteSegment } from './catalog';
 import { buildCatalog } from './catalog';
 import type { Draft, ImportedProgram } from './storage';
 import './LibraryView.css';
+
+/**
+ * The transport, as a row sees it.
+ *
+ * One object rather than four props because it is drilled through every section to reach the rows,
+ * and because the four parts are meaningless apart: which row is running is what decides whether
+ * the next press is a play or a pause.
+ */
+export interface LibraryTransport {
+  /** The row whose program is loaded and started, keyed as `LibraryItem.key`. */
+  active: { key: string; playing: boolean } | null;
+  /** Start this program without opening it. */
+  onPlay: (route: Route) => void;
+  onPause: () => void;
+  onStop: () => void;
+}
 
 export interface LibraryViewProps {
   onOpenFile: () => void;
@@ -18,6 +36,7 @@ export interface LibraryViewProps {
   onRemoveImported: (id: string) => void;
   drafts: Draft[] | null;
   onDiscardDraft: (id: string) => void;
+  transport: LibraryTransport;
   /** Route hashes, as `Settings.favourites` stores them. */
   favourites: string[];
   onFavouritesChange: (favourites: string[]) => void;
@@ -57,6 +76,7 @@ export function LibraryView({
   onRemoveImported,
   drafts,
   onDiscardDraft,
+  transport,
   favourites,
   onFavouritesChange,
   overrides,
@@ -177,6 +197,7 @@ export function LibraryView({
               // search that found nothing. What is folded is remembered, not applied, while one runs.
               forceOpen={query !== ''}
               favourites={favourites}
+              transport={transport}
               anchors={anchors.current}
               // Forcing a section open above fires `toggle` like any other opening would, and that
               // must not be recorded as the user having unfolded it.
@@ -249,6 +270,7 @@ interface SectionProps {
   /** Open whatever the depth rule says, without recording it — what a running search does. */
   forceOpen: boolean;
   favourites: string[];
+  transport: LibraryTransport;
   anchors: Map<string, HTMLElement>;
   /** Called with whether the section's new state departs from `openByDefault(depth)`. */
   onToggleOpen: (id: string, override: boolean) => void;
@@ -269,6 +291,7 @@ function Section({
   overrides,
   forceOpen,
   favourites,
+  transport,
   anchors,
   onToggleOpen,
   onToggleFavourite,
@@ -323,6 +346,7 @@ function Section({
             <li key={item.key}>
               <ProgramRow
                 item={item}
+                transport={transport}
                 favourite={favourites.includes(item.key)}
                 onToggleFavourite={() => onToggleFavourite(item.key)}
                 onRemove={() => onRemove(item)}
@@ -340,6 +364,7 @@ function Section({
           overrides={overrides}
           forceOpen={forceOpen}
           favourites={favourites}
+          transport={transport}
           anchors={anchors}
           onToggleOpen={onToggleOpen}
           onToggleFavourite={onToggleFavourite}
@@ -372,7 +397,12 @@ function Note({ segments }: { segments: NoteSegment[] }) {
 }
 
 /**
- * One program: a press to open it, a star, and — for the ones that can go — a two-step remove.
+ * One program: a press to open it, a transport, a star, and — for the ones that can go — a two-step
+ * remove.
+ *
+ * **The transport is here so that hearing a program costs one press.** Opening it and pressing Play
+ * there is two, plus a press back, and it is what most of the library is for: the row is where
+ * someone is choosing, and the choice is made by listening.
  *
  * The removal asks first because it is the only irreversible action in the app and it used to be a
  * single tap on a 32 px `×` at the corner of a card, next to the press that opens the program.
@@ -381,20 +411,24 @@ function Note({ segments }: { segments: NoteSegment[] }) {
  */
 function ProgramRow({
   item,
+  transport,
   favourite,
   onToggleFavourite,
   onRemove,
 }: {
   item: LibraryItem;
+  transport: LibraryTransport;
   favourite: boolean;
   onToggleFavourite: () => void;
   onRemove: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const active = transport.active?.key === item.key ? transport.active : null;
+  const playing = active?.playing ?? false;
 
   return (
     <div
-      className={`program-row program-row--${item.origin}`}
+      className={`program-row program-row--${item.origin}${active ? ' is-active' : ''}`}
       style={item.accent ? ({ '--origin': item.accent } as CSSProperties) : undefined}
     >
       <button
@@ -408,6 +442,32 @@ function ProgramRow({
       </button>
 
       <span className="program-row__badge">{item.badge}</span>
+
+      {/* The same glyphs the player and the now-playing bar use, in this row's own bare style: a
+          column of filled primary buttons would put the accent on every row at once. */}
+      <button
+        type="button"
+        className={`program-row__transport${playing ? ' is-active' : ''}`}
+        title={playing ? `Pause ${item.title}` : `Play ${item.title}`}
+        aria-label={playing ? `Pause ${item.title}` : `Play ${item.title}`}
+        onClick={() => (playing ? transport.onPause() : transport.onPlay(item.route))}
+      >
+        {playing ? <PauseIcon /> : <PlayIcon />}
+      </button>
+
+      {/* Only for the row that has something to stop. Nothing else in the list can be stopped, and
+          a Stop on every row would be a column of controls that do nothing. */}
+      {active && (
+        <button
+          type="button"
+          className="program-row__transport"
+          title={`Stop ${item.title}`}
+          aria-label={`Stop ${item.title}`}
+          onClick={transport.onStop}
+        >
+          <StopIcon />
+        </button>
+      )}
 
       <button
         type="button"

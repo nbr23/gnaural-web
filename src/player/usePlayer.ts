@@ -68,6 +68,11 @@ export interface Player {
    * different voice.
    */
   update(schedule: Schedule, horizon?: Horizon, voiceMap?: VoiceMap): void;
+  /**
+   * Open the audio context now, for a caller that cannot call `play()` until it has fetched
+   * something first (§4.4). Nothing sounds, and `play()` is still the only thing that starts audio.
+   */
+  prime(): void;
   toggleMute(index: number): void;
   toggleSolo(index: number): void;
 }
@@ -217,6 +222,17 @@ export function usePlayer(
     moved();
   }, [engine, moved, schedule, silence]);
 
+  /**
+   * The first half of `play()`'s gesture work, for the library's play buttons: pressing one has to
+   * load the program before it can start it, and an `AudioContext` created after that await is one
+   * iOS refuses to run. The keepalive is *not* started here — the element's own `play` event is
+   * read as a transport intent (see below), and firing that before there is a program to hear
+   * would resume whatever was loaded last.
+   */
+  const prime = useCallback(() => {
+    engine().prepare();
+  }, [engine]);
+
   const pause = useCallback(() => {
     engineRef.current?.pause();
     // **The keepalive pauses with the player**, reversing 8b's decision to leave it running.
@@ -353,6 +369,7 @@ export function usePlayer(
     stop,
     seek,
     update,
+    prime,
     toggleMute,
     toggleSolo,
   };

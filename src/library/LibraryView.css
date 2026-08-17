@@ -241,6 +241,14 @@ details[open] > .library__summary > .library__caret {
   }
 }
 
+/* The one that is running, so it can be found in a long list without hunting for the bar at the
+   bottom of the page. */
+.program-row.is-active {
+  border-color: var(--accent-border);
+  border-left-color: var(--origin, var(--accent-border));
+  background: var(--accent-bg);
+}
+
 .program-row--draft {
   --origin: var(--origin-draft);
 }
@@ -303,6 +311,32 @@ details[open] > .library__summary > .library__caret {
   padding: 3px 9px;
 }
 
+/* The row's own transport. Bare like the star beside it rather than a filled primary button: down
+   a list this long the accent has to stay on the one program that is running, which is what
+   `is-active` is for. */
+.program-row__transport {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  min-height: 44px;
+  font-size: 17px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-h);
+  }
+
+  &.is-active {
+    color: var(--accent);
+  }
+}
+
 .program-row__star,
 .library__remove,
 .program-row__action {
@@ -347,6 +381,7 @@ details[open] > .library__summary > .library__caret {
   }
 
   .program-row__star,
+  .program-row__transport,
   .library__remove {
     min-height: 34px;
   }

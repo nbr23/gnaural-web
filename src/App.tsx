@@ -55,6 +55,13 @@ function App() {
   const [current, setCurrent] = useState<LoadedProgram | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  /**
+   * A program the library was asked to play, by route key, until it is playing.
+   *
+   * Pressing Play on a row is two steps rather than one: a bundled program is a lazy chunk and an
+   * imported one is a database row, so what the press starts does not exist yet when it happens.
+   */
+  const [autoplay, setAutoplay] = useState<string | null>(null);
 
   // Rebuilt on every render, which `usePlayer` tolerates by depending on the two values.
   const noise = { colour: settings.noiseColour, gain: settings.noiseGain };
@@ -77,36 +84,82 @@ function App() {
    */
   const resolving = useRef<string | null>(null);
 
+  /**
+   * Load what a route names, unless that load is already in flight or settled.
+   *
+   * Shared by the routed load below and by the library's play buttons, which start a program
+   * without navigating to it — loading is not the same event as arriving somewhere.
+   */
+  const openRoute = useCallback(
+    (route: Route) => {
+      const key = formatHash(route);
+      if (resolving.current === key) return;
+      // An imported route names an IndexedDB key, so it cannot be resolved before the read settles.
+      if (route.view === 'imported' && !library.imported) return;
+
+      resolving.current = key;
+      setCurrent(null);
+      setError(null);
+
+      resolveRoute(route, library.imported ?? [])
+        .then((resolved) => {
+          if (resolving.current === key) setCurrent({ route, ...resolved });
+        })
+        .catch((thrown) => {
+          if (resolving.current !== key) return;
+          resolving.current = null;
+          // Nothing landed, so nothing can start: a play that was waiting on this load is dropped
+          // rather than left armed for whatever is opened next.
+          setAutoplay(null);
+          // Back to the library either way — a route that resolved to nothing has nothing to show,
+          // and the banner explains it there. A route that named something that never existed says
+          // nothing at all, because there is no program to name.
+          if (!(thrown instanceof MissingProgramError)) {
+            setError(thrown instanceof Error ? thrown.message : 'That program could not be read.');
+          }
+          redirect(LIBRARY);
+        });
+    },
+    [library.imported],
+  );
+
   useEffect(() => {
     // Going back to the library keeps the program loaded, and therefore keeps it playing: the
     // now-playing bar and the lock screen are both transport enough to leave audio running behind.
     if (route.view === 'library') return;
+    openRoute(route);
+  }, [route, openRoute]);
 
-    const key = formatHash(route);
-    if (resolving.current === key) return;
-    // An imported route names an IndexedDB key, so it cannot be resolved before the read settles.
-    if (route.view === 'imported' && !library.imported) return;
+  // The player is a fresh object every render, so the effect below reads it through a ref: it must
+  // run when the awaited program lands and at no other time.
+  const playerRef = useRef(player);
+  playerRef.current = player;
 
-    resolving.current = key;
-    setCurrent(null);
-    setError(null);
+  const armed = autoplay !== null && current !== null && formatHash(current.route) === autoplay;
 
-    resolveRoute(route, library.imported ?? [])
-      .then((resolved) => {
-        if (resolving.current === key) setCurrent({ route, ...resolved });
-      })
-      .catch((thrown) => {
-        if (resolving.current !== key) return;
-        resolving.current = null;
-        // Back to the library either way — a route that resolved to nothing has nothing to show,
-        // and the banner explains it there. A route that named something that never existed says
-        // nothing at all, because there is no program to name.
-        if (!(thrown instanceof MissingProgramError)) {
-          setError(thrown instanceof Error ? thrown.message : 'That program could not be read.');
-        }
-        redirect(LIBRARY);
-      });
-  }, [route, library.imported]);
+  useEffect(() => {
+    if (!armed) return;
+    setAutoplay(null);
+    // `usePlayer`'s load effect is declared before this one, so the engine is already holding the
+    // schedule that just landed.
+    playerRef.current.play();
+  }, [armed]);
+
+  /**
+   * Play a program from its row in the library, without leaving it (§5.1's list is where people
+   * choose, and choosing used to cost a page).
+   *
+   * `prime()` before anything asynchronous: the resolution below is an await, and an `AudioContext`
+   * opened after one is not opened inside the gesture that asked for sound (§4.4).
+   */
+  const playRoute = useCallback(
+    (target: Route) => {
+      playerRef.current.prime();
+      setAutoplay(formatHash(target));
+      openRoute(target);
+    },
+    [openRoute],
+  );
 
   const accept = useCallback(
     async (name: string, text: string) => {
@@ -328,6 +381,16 @@ function App() {
           onRemoveImported={(id) => void removeImported(id)}
           drafts={library.drafts}
           onDiscardDraft={(id) => void discardDraft(id)}
+          // Same rule as the bar below — a row and the bar are the same session seen twice, so a
+          // program merely loaded shows a Play and only a started one offers a Stop.
+          transport={{
+            active: nowPlaying
+              ? { key: formatHash(nowPlaying.route), playing: player.playing }
+              : null,
+            onPlay: playRoute,
+            onPause: player.pause,
+            onStop: player.stop,
+          }}
           favourites={settings.favourites}
           onFavouritesChange={(next) => set('favourites', next)}
           overrides={settings.sectionOverrides}
