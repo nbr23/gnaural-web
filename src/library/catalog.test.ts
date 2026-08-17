@@ -50,12 +50,17 @@ describe('buildCatalog', () => {
       'imported',
       'gnaural',
       'android',
+      'brainmachine',
     ]);
   });
 
   it('shows nothing but the bundled library on a fresh install', () => {
     // Three empty headings are three headings in the way, and three dead entries in the rail.
-    expect(buildCatalog(EMPTY).map((each) => each.id)).toEqual(['gnaural', 'android']);
+    expect(buildCatalog(EMPTY).map((each) => each.id)).toEqual([
+      'gnaural',
+      'android',
+      'brainmachine',
+    ]);
   });
 
   it('separates what was made here from what was brought in', () => {
@@ -91,10 +96,17 @@ describe('buildCatalog', () => {
     expect(android?.children?.[0].label).toBe('Gnaural edits');
     expect(gnaural?.children?.map((child) => child.label)).toEqual(['Gnaural', 'Contrib']);
 
-    // Between them the two sections hold the whole bundled library and nothing twice.
-    const rows = [gnaural, android].flatMap(
-      (each) => each?.children?.flatMap((child) => child.items) ?? [],
-    );
+    // The Brain Machine's three are flat: one row each under Meditation, Sleep and Gamma would be
+    // three headings for three programs.
+    const brainMachine = section(sections, 'brainmachine');
+    expect(brainMachine?.children).toBeUndefined();
+    expect(brainMachine?.items.map((item) => item.badge)).toEqual(['Meditation', 'Sleep', 'Gamma']);
+
+    // Between them the three sections hold the whole bundled library and nothing twice.
+    const rows = [gnaural, android, brainMachine].flatMap((each) => [
+      ...(each?.items ?? []),
+      ...(each?.children?.flatMap((child) => child.items) ?? []),
+    ]);
     expect(rows).toHaveLength(PROGRAMS.length);
     expect(new Set(rows.map((row) => row.key)).size).toBe(PROGRAMS.length);
   });
@@ -111,6 +123,10 @@ describe('buildCatalog', () => {
     expect(gnaural.find((segment) => segment.strong)?.text).toBe('unmodified');
     expect(gnaural.find((segment) => segment.href)?.href).toContain('sourceforge.net/projects/gnaural');
 
+    // The Brain Machine is half a light show, and the half that is missing is the bold clause.
+    const brainMachine = section(sections, 'brainmachine')?.note ?? [];
+    expect(brainMachine.find((segment) => segment.strong)?.text).toContain('sound half only');
+    expect(brainMachine.find((segment) => segment.href)?.href).toContain('Brain_Machine_kit');
   });
 
   it('keys a bundled program to its category and everything else to its origin', () => {

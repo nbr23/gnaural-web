@@ -1,3 +1,4 @@
+import brainMachineManifest from '../../fixtures/brainmachine/manifest.json';
 import gnauralManifest from '../../fixtures/gnaural/manifest.json';
 import manifest from '../../fixtures/presets/manifest.json';
 import type { ParseResult } from '../document/parser';
@@ -5,7 +6,7 @@ import { parseScheduleWithWarnings } from '../document/parser';
 import { seriesColor } from '../viz/palette';
 
 /**
- * The bundled program library, from two separate collections that must not be confused for each
+ * The bundled program library, from three separate collections that must not be confused for each
  * other (`fixtures/gnaural/README.md`):
  *
  * - **Gnaural's own**, the 21 `Mindstates` presets published at
@@ -14,14 +15,16 @@ import { seriesColor } from '../viz/palette';
  *   project by other people.
  * - **The Android app's**, 17 presets converted from `DefaultProgramsBuilder.java` plus the two
  *   Gnaural files it redistributed in edited form.
+ * - **The Brain Machine's**, the three `brainwaveTab[]` sequences from Mitch Altman's kit
+ *   (`fixtures/brainmachine/README.md`) — the only collection that was hardware first.
  *
- * 40 programs. Each collection's manifest carries the metadata `.gnaural` has no field for —
+ * 43 programs. Each collection's manifest carries the metadata `.gnaural` has no field for —
  * category, attribution and provenance — while the `.gnaural` files themselves remain the source of
  * truth for playback. Programs the user imported are separate, in `storage.ts`: they have no
  * category and their metadata is derived from the file rather than curated.
  */
-/** Which of the two bundled collections a program belongs to — its credit, and its section. */
-export type Collection = 'gnaural' | 'android';
+/** Which of the three bundled collections a program belongs to — its credit, and its section. */
+export type Collection = 'gnaural' | 'android' | 'brainmachine';
 
 export interface BundledProgram {
   /** Stable id, also the filename stem and the `#/p/<id>` route segment. */
@@ -50,13 +53,14 @@ export interface BundledProgram {
    */
   lostAmbientBed: boolean;
   /**
-   * Whether this program was **converted** from the Android app's `DefaultProgramsBuilder.java`
-   * rather than shipped by it as a `.gnaural` file already.
+   * Whether this program was **generated from source code** rather than published as a `.gnaural`
+   * file — the Android app's `DefaultProgramsBuilder.java` for 17 of them, the Brain Machine's
+   * `brainwaveTab[]` for three.
    *
-   * The 17 presets were; `powernap` and `airplanetravelaid` were not. The library says so, because
-   * the conversion caveats in `fixtures/presets/README.md` — the dropped ambient beds, the
-   * per-period fades that were a property of the Android engine rather than of the data — apply to
-   * one set and not the other.
+   * `powernap` and `airplanetravelaid` were not, nor was anything in Gnaural's own collection. The
+   * library says so, because a conversion carries caveats a published file does not: the dropped
+   * ambient beds and the Android engine's per-period fades (`fixtures/presets/README.md`), the
+   * lights and the square waves (`fixtures/brainmachine/README.md`).
    */
   converted: boolean;
 }
@@ -159,10 +163,31 @@ const PRESETS: BundledProgram[] = manifest.map((preset) => ({
   converted: true,
 }));
 
+/**
+ * The Brain Machine collection, from `fixtures/brainmachine/manifest.json` (see its README).
+ *
+ * Converted from the three Arduino sketches rather than from any `.gnaural` file, which is why
+ * `converted` is set: what the conversion left behind — the LEDs blinking in time with the beat,
+ * the square waves — is a caveat that belongs to these three and to nothing else here.
+ */
+const BRAIN_MACHINE: BundledProgram[] = brainMachineManifest.map((preset) => ({
+  id: idFromPath(preset.file),
+  title: preset.title,
+  category: preset.category,
+  author: preset.author,
+  description: preset.description,
+  collection: 'brainmachine',
+  durationSeconds: preset.durationSeconds,
+  loops: preset.loops,
+  lostAmbientBed: false,
+  converted: true,
+}));
+
 export const PROGRAMS: BundledProgram[] = [
   ...GNAURAL_PRESETS,
   ...ANDROID_REDISTRIBUTED,
   ...PRESETS,
+  ...BRAIN_MACHINE,
 ];
 
 export function programsIn(collection: Collection): BundledProgram[] {
@@ -180,6 +205,7 @@ const CATEGORY_ORDER = [
   'Healing',
   'Learning',
   'Stimulation',
+  'Gamma',
   'Oobe',
 ];
 
@@ -202,12 +228,14 @@ export function categoryLabel(category: string): string {
 }
 
 /**
- * A colour per category, so forty bundled programs are not forty grey rows.
+ * A colour per category, so forty-three bundled programs are not forty-three grey rows.
  *
  * The slot is fixed to the category rather than to its position in the list: a search that filters
  * the library must not repaint what is left of it, and a program's colour is a property of the
- * program. There are ten categories and `SLOT_COUNT` is eight, so the two collections share slots —
- * they are never in the same section, and a category only has to differ from its own siblings.
+ * program. There are eleven categories and `SLOT_COUNT` is eight, so the collections share slots —
+ * they are never in the same section, and a category only has to differ from its own siblings. The
+ * Brain Machine's three reuse `Sleep` and `Meditation`, which is why `Gamma` takes a slot neither
+ * of those has.
  */
 const CATEGORY_SLOTS: Record<string, number> = {
   Official: 2,
@@ -215,6 +243,7 @@ const CATEGORY_SLOTS: Record<string, number> = {
   Gnaural: 6,
   Sleep: 0,
   Meditation: 2,
+  Gamma: 4,
   Hypnosis: 4,
   Healing: 5,
   Learning: 3,

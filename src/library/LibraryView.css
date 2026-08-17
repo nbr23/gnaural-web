@@ -261,6 +261,9 @@ details[open] > .library__summary > .library__caret {
 .program-row--android {
   --origin: var(--origin-android);
 }
+.program-row--brainmachine {
+  --origin: var(--origin-brainmachine);
+}
 
 .program-row__open {
   flex: 1;

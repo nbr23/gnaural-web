@@ -15,7 +15,7 @@ import { VoiceType, isRenderableType, isTonalType } from './types';
  * **The severity rule.** A `warning` means what you hear will differ from what the file describes:
  * a silent voice, a schedule cut short. A `notice` means the file was unusual and was handled
  * correctly, recorded so that "did it read my file properly?" has an answer. The distinction is
- * load-bearing, not decorative: of the 40 bundled programs exactly two trip anything here at all —
+ * load-bearing, not decorative: of the 43 bundled programs exactly two trip anything here at all —
  * `powernap`, with its declared `voicecount=3` against one actual voice, and
  * `academic-performance-enhancement`, which declares 3 entries and has 31 — and it would be absurd
  * for either to wear a warning for a header §3.4 tells the parser to ignore by design.
@@ -175,14 +175,16 @@ export interface EntryWarning extends ScheduleWarning {
  * §6.1), plus the one way a valid document can fail to survive a round trip through Gnaural desktop.
  *
  * **Severity is decided against the corpus, not in the abstract.** Measured through the parser over
- * all 40 bundled programs (31,239 entries): base 0–1046 Hz, beat to 493 Hz, volume 0–1, durations
+ * all 43 bundled programs (31,453 entries): base 0–1046 Hz, beat to 493 Hz, volume 0–1, durations
  * down to 0 s. §6.1's thresholds are kept exactly as written, and the split between the two
- * severities is what lets them stay that way over two corpora that disagree:
+ * severities is what lets them stay that way over corpora that disagree:
  *
  * - The Android 19 trip **one rule, as a notice**: beat above 40 Hz, in four presets at 15 entries.
  * - Gnaural's own 21 trip four rules, in seven files. None of it is a defect: `tibetan-bowls`
  *   builds its sound out of carriers below 20 Hz, and `purr` gates a 493 Hz tone because that is
  *   what an isochronic cat purr is.
+ * - The Brain Machine's three trip nothing, and one of them sits exactly on a threshold: its gamma
+ *   beat is 40 Hz, which `beat-above-band` is deliberately not triggered by (§6.1 says *above* 40).
  *
  * A notice says what breaks down is the *percept*, which is a fact about hearing rather than a
  * defect in the document. Raising the thresholds until the library came out clean would have thrown

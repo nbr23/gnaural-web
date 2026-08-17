@@ -37,7 +37,7 @@ export interface ViewWindow {
 /**
  * The narrowest window, in seconds.
  *
- * A floor rather than a judgement about how far anyone should be able to zoom: 19 of the 40 bundled
+ * A floor rather than a judgement about how far anyone should be able to zoom: 22 of the 43 bundled
  * files carry entries 0.001 s apart or closer — Gnaural's own output writes an instantaneous jump as
  * a zero-length segment — and no reachable window separates those; 0.001 s of a 2331 s programme is
  * a millionth of the axis. Zoom is what makes the *ordinary* clusters addressable

@@ -31,6 +31,7 @@
   --origin-mine: #34d399;
   --origin-imported: #60a5fa;
   --origin-android: #94a3b8;
+  --origin-brainmachine: #f472b6;
 
   /*
    * The categorical palette, shared by the chart's voices, the library's categories and the EEG
@@ -87,6 +88,7 @@
     --origin-mine: #047857;
     --origin-imported: #1d4ed8;
     --origin-android: #52606d;
+    --origin-brainmachine: #be185d;
 
     --viz-series-1: #2a78d6;
     --viz-series-2: #eb6834;

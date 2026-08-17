@@ -14,7 +14,7 @@ import type { Draft, ImportedProgram } from './storage';
  */
 
 /** Where a program came from, which is the library's colour key and its top-level grouping. */
-export type Origin = 'draft' | 'mine' | 'imported' | 'gnaural' | 'android';
+export type Origin = 'draft' | 'mine' | 'imported' | 'gnaural' | 'android' | 'brainmachine';
 
 export const ORIGIN_LABELS: Record<Origin, string> = {
   draft: 'Draft',
@@ -22,6 +22,7 @@ export const ORIGIN_LABELS: Record<Origin, string> = {
   imported: 'Imported',
   gnaural: 'Gnaural',
   android: 'Android',
+  brainmachine: 'Brain Machine',
 };
 
 export interface LibraryItem {
@@ -82,7 +83,7 @@ export interface CatalogInput {
 }
 
 /**
- * Where the bundled library came from — two collections, credited separately.
+ * Where the bundled library came from — three collections, credited separately.
  *
  * The attribution used to sit at the bottom of the page, where it described everything above it
  * without saying so, and then described *everything* as the Android app's when two of the programs
@@ -127,6 +128,20 @@ const GNAURAL_NOTE: NoteSegment[] = [
   },
 ];
 
+const BRAIN_MACHINE_KIT = 'https://github.com/maltman23/Brain_Machine_kit';
+
+const BRAIN_MACHINE_NOTE: NoteSegment[] = [
+  { text: 'The three brainwave tables of ' },
+  { text: 'Mitch Altman’s Brain Machine kit', href: BRAIN_MACHINE_KIT },
+  { text: ' — a Sound & Light Machine from MAKE #10, ported to Arduino by Chris Sparnicht. ' },
+  { text: 'The lights are not reproduced: this is the sound half only', strong: true },
+  {
+    text:
+      ', and the sequences were designed to be heard and seen at once. Their descriptions are the ' +
+      'kit’s own words, not claims made by this app. CC BY-SA 4.0.',
+  },
+];
+
 /** `fixtures/presets/README.md`: four presets used a sampled ambient loop that was left behind. */
 const LOST_BED_NOTE = 'Ambient background not carried over — the app’s noise layer stands in for it.';
 
@@ -162,12 +177,25 @@ export function buildCatalog({
     children: collectionSections('android', bundled),
   };
 
+  // Flat, unlike the two collections above: three programs in three categories would be three
+  // sub-sections of one row each, which is more heading than library.
+  const brainMachine: LibrarySection = {
+    id: 'brainmachine',
+    label: 'Brain Machine sequences',
+    railLabel: 'brain machine',
+    note: BRAIN_MACHINE_NOTE,
+    items: bundled
+      .filter((program) => program.collection === 'brainmachine')
+      .map(bundledItem),
+  };
+
   const sections: LibrarySection[] = [
     { id: 'drafts', label: 'Drafts', items: draftItems },
     { id: 'mine', label: 'Made here', items: mine },
     { id: 'imported', label: 'Imported', items: brought },
     gnaural,
     android,
+    brainMachine,
   ];
 
   // Favourites lead, and are a *view* of the sections below rather than a place a program moves to:
@@ -189,7 +217,7 @@ export function buildCatalog({
 
 /**
  * One sub-section per category within a collection. The id keeps its collection prefix because
- * `Settings.collapsed` persists it, and the two collections have categories of their own.
+ * `Settings.collapsed` persists it, and each collection has categories of its own.
  */
 function collectionSections(
   collection: Collection,

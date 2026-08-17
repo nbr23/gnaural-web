@@ -1,0 +1,38 @@
+[
+  {
+    "file": "brain-machine-meditation.gnaural",
+    "title": "Brain Machine Meditation",
+    "category": "Meditation",
+    "author": "Mitch Altman",
+    "description": "The sequence starts with lots of Beta (awake / conscious), which is where most people will be when they begin. Then Alpha waves (dreamy / trancy) are added, to connect with subconscious Theta that will be coming up. Then the Beta is reduced (for less conscious, making it easier to be move more into a trance). Then some Theta (more subconscious) is added, and in the middle, there are some pulses of Delta (creativity). Then the sequence is reversed, to come back up, nice and refreshed.",
+    "durationSeconds": 856.043,
+    "loops": 1,
+    "sourceSketch": "Arduino/BrainMachine/BrainMachine.ino",
+    "sourceUrl": "https://github.com/maltman23/Brain_Machine_kit/blob/main/Arduino/BrainMachine/BrainMachine.ino",
+    "tableRows": 43
+  },
+  {
+    "file": "brain-machine-sleep.gnaural",
+    "title": "Brain Machine Sleep",
+    "category": "Sleep",
+    "author": "Mitch Altman",
+    "description": "The sleep sequence starts out the same as the meditation sequence, but then keeps the brainwave frequencies at mostly Theta waves, with a little bit of Alpha, and with some pusling Delta.  This is enough to get you to drift off to sleep.",
+    "durationSeconds": 1776.059,
+    "loops": 1,
+    "sourceSketch": "Arduino/BrainMachineSleep/BrainMachineSleep.ino",
+    "sourceUrl": "https://github.com/maltman23/Brain_Machine_kit/blob/main/Arduino/BrainMachineSleep/BrainMachineSleep.ino",
+    "tableRows": 69
+  },
+  {
+    "file": "brain-machine-gamma.gnaural",
+    "title": "Brain Machine Gamma",
+    "category": "Gamma",
+    "author": "Mitch Altman",
+    "description": "Plays Gamma waves (40.0 Hz) for one hour.",
+    "durationSeconds": 3612.005,
+    "loops": 1,
+    "sourceSketch": "Arduino/BrainMachineGamma/BrainMachineGamma.ino",
+    "sourceUrl": "https://github.com/maltman23/Brain_Machine_kit/blob/main/Arduino/BrainMachineGamma/BrainMachineGamma.ino",
+    "tableRows": 10
+  }
+]

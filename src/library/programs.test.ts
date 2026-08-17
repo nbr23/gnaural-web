@@ -3,16 +3,18 @@ import { scheduleDuration } from '../document/timing';
 import { PROGRAMS, findProgram, loadProgram, programsByCategory, programsIn } from './programs';
 
 describe('bundled library', () => {
-  it('lists all 40 programs with unique ids', () => {
-    expect(PROGRAMS).toHaveLength(40);
-    expect(new Set(PROGRAMS.map((p) => p.id)).size).toBe(40);
+  it('lists all 43 programs with unique ids', () => {
+    expect(PROGRAMS).toHaveLength(43);
+    expect(new Set(PROGRAMS.map((p) => p.id)).size).toBe(43);
   });
 
-  it('holds two collections, Gnaural’s own and the Android app’s', () => {
+  it('holds three collections, Gnaural’s own, the Android app’s and the Brain Machine’s', () => {
     // fixtures/gnaural/README.md: 21 presets published by the Gnaural project itself, against the
     // Android app's 17 conversions and the two Gnaural files it redistributed after editing them.
+    // fixtures/brainmachine/README.md: the three brainwave tables of Mitch Altman's kit.
     expect(programsIn('gnaural')).toHaveLength(21);
     expect(programsIn('android')).toHaveLength(19);
+    expect(programsIn('brainmachine')).toHaveLength(3);
   });
 
   it('preserves every author credit — attribution is owed regardless of the licence question', () => {
@@ -42,7 +44,7 @@ describe('bundled library', () => {
       'Gnaural edits',
     ]);
     expect(categories.map((c) => c.label)).toContain('OOBE');
-    expect(categories.flatMap((c) => c.programs)).toHaveLength(40);
+    expect(categories.flatMap((c) => c.programs)).toHaveLength(43);
   });
 
   it('splits Gnaural’s collection by who signed the file', () => {
@@ -99,3 +101,42 @@ describe('every bundled program parses', () => {
 function precisionFor(seconds: number): number {
   return 1 - Math.ceil(Math.log10(Math.max(seconds, 1e-3)));
 }
+
+/**
+ * The Brain Machine ports, checked against the `brainwaveTab[]` they came from
+ * (`fixtures/brainmachine/README.md`).
+ *
+ * Not a duplicate of the tables — the seconds each sequence spends in each band, which is four
+ * numbers per file and is what a bad merge, a dropped row or a mistyped duration would move. The
+ * bands themselves are fixed: one voice, a 100 Hz carrier throughout, and a beat that is only ever
+ * one of the sketch's five documented values.
+ */
+describe('the Brain Machine sequences match their sketches', () => {
+  const BANDS = { gamma: 40, beta: 14.4, alpha: 11.1, theta: 6, delta: 2.2 };
+
+  const TABLES: Record<string, Partial<Record<keyof typeof BANDS, number>>> = {
+    'brain-machine-meditation': { beta: 238, alpha: 355, theta: 260, delta: 3 },
+    'brain-machine-sleep': { beta: 111, alpha: 260, theta: 1390, delta: 15 },
+    'brain-machine-gamma': { gamma: 3600, beta: 8, delta: 4 },
+  };
+
+  it.each(Object.entries(TABLES))('%s', async (id, table) => {
+    const { schedule } = await loadProgram(id);
+    const [voice, ...rest] = schedule.voices;
+    expect(rest).toHaveLength(0);
+
+    const spent = new Map<number, number>();
+    for (const entry of voice.entries) {
+      expect(entry.baseFreq).toBe(100);
+      expect(Object.values(BANDS)).toContain(entry.beatFreq);
+      spent.set(entry.beatFreq, (spent.get(entry.beatFreq) ?? 0) + entry.duration);
+    }
+
+    for (const [band, seconds] of Object.entries(table)) {
+      // Each block carries a 1 ms pin at its own value, so a band runs one millisecond long per
+      // block it occupies — at most 18 of them here, well inside this tolerance.
+      expect(spent.get(BANDS[band as keyof typeof BANDS])).toBeCloseTo(seconds, 1);
+    }
+    expect(spent.size).toBe(Object.keys(table).length);
+  });
+});

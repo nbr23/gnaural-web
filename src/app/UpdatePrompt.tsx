@@ -4,7 +4,7 @@ import './UpdatePrompt.css';
 /**
  * Offers the new build once the service worker has one waiting.
  *
- * The registration is `prompt`, not `autoUpdate`, and deliberately so: the 40 programs are lazily
+ * The registration is `prompt`, not `autoUpdate`, and deliberately so: the 43 programs are lazily
  * imported chunks, and `autoUpdate` claims an open page with a worker whose precache may no longer
  * hold the chunk that page is about to request — a 404 in the middle of a session. Waiting lets
  * the old worker keep serving one consistent build.

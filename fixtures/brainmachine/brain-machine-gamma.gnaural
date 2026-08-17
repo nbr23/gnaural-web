@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!-- See http://gnaural.sourceforge.net -->
+<schedule>
+<gnauralfile_version>1.20101006</gnauralfile_version>
+<gnaural_version>1.0.20110606</gnaural_version>
+<title>Brain Machine Gamma</title>
+<schedule_description>Plays Gamma waves (40.0 Hz) for one hour.</schedule_description>
+<author>Mitch Altman</author>
+<totaltime>3612.0050</totaltime>
+<voicecount>1</voicecount>
+<totalentrycount>10</totalentrycount>
+<loops>1</loops>
+<overallvolume_left>1</overallvolume_left>
+<overallvolume_right>1</overallvolume_right>
+<stereoswap>0</stereoswap>
+<graphview>1</graphview>
+<voice>
+<description>Binaural beat</description>
+<id>0</id>
+<type>0</type>
+<voice_state>0</voice_state>
+<voice_hide>0</voice_hide>
+<voice_mute>0</voice_mute>
+<voice_mono>0</voice_mono>
+<entrycount>10</entrycount>
+<entries>
+<entry parent="0" duration="2" volume_left="1" volume_right="1" beatfreq="2.2" basefreq="100" state="0"/>
+<entry parent="0" duration="0.001" volume_left="1" volume_right="1" beatfreq="2.2" basefreq="100" state="0"/>
+<entry parent="0" duration="4" volume_left="1" volume_right="1" beatfreq="14.4" basefreq="100" state="0"/>
+<entry parent="0" duration="0.001" volume_left="1" volume_right="1" beatfreq="14.4" basefreq="100" state="0"/>
+<entry parent="0" duration="3600" volume_left="1" volume_right="1" beatfreq="40" basefreq="100" state="0"/>
+<entry parent="0" duration="0.001" volume_left="1" volume_right="1" beatfreq="40" basefreq="100" state="0"/>
+<entry parent="0" duration="4" volume_left="1" volume_right="1" beatfreq="14.4" basefreq="100" state="0"/>
+<entry parent="0" duration="0.001" volume_left="1" volume_right="1" beatfreq="14.4" basefreq="100" state="0"/>
+<entry parent="0" duration="2" volume_left="1" volume_right="1" beatfreq="2.2" basefreq="100" state="0"/>
+<entry parent="0" duration="0.001" volume_left="1" volume_right="1" beatfreq="2.2" basefreq="100" state="0"/>
+</entries>
+</voice>
+</schedule>
