@@ -345,9 +345,11 @@
 }
 
 @media (min-width: 1000px) {
-  /* The rail runs the height of the page beside the list, and the title, lede and search belong to
-     the list rather than to the whole page — spanning them across the rail left the search field
-     sitting over a jump list it has nothing to do with. */
+  /* The rail runs beside the list and starts where the list does: it is a jump list for the
+     sections, so it begins level with the first of them rather than climbing to the top of the
+     page. The title, lede and search sit above the list and in its column, not the page's —
+     stretched across the rail's column the search field is over a jump list it has nothing to do
+     with. */
   .library__body {
     grid-template-columns: 210px minmax(0, 1fr);
     grid-template-rows: auto 1fr;
@@ -359,8 +361,15 @@
     grid-area: 1 / 2;
   }
 
+  /* One line at this width. The 52ch cap keeps the lede readable in a narrow column; the list's
+     column is not narrow, and the sentence wrapping onto a second line is the only thing pushing
+     the first program further down the page. */
+  .library__lede {
+    max-width: none;
+  }
+
   .library__rail {
-    grid-area: 1 / 1 / span 2;
+    grid-area: 2 / 1;
   }
 
   .library__sections {
