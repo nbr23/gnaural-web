@@ -14,11 +14,14 @@
   text-align: center;
 }
 
+/* The page's own font at small print size — inherited, so only the size is set here. */
 .app-footer__build,
-.app-footer__sha {
+.app-footer__sha,
+.app-footer__source {
   margin: 0;
-  font: 12px var(--mono);
-  opacity: 0.6;
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0.7;
 }
 
 /* Only rendered when GIT_SHA is set, so the separator lives here rather than being stranded
@@ -26,6 +29,34 @@
 .app-footer__sha::before {
   content: '·';
   margin-right: 8px;
+}
+
+.app-footer__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+
+  &::before {
+    content: '·';
+    margin-right: 2px;
+  }
+
+  & svg {
+    font-size: 14px;
+  }
+
+  &:hover,
+  &:focus-visible {
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-border);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
 }
 
 /* Clearance for whatever is fixed to the bottom of the viewport — below the footer rather than

@@ -49,7 +49,6 @@ function seriesPaths() {
 describe('ScheduleChart', () => {
   it('draws one path per lane per visible voice', () => {
     render(<ScheduleChart schedule={makeSchedule([makeVoice({ id: 0 }), makeVoice({ id: 1 })])} />);
-    // Two lanes (beat, base) x two voices.
     expect(seriesPaths()).toHaveLength(4);
     expect([...seriesPaths()].every((p) => !p.getAttribute('d')?.includes('NaN'))).toBe(true);
   });
@@ -74,7 +73,6 @@ describe('ScheduleChart', () => {
     const legend = testRoot.query('.schedule-chart__legend');
     expect(legend?.textContent).toContain('Carrier');
     expect(legend?.textContent).toContain('Hiss');
-    // A non-binaural voice says so, since its curve is not audible as a tone.
     expect(legend?.textContent).toContain('noise');
   });
 
@@ -98,7 +96,7 @@ describe('ScheduleChart', () => {
     expect(testRoot.query('.schedule-chart__playhead')).toBeNull();
   });
 
-  it('marks where the shortest voice ends, but only when lengths actually differ (§3.7)', () => {
+  it('marks where the shortest voice ends, but only when lengths actually differ', () => {
     const short = makeVoice({ id: 1, entries: [makeEntry({ duration: 5, baseFreq: 150, beatFreq: 6 })] });
 
     render(<ScheduleChart schedule={makeSchedule([makeVoice({ id: 0 })])} />);
@@ -126,7 +124,7 @@ describe('ScheduleChart', () => {
     expect(testRoot.query('.schedule-chart__crosshair')).not.toBeNull();
     const tooltip = testRoot.query('.schedule-chart__tooltip')!;
     expect(tooltip.textContent).toContain('0:20');
-    // At the wrap point the curve is back at entry[0]'s values (§3.5).
+    // At the wrap point the curve is back at entry[0]'s values.
     expect(tooltip.textContent).toContain('10 Hz');
     expect(tooltip.textContent).toContain('200 Hz');
   });
@@ -153,11 +151,8 @@ describe('ScheduleChart', () => {
     expect(testRoot.text()).toContain('20:00');
   });
 
-  /**
-   * The editing surface is opt-in, so the player's chart must be exactly what it was. Both halves of
-   * that matter: no node markers (45 of them in one `airplanetravelaid` voice would be noise where
-   * none can be touched), and a drag still scrubs rather than being reserved for a gesture.
-   */
+  /** The editing surface is opt-in: no node markers, and a drag still scrubs rather than being
+   *  reserved for a gesture. */
   it('stays read-only without an interaction prop', () => {
     const onSeek = vi.fn();
     render(<ScheduleChart schedule={makeSchedule([makeVoice({ id: 0 })])} onSeek={onSeek} />);
@@ -177,11 +172,9 @@ describe('ScheduleChart', () => {
 });
 
 /**
- * The gestures the chart recognises but does not own.
- *
- * It has the layout and the element's rect, so it is the only thing that can turn two fingers or a
- * wheel into a factor and an anchor; the *window* belongs to the caller, which is what keeps this
- * component controlled and lets the caller rate-limit a redraw that costs 10.7 ms at four lanes.
+ * The gestures the chart recognises but does not own: it has the layout and the element's rect, so
+ * it turns two fingers or a wheel into a factor and an anchor, but the view window itself belongs
+ * to the caller.
  */
 describe('ScheduleChart gestures', () => {
   function mountEditable(handlers: Record<string, unknown> = {}) {
@@ -206,12 +199,9 @@ describe('ScheduleChart gestures', () => {
     return { svg, zooms, pans, cancels };
   }
 
-  /**
-   * happy-dom's `WheelEvent` constructor ignores the `MouseEvent` half of its init dict —
-   * `ctrlKey`, `metaKey` and `clientX` all come back undefined — so they are defined on the
-   * instance instead. Same class of harness gap as step 5's overridable `getBoundingClientRect`,
-   * and worth knowing before writing another modifier-driven test.
-   */
+  /** happy-dom's `WheelEvent` constructor ignores the `MouseEvent` half of its init dict —
+   *  `ctrlKey`, `metaKey` and `clientX` all come back undefined — so they're defined on the
+   *  instance instead. */
   function wheel(init: Partial<WheelEvent>): WheelEvent {
     const event = new WheelEvent('wheel', {
       bubbles: true,
@@ -226,7 +216,6 @@ describe('ScheduleChart gestures', () => {
     return event;
   }
 
-  /** A trackpad pinch arrives as ctrl+wheel, which is why this branch is the important one. */
   it('zooms on ctrl+wheel, about the time under the pointer', () => {
     const { svg, zooms } = mountEditable();
 
@@ -257,10 +246,6 @@ describe('ScheduleChart gestures', () => {
     expect(scroll.defaultPrevented).toBe(false);
   });
 
-  /**
-   * Two fingers are the chart's own gesture: `touch-action: none` is on the plot while editing, so
-   * if this component does not implement the pinch, nothing does.
-   */
   it('turns two fingers apart into a zoom and two fingers moving into a pan', () => {
     const { svg, zooms, pans, cancels } = mountEditable();
 
@@ -284,12 +269,10 @@ describe('ScheduleChart gestures', () => {
     pointer(svg, 'pointerdown', { x: 300, y: 60, id: 2 });
     pointer(svg, 'pointerup', { x: 300, y: 60, id: 2 });
 
-    // A pointerup the caller acted on here would commit an edit nobody made.
     expect(ups).toHaveLength(0);
   });
 });
 
-/** The view window, as the chart draws it. */
 describe('ScheduleChart with a view window', () => {
   it('draws only the window, and hides a playhead that is outside it', () => {
     const schedule = makeSchedule([makeVoice({})]);
@@ -308,15 +291,12 @@ describe('ScheduleChart with a view window', () => {
 });
 
 /**
- * The beat lane labels its y-axis with the EEG band boundaries (§1) rather than round numbers,
- * because that is what the value means. Those boundaries are **geometric** (0.5, 4, 8, 13, 30, 100)
- * and the lane is linear, so a domain reaching into Gamma pushes the low ones into the bottom few
- * pixels of the lane.
- *
- * Found by a browser pass, not by these tests: at 390px over a 0–60 Hz domain the five labels sat
- * 3.8, 4.5, 5.5 and 18.9 px apart in a 15px line box, so four of the five overprinted into an
- * illegible smear. The assertion is on the *pixel spacing* rather than on which ticks survive —
- * naming the survivors would pin the arithmetic instead of the property that matters.
+ * The beat lane labels its y-axis with EEG band boundaries rather than round numbers. Those
+ * boundaries are geometric (0.5, 4, 8, 13, 30, 100) while the lane is linear, so a domain reaching
+ * into Gamma pushes the low ones into the bottom few pixels — found by a browser pass where four
+ * of five labels overprinted into an illegible smear. The assertion is on pixel spacing rather
+ * than on which ticks survive, since naming survivors would pin the arithmetic rather than the
+ * property that matters.
  */
 describe('ScheduleChart beat-lane ticks', () => {
   function tickPixels() {
@@ -328,7 +308,6 @@ describe('ScheduleChart beat-lane ticks', () => {
   }
 
   it('never places two y-axis labels closer than a label box apart', () => {
-    // A beat curve reaching into Gamma is what crowds the low boundaries together.
     render(
       <ScheduleChart
         schedule={makeSchedule([
@@ -350,9 +329,6 @@ describe('ScheduleChart beat-lane ticks', () => {
   });
 
   it('still labels the band boundaries when the lane has room for them', () => {
-    // 2–25 Hz puts three boundaries (4, 8, 13) inside the domain, far enough apart to all survive.
-    // Note the pre-existing floor this sits above: a domain holding fewer than two boundaries falls
-    // back to round numbers rather than labelling a lone band edge.
     render(
       <ScheduleChart
         schedule={makeSchedule([
@@ -367,8 +343,8 @@ describe('ScheduleChart beat-lane ticks', () => {
     );
 
     const labels = testRoot.queryAll('text.schedule-chart__tick').map((t) => t.textContent);
-    // 8 and 13 are band boundaries and are not values `niceTicks` would choose for this domain, so
-    // their presence is what says the lane is still labelled by band rather than by round number.
+    // 8 and 13 are band boundaries, not values `niceTicks` would choose for this domain — their
+    // presence says the lane is labelled by band rather than by round number.
     expect(labels).toContain('8');
     expect(labels).toContain('13');
   });

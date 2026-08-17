@@ -11,22 +11,11 @@ export interface GroupPanelProps {
   selected: Selection;
   mode: MoveMode;
   onCommit(schedule: Schedule, label: string): void;
-  /** An edit that moves the node indices, so it says where the selection should land. */
   onCommitAt(schedule: Schedule, label: string, selection: Selection): void;
 }
 
-/**
- * What replaces `NodePanel` when a marquee has selected more than one node.
- *
- * **Exact values stop making sense at two nodes**, which is why this is a different panel rather
- * than a wider one: §6.1 asks for a numeric panel for *the selected node*, and with several there is
- * no single base frequency to type. What generalises is not the value but the *operation* — move the
- * whole selection, stretch it, delete it — so those are what this offers, as typed fields for the
- * same reason §6.1 wanted typed fields at all: a drag is imprecise.
- *
- * Both operations obey the squeeze/ripple control, and the panel says which is in force, because
- * that is what decides whether the program's length changes (§3.7).
- */
+// Replaces NodePanel once more than one node is selected: with several nodes there's no single
+// value to type, so this offers operations on the whole selection (move, stretch, delete) instead.
 export function GroupPanel({ schedule, selected, mode, onCommit, onCommitAt }: GroupPanelProps) {
   const [shift, setShift] = useState('10');
   const [factor, setFactor] = useState('1.5');
@@ -134,15 +123,11 @@ export function GroupPanel({ schedule, selected, mode, onCommit, onCommitAt }: G
         </button>
       </div>
 
-      {/* The floor step 6 established, stated where a group delete can meet it: Gnaural rebuilds
-          voices from their entries, so a voice contributing none takes every later voice's identity
-          with it. */}
       <p className="editor__hint">Each voice keeps at least one node.</p>
     </section>
   );
 }
 
-/** The selection's extent in schedule time, for a panel that has no chart of its own. */
 function selectionSpan(
   schedule: Schedule,
   selected: Selection,

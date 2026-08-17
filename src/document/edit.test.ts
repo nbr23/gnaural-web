@@ -92,11 +92,6 @@ describe('updateSchedule', () => {
     expect(before.title).toBe(title);
   });
 
-  /**
-   * The premise the history stack's memory budget rests on. If a transform is ever rewritten with a
-   * deep clone, a 200-step history goes from a few hundred kilobytes to tens of megabytes, and
-   * nothing else in the suite would notice.
-   */
   it('keeps the identity of everything it did not touch', () => {
     const before = fixture();
     const after = updateSchedule(before, { title: 'renamed' });
@@ -108,7 +103,6 @@ describe('updateSchedule', () => {
     expect(after.preserved).toBe(before.preserved);
   });
 
-  /** So retyping a title that is already there does not push an undo step. */
   it('returns the same object when the patch changes nothing', () => {
     const before = fixture();
 
@@ -126,7 +120,6 @@ describe('updateSchedule', () => {
     expect(after.masterVolume).toEqual(louder);
   });
 
-  /** Â§3.4: unrecognised data survives a round-trip, including one that goes through the editor. */
   it('leaves preserved data intact through a serialize', () => {
     const before = fixture();
     const after = updateSchedule(before, { author: 'Someone else' });
@@ -199,10 +192,6 @@ describe('moveEntry', () => {
     expect(voiceDuration(after.voices[0])).toBe(75);
   });
 
-  /**
-   * Â§3.7 in the small: a drag is not allowed to invent a negative duration, and the presets' 0.001 s
-   * entries make reaching a neighbour the common case rather than an edge one.
-   */
   it('clamps at zero duration in both directions rather than passing a neighbour', () => {
     const before = ramp([10, 20, 30]);
 
@@ -218,7 +207,6 @@ describe('moveEntry', () => {
     expect(starts(rippledBack)).toEqual([0, 10, 10]);
   });
 
-  /** Ripple has no upper bound: nothing follows the last entry to be squeezed. */
   it('ripples the last entry whatever the mode says', () => {
     const before = ramp([10, 20, 30]);
     const squeezed = moveEntry(before, { voice: 0, entry: 2, time: 100, mode: 'squeeze' });
@@ -252,7 +240,6 @@ describe('moveEntry', () => {
     expect(after.voices[2].entries[4]).not.toBe(before.voices[2].entries[4]);
   });
 
-  /** A drag has to survive the serializer, or the draft it autosaves is not what was dragged. */
   it('round-trips through the serializer with preserved data intact', () => {
     const before = fixture();
     const target = entryStartTimes(before.voices[0])[2] + 5;
@@ -284,7 +271,6 @@ describe('updateVoice', () => {
     expect(updateVoice(before, 9, { muted: true })).toBe(before);
   });
 
-  /** Step 4 put `hidden` inside the history stack because it is in the file and it serializes. */
   it('writes both document flags through the serializer', () => {
     const before = fixture();
     const after = updateVoice(updateVoice(before, 0, { muted: true }), 0, { hidden: true });
@@ -294,11 +280,6 @@ describe('updateVoice', () => {
     expect(reparsed.voices[0].hidden).toBe(true);
   });
 
-  /**
-   * `type` joined the patch in step 10, for the isochronic pair: 3 and 4 differ only in which ear
-   * each pulse lands in, so switching is a toggle on the voice rather than a new voice. It is also
-   * one of the three things `requiresVoiceRebuild` fires on, so it crossfades in the engine.
-   */
   it('switches a voice between the two isochronic types, and serializes it', () => {
     const before = updateVoice(fixture(), 0, { type: VoiceType.IsoPulse });
     const after = updateVoice(before, 0, { type: VoiceType.IsoPulseAlt });
@@ -328,10 +309,6 @@ describe('insertEntry', () => {
     expect(starts(insertEntry(before, { voice: 0, after: 1, time: 999 }))).toEqual([0, 10, 30, 30]);
   });
 
-  /**
-   * The property that makes an insert a handle rather than an edit: the curve through the new node
-   * is the curve that was already there.
-   */
   it('puts the new node exactly on the existing curve', () => {
     const before = fixture();
     const voice = before.voices[0];
@@ -345,11 +322,6 @@ describe('insertEntry', () => {
     expect(inserted.volumeRight).toBeCloseTo(onCurve.rightGain, 9);
   });
 
-  /**
-   * Â§3.5's unconditional wrap *is* the last entry's segment, so splitting it is the ordinary
-   * operation rather than a special case â and the value at the split is on the way back to
-   * entry[0], not a hold at the last entry's own value.
-   */
   it('splits the final segment, where the curve is heading back to entry 0', () => {
     const before = ramp([10, 20, 30]);
     const after = insertEntry(before, { voice: 0, after: 2 });
@@ -358,7 +330,6 @@ describe('insertEntry', () => {
     expect(entries).toHaveLength(4);
     expect(entries.map((e) => e.duration)).toEqual([10, 20, 15, 15]);
     expect(voiceDuration(after.voices[0])).toBe(60);
-    // Halfway from entry[2] (180 Hz) back to entry[0] (200 Hz).
     expect(entries[3].baseFreq).toBeCloseTo(190, 9);
   });
 
@@ -371,7 +342,6 @@ describe('insertEntry', () => {
     expect(voiceDuration(after.voices[0])).toBe(600);
   });
 
-  /** An imported file can carry one; Â§3.7 says the repair is the length the rest of it plays to. */
   it('gives an empty voice its first entry rather than splitting nothing', () => {
     const before = ramp([10, 20, 30]);
     const emptied: Schedule = {
@@ -429,7 +399,6 @@ describe('removeEntry', () => {
     expect(voiceDuration(after.voices[0])).toBe(60);
   });
 
-  /** The property that makes the pair honest: an insert you did not want costs nothing to take back. */
   it('is the exact inverse of an insert', () => {
     const before = ramp([10, 20, 30]);
     const round = removeEntry(insertEntry(before, { voice: 0, after: 1, time: 17 }), {
@@ -441,11 +410,6 @@ describe('removeEntry', () => {
     expect(round.voices[0].entries[1].baseFreq).toBe(before.voices[0].entries[1].baseFreq);
   });
 
-  /**
-   * Refused rather than warned. Gnaural groups entries into voices by the `parent` attribute and
-   * takes voice properties by document order, so a voice with no entries does not merely vanish on
-   * reopen â every voice after it takes the wrong slot's description, type and flags.
-   */
   it('refuses to empty a voice', () => {
     const single = ramp([600]);
     expect(removeEntry(single, { voice: 0, entry: 0 })).toBe(single);
@@ -494,11 +458,6 @@ describe('insertVoice', () => {
     expect(schedule.voices[3].type).toBe(VoiceType.Binaural);
   });
 
-  /**
-   * The one row of defaults with no corpus behind it — no bundled file uses any type 2–6 — so it
-   * takes the tone row's numbers rather than inventing a difference that is not there. Pinned
-   * against that row, not restated, so the three cannot drift apart.
-   */
   it('gives an isochronic voice the same values as a tone voice', () => {
     const { schedule } = insertVoice(fixture(), { kind: 'isochronic' });
     const voice = schedule.voices[3];
@@ -509,7 +468,6 @@ describe('insertVoice', () => {
     expect(voice.entries[0]).toEqual(tone.entries[0]);
   });
 
-  /** All nine noise voices in the bundled library are exactly this. */
   it('takes its noise values from the corpus convention', () => {
     const { schedule } = insertVoice(fixture(), { kind: 'noise' });
     const voice = schedule.voices[3];
@@ -520,12 +478,6 @@ describe('insertVoice', () => {
     expect(voice.entries[0].beatFreq).toBe(0);
   });
 
-  /**
-   * The two rows that are *measured* rather than decided: Gnaural's own voice-type handler writes
-   * these when the voice is created (`main.c:3788`), and 0.000352858 is the 1/2834 its source names
-   * in prose. Neither field is a frequency — the base is a per-sample probability and the beat a
-   * drop count — so a value picked to look reasonable would be a guess about a texture.
-   */
   it('takes its water and rain values from the reference’s own defaults', () => {
     const drops = insertVoice(fixture(), { kind: 'water' }).schedule.voices[3];
     const rain = insertVoice(fixture(), { kind: 'rain' }).schedule.voices[3];
@@ -546,12 +498,6 @@ describe('insertVoice', () => {
     }
   });
 
-  /**
-   * §3.5's insert takes its values from the curve, but an *empty* voice has no curve to read, so it
-   * falls back to the kind's defaults — and getting the kind wrong there is not cosmetic on these
-   * two types. `voiceKindOf` used to fall through to `tone` for them, which would have written a
-   * probability of 200: every slot seeding a drop on every sample.
-   */
   it('repairs an empty water voice with a probability rather than a frequency', () => {
     const before = fixture();
     const empty = {
@@ -593,7 +539,6 @@ describe('insertVoice', () => {
     expect(voiceMap).toEqual([]);
   });
 
-  /** Â§6.3: what this editor writes has to reopen in Gnaural desktop, which groups by `parent`. */
   it('round-trips through the serializer with the parent attribute written', () => {
     const { schedule } = insertVoice(fixture(), { kind: 'noise' });
     const reparsed = parseSchedule(serializeSchedule(schedule));
@@ -616,7 +561,6 @@ describe('removeVoice', () => {
     expect(voiceMap).toEqual([0, REMOVED, 1]);
   });
 
-  /** An accepted state, not a refused one: 9a already warns for it and already disables Play. */
   it('allows the last voice to go', () => {
     const single: Schedule = { ...fixture(), voices: [fixture().voices[0]] };
     const { schedule: after, voiceMap } = removeVoice(single, 0);
@@ -659,7 +603,6 @@ describe('moveVoice', () => {
 
     expect(moveVoice(before, { from: 1, to: 1 }).schedule).toBe(before);
     expect(moveVoice(before, { from: 9, to: 0 }).schedule).toBe(before);
-    // Clamped rather than refused, so a button at the end of the list is a no-op not a crash.
     expect(moveVoice(before, { from: 2, to: 5 }).schedule).toBe(before);
   });
 
@@ -676,13 +619,6 @@ describe('moveVoice', () => {
   });
 });
 
-/**
- * Â§6.1's "move a selection as a group" â the block rule, and the reason it is a block.
- *
- * The run from the lowest selected entry to the highest travels together, unselected entries
- * included: moving only the selected ones would let a node pass a neighbour nobody asked about,
- * which reorders the voice.
- */
 describe('moveEntries', () => {
   it('moves the block and holds the voice’s length under a squeeze', () => {
     const before = ramp([10, 20, 30, 40]);
@@ -710,11 +646,9 @@ describe('moveEntries', () => {
       mode: 'squeeze',
     });
 
-    // Entry 2 was never selected and still moved: it sits inside the run.
     expect(starts(after)).toEqual([0, 15, 35, 65]);
   });
 
-  /** Â§3.7: a ripple changes how long the program plays, and squeeze is the default for that reason. */
   it('lengthens the voice under a ripple, since nothing gives the time back', () => {
     const before = ramp([10, 20, 30, 40]);
     const after = moveEntries(before, {
@@ -727,7 +661,6 @@ describe('moveEntries', () => {
     expect(voiceDuration(after.voices[0])).toBe(voiceDuration(before.voices[0]) + 5);
   });
 
-  /** One shift for every voice: a group move must not silently desynchronise two of them. */
   it('clamps to the tightest voice and applies that one shift everywhere', () => {
     const before = ramp([10, 20, 30, 40]);
     before.voices[1] = { ...before.voices[1], entries: [
@@ -749,7 +682,6 @@ describe('moveEntries', () => {
     expect(starts(after, 1)[1]).toBe(0);
   });
 
-  /** Entry 0's start is the sum of no durations, so a block that reaches it starts at entry 1. */
   it('never moves a first node, and a selection of only first nodes moves nothing', () => {
     const before = ramp([10, 20, 30]);
     const withFirst = moveEntries(before, {
@@ -760,7 +692,6 @@ describe('moveEntries', () => {
       deltaTime: 5,
       mode: 'squeeze',
     });
-    // Entry 0 is pinned, so the run begins at entry 1 and entry 0's own duration absorbs the shift.
     expect(starts(withFirst)).toEqual([0, 15, 30]);
 
     expect(
@@ -802,7 +733,6 @@ describe('moveEntries', () => {
   });
 });
 
-/** Â§6.1's "scale a selection as a group", which is not Â§6.1's whole-program duration scaling. */
 describe('scaleEntries', () => {
   const selection = [
     { voice: 0, entry: 1 },
@@ -813,15 +743,9 @@ describe('scaleEntries', () => {
     const before = ramp([10, 20, 30, 40]);
     const after = scaleEntries(before, { nodes: selection, factor: 2, mode: 'ripple' });
 
-    // The block spans 10..60; doubled it spans 10..110, and its first node has not moved.
     expect(starts(after)).toEqual([0, 10, 50, 110]);
   });
 
-  /**
-   * A block ending on the voice's last entry has no following segment, so it necessarily ripples —
-   * the same rule a single-node drag has obeyed since step 5. These two need a node after the block
-   * for the squeeze to have anywhere to put the time.
-   */
   it('gives the difference back to the following segment under a squeeze', () => {
     const before = ramp([10, 20, 30, 40, 50]);
     const after = scaleEntries(before, { nodes: selection, factor: 1.5, mode: 'squeeze' });
@@ -860,7 +784,6 @@ describe('scaleEntries', () => {
   });
 });
 
-/** The group value drag: one delta on every node, so the shape of the selection survives. */
 describe('adjustEntries', () => {
   it('shifts every selected node by the same amount', () => {
     const before = ramp([10, 20, 30]);
@@ -875,7 +798,6 @@ describe('adjustEntries', () => {
 
     expect(after.voices[0].entries[0].beatFreq).toBe(12);
     expect(after.voices[1].entries[2].beatFreq).toBe(10);
-    // Untouched nodes keep their identity, which is what the history budget rests on.
     expect(after.voices[0].entries[1]).toBe(before.voices[0].entries[1]);
   });
 
@@ -900,11 +822,6 @@ describe('adjustEntries', () => {
   });
 });
 
-/**
- * A group delete folds `removeEntry`, so it inherits step 6's absorb rule and its hard floor: a
- * voice contributing no entry does not vanish on reopen in Gnaural, it takes every later voice's
- * identity with it (`SG_RestoreBackupData`, ScheduleGUI.c:2213).
- */
 describe('removeEntries', () => {
   it('removes every selected node and preserves each voice’s length', () => {
     const before = ramp([10, 20, 30, 40]);
@@ -970,12 +887,6 @@ describe('duplicateVoice', () => {
     expect(copy.description).toBe(`${source.description} copy`);
   });
 
-  /**
-   * The one line this command turns on. `entryParent` prefers `preserved.parent`, and every corpus
-   * entry carries one — so a copy that kept them would sit next to its source claiming the same
-   * owner, which is exactly the *merge* shape step 7's `gnaural-regroup` warns about. This is the
-   * command authoring the bug the same step repairs, and the strip is what prevents it.
-   */
   it('drops the copied entries’ owner, so the copy does not merge back into its source', () => {
     const before = fixture();
     expect(before.voices[0].entries[0].preserved.parent).toBeDefined();
@@ -1018,11 +929,6 @@ describe('duplicateVoice', () => {
 });
 
 describe('reverseVoice', () => {
-  /**
-   * §3.5 makes a voice a closed curve, so reversing what is *heard* is `r(t) = v(T − t)`: entry 0
-   * keeps its values, the rest mirror, and the durations reverse wholesale. `SG_ReverseVoice`
-   * (ScheduleGUI.c:4286) does the same thing in pixel space — it leaves the first datapoint alone.
-   */
   it('is the curve played backwards, sampled against the compiled original', () => {
     const before = fixture();
     const after = reverseVoice(before, 0);
@@ -1068,8 +974,6 @@ describe('reverseVoice', () => {
     expect(after.voices[2]).toBe(before.voices[2]);
     expect(reverseVoice(before, 9)).toBe(before);
 
-    // One entry is a constant hold, and two entries of equal length are already their own mirror —
-    // both are genuinely nothing to undo.
     const single = ramp([10]);
     const symmetric = ramp([20, 20]);
     expect(reverseVoice(single, 0)).toBe(single);
@@ -1078,11 +982,6 @@ describe('reverseVoice', () => {
 });
 
 describe('offsetVoice', () => {
-  /**
-   * The format has no per-voice start, so an offset is a rotation of §3.5's closed curve: the value
-   * at `T − s` becomes the value at 0 and everything follows round. Length is preserved, which is
-   * what keeps §3.7's spread intact.
-   */
   it('rotates the curve, so what is heard at t is what was heard at t − s', () => {
     const before = fixture();
     const shift = 300;
@@ -1159,7 +1058,6 @@ describe('offsetVoice', () => {
 });
 
 describe('padVoicesToLongest', () => {
-  /** §3.7's one-click fix. Gnaural pads the same way — `SG_TruncateSchedule` lengthens the last DP. */
   it('adds the shortfall to each short voice’s last entry, and only there', () => {
     const before = ripple(ramp([10, 20, 30]), 1, -12);
     const after = padVoicesToLongest(before);
@@ -1185,7 +1083,6 @@ describe('padVoicesToLongest', () => {
     }
   });
 
-  /** There is no segment to stretch, and the repair for that voice is a node or a deletion. */
   it('skips a voice with no entries', () => {
     const before = fixture();
     const empty: Voice = { ...before.voices[0], entries: [] };
@@ -1208,7 +1105,6 @@ describe('setScheduleLength', () => {
     );
   });
 
-  /** One factor for every voice, so a ragged schedule stays exactly as ragged in proportion. */
   it('scales every voice by the same factor', () => {
     const before = ripple(ramp([10, 20, 30]), 1, 30);
     const after = setScheduleLength(before, 120);
@@ -1230,11 +1126,6 @@ describe('setScheduleLength', () => {
 });
 
 describe('repairVoiceGrouping', () => {
-  /**
-   * Gnaural rebuilds its voices from the entries' `parent` alone (`SG_RestoreBackupData`,
-   * ScheduleGUI.c:2213), so these are the two shapes that reopen as something else — and the repair
-   * has to clear the warning step 7 raises for them.
-   */
   it('separates two adjacent voices whose entries claim the same owner', () => {
     const before = merged();
     expect(entryWarnings(before).some((warning) => warning.kind === 'gnaural-regroup')).toBe(true);
@@ -1272,10 +1163,8 @@ describe('repairVoiceGrouping', () => {
     expect(repairVoiceGrouping(once)).toBe(once);
   });
 
-  /** All 51 corpus voices carry `parent == id`, so this is a no-op across the whole library. */
   it('returns its input for every bundled file that reopens as itself', { timeout: CORPUS_TIMEOUT }, () => {
-    // `academic-performance-enhancement` does not: two of its voices carry the same owner, so
-    // Gnaural merges them on reopen. It is the only file in the corpus this repair has to touch.
+    // `academic-performance-enhancement` is the only bundled file where two voices share an owner.
     const merges = ['gnaural/academic-performance-enhancement.gnaural'];
 
     for (const name of fixtureNames()) {
@@ -1287,11 +1176,6 @@ describe('repairVoiceGrouping', () => {
     }
   });
 
-  /**
-   * The third shape it cannot help with: a voice with no entries contributes no datapoint whatever
-   * its id, so it disappears on reopen regardless. The warning stays, and the caller offers no
-   * button — which is what `=== schedule` is being used to decide.
-   */
   it('does nothing for a schedule whose only fault is an empty voice', () => {
     const before = fixture();
     const withEmpty = {
@@ -1304,7 +1188,6 @@ describe('repairVoiceGrouping', () => {
   });
 });
 
-/** Two voices whose entries claim the same owner, which Gnaural would reopen as one. */
 function merged(): Schedule {
   const base = ramp([10, 20, 30]);
   const claim = (voice: Voice, parent: string): Voice => ({
@@ -1314,7 +1197,6 @@ function merged(): Schedule {
   return { ...base, voices: [claim(base.voices[0], '0'), claim(base.voices[1], '0')] };
 }
 
-/** One voice whose entries claim two owners, which Gnaural would reopen as two. */
 function split(): Schedule {
   const base = ramp([10, 20, 30]);
   const voice: Voice = {
@@ -1327,7 +1209,6 @@ function split(): Schedule {
   return { ...base, voices: [voice] };
 }
 
-/** Lengthen or shorten one voice, so a schedule is ragged on purpose. */
 function ripple(schedule: Schedule, voice: number, seconds: number): Schedule {
   const target = schedule.voices[voice];
   const last = target.entries.length - 1;

@@ -1,26 +1,15 @@
 import type { LaneDomains, LaneId } from '../viz/geometry';
 
 export interface LaneRangesProps {
-  /** The open lanes, in the order they are drawn. A closed lane has no axis to override. */
   lanes: readonly LaneId[];
   labels: Record<LaneId, string>;
   domains: LaneDomains;
-  /** The fitted domain the chart would use, so a field shows what it is overriding. */
   fitted: Partial<Record<LaneId, readonly [number, number]>>;
   onChange(domains: LaneDomains): void;
 }
 
-/**
- * §6.1's "vertical axis auto-scales to content with a manual override".
- *
- * **The override is what makes a value reachable by dragging at all.** A drag can only reach what is
- * drawn, and a lane is fitted to its own data: step 5 raised `EDITOR_DOMAIN_PADDING` to 0.35 as an
- * interim answer, but a voice sitting at 200–210 Hz still cannot be dragged to 400 whatever the
- * padding is. Typing the range is the general answer, and the numeric panel remains the exact one.
- *
- * Session state, outside the history stack, like the open lanes and the view window: what is on
- * screen is a property of the person editing, not of the document.
- */
+// Manual override for a lane's axis: a drag can only reach what's drawn, and a lane fitted to its
+// own data may sit far from where a value needs to go, so typing the range is the general answer.
 export function LaneRanges({ lanes, labels, domains, fitted, onChange }: LaneRangesProps) {
   const set = (lane: LaneId, index: 0 | 1, raw: string) => {
     const current = domains[lane] ?? fitted[lane] ?? [0, 1];
@@ -77,7 +66,6 @@ export function LaneRanges({ lanes, labels, domains, fitted, onChange }: LaneRan
   );
 }
 
-/** Enough digits to be honest about a fitted domain without showing a float's full tail. */
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }

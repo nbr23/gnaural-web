@@ -12,24 +12,12 @@ export interface NodePanelProps {
   selected: NodeRef | null;
   mode: MoveMode;
   onCommit(schedule: Schedule, label: string): void;
-  /** An edit that moves the node indices, so it says where the selection should land. */
   onCommitAt(schedule: Schedule, label: string, selection: readonly NodeRef[]): void;
 }
 
-/**
- * Exact values for the selected node (§6.1: "dragging is imprecise and people want exact values").
- *
- * It is also the way out of the drag's one real limit: a drag can only reach what is drawn, and the
- * lane's domain is fitted to the data with headroom. Anything outside that is typed here.
- *
- * **Start and duration are both editable and they are different operations.** Start is where the
- * chart's x-axis puts the node, so it goes through `moveEntry` and obeys the squeeze/ripple mode —
- * typing and dragging are then the same edit by two routes. Duration is the field the file actually
- * carries, and changing it necessarily ripples everything after it within the voice.
- *
- * Committed on blur, by reusing the header's own field: per-keystroke commits would make undo walk
- * back through a number one digit at a time, and would push a document at the engine per keystroke.
- */
+// Start goes through moveEntry and obeys the squeeze/ripple mode, so typing and dragging are the
+// same edit by two routes. Duration is the field the file actually carries, and changing it ripples
+// everything after it within the voice.
 export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: NodePanelProps) {
   const voice = selected ? schedule.voices[selected.voice] : undefined;
   const entry = selected && voice ? voice.entries[selected.entry] : undefined;
@@ -67,10 +55,8 @@ export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: No
         Node {selected.entry + 1} of {voice.entries.length} — {label}
       </h2>
 
-      {/* §6.1 asks for a click on empty space to insert. That gesture is not available: step 5 gave
-          a pointer that misses a node to seeking and reserved the move for a marquee, and — the
-          larger reason — empty space cannot say *which* voice it means, and 12 of the 19 bundled
-          programs have more than one. So insert is a command on the node you already picked. */}
+      {/* Insert is a command on the selected node rather than a click on empty space: empty space
+          can't say which voice it means once there's more than one. */}
       <div className="node-panel__actions">
         <button
           type="button"
@@ -202,9 +188,8 @@ export function NodePanel({ schedule, selected, mode, onCommit, onCommitAt }: No
   );
 }
 
-/** Enough digits for the presets' 0.001 s entries, without showing a float's full tail. */
-/** Enough digits for a frequency or a volume. A water voice's drop chance needs more: the
- *  reference default is 0.000352858, which reads as 0.0004 at the shared precision. */
+// A water voice's drop chance needs more precision than the 1e4 default: the reference default of
+// 0.000352858 would otherwise read as 0.0004.
 function round(value: number, precision = 1e4): number {
   return Math.round(value * precision) / precision;
 }

@@ -7,8 +7,6 @@ describe('parseSchedule — powernap.gnaural', () => {
   const schedule = parseSchedule(loadFixture('powernap.gnaural'));
 
   it('ignores the stale declared voicecount/totalentrycount and derives from the DOM', () => {
-    // The file declares voicecount=3 and totalentrycount=14, but actually contains 1 voice
-    // with 12 entries (PLAN.md §3.4) — this is real, representative dirty data.
     expect(schedule.voices).toHaveLength(1);
     expect(schedule.voices[0].entries).toHaveLength(12);
   });
@@ -82,9 +80,6 @@ describe('parseSchedule — airplanetravelaid.gnaural', () => {
 });
 
 describe('rejecting files that are not schedules', () => {
-  // The parser is deliberately forgiving about *contents* (§3.4 — never fail hard on a missing or
-  // degenerate field), but a file that is not a Gnaural schedule at all is a different matter:
-  // failing loudly is what lets the UI say so instead of presenting an empty program.
   it('rejects text that is not XML', () => {
     expect(() => parseSchedule('this is not a schedule')).toThrow(/not a Gnaural schedule/i);
   });

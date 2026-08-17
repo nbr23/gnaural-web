@@ -937,9 +937,8 @@ export class PlaybackEngine {
    * asked to resume, since it is what holds audio focus. Idempotent, and `play()` still calls the
    * same thing, so skipping it changes nothing but the ordering.
    *
-   * Works with nothing loaded, and that is deliberate: the library's play buttons have to open the
-   * context inside the click that asked for audio, then fetch the program. `load()` builds the
-   * graph on the context this leaves behind.
+   * Works with nothing loaded, for a caller that has to open the context inside the click and fetch
+   * the program afterwards; `load()` then builds the graph on the context this left behind.
    */
   prepare(): void {
     this.ensureGraph();

@@ -3,35 +3,19 @@ import { serializeSchedule } from '../document/serializer';
 import type { Schedule } from '../document/types';
 import { saveDraft } from '../library/storage';
 
-/**
- * How long edits settle before they are written.
- *
- * Longer than `useSettings`'s 250 ms, because each write serializes the whole document rather than
- * storing one number, and typing a title is a longer burst than dragging a slider. Still short
- * enough that §6.1's "losing a half-hour of authoring to a tab close is unacceptable" is met by a
- * wide margin.
- */
+// Longer than useSettings's 250ms, since each write serializes the whole document rather than
+// storing one number.
 export const DRAFT_SAVE_DEBOUNCE_MS = 500;
 
 export interface DraftSaveState {
-  /** A change is waiting to be written. What the editor shows as "Saving…". */
   pending: boolean;
 }
 
-/**
- * Autosave for the open draft (§6.1).
- *
- * **Serialized XML, not a JSON blob of the model.** The round-trip is a proven fixed point, so a
- * recovered draft is exportable and reopenable in Gnaural desktop by definition, and there is no
- * second representation that could drift from the first.
- *
- * Given the *committed* document rather than an in-flight one: a draft records what the user
- * decided, and once dragging exists the intermediate values of a gesture are not decisions.
- *
- * A pending write is flushed on unmount rather than dropped — the same rule `useSettings` follows,
- * and for a stronger reason: leaving the editor within half a second of an edit is exactly what
- * someone does when they finish typing a title and press Back.
- */
+// Autosaves the open draft as serialized XML rather than a JSON blob of the model, so a recovered
+// draft is exportable and reopenable in Gnaural desktop by construction. Takes the committed
+// document, not an in-flight one — intermediate drag values aren't decisions. A pending write is
+// flushed on unmount rather than dropped, since leaving within half a second of an edit is exactly
+// what happens when someone finishes typing a title and presses Back.
 export function useDraft(
   id: string,
   document: Schedule,
@@ -39,7 +23,7 @@ export function useDraft(
 ): DraftSaveState {
   const [pending, setPending] = useState(false);
 
-  /** What the database already holds. Starts at the document the editor opened with. */
+  // What the database already holds.
   const stored = useRef(document);
   const latest = useRef(document);
   const draftId = useRef(id);

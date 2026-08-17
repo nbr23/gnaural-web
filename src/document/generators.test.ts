@@ -34,12 +34,6 @@ function voiceOf(entries: ReturnType<typeof generateEntries>): Voice {
 }
 
 describe('generateEntries', () => {
-  /**
-   * The contract §3.5 forces: the last segment glides home whether or not the schedule loops, so a
-   * shape has to pay for its own return out of the length it was given. Getting this exactly right
-   * is what lets the panel default the duration to what the schedule already plays without making
-   * it ragged (§3.7).
-   */
   it('totals exactly the duration it was asked for, return leg included', () => {
     for (const spec of every(3 * SLEEP_CYCLE_SECONDS)) {
       expect(voiceDuration(voiceOf(generateEntries(spec)))).toBeCloseTo(3 * SLEEP_CYCLE_SECONDS, 9);
@@ -80,7 +74,6 @@ describe('generateEntries', () => {
     expect(entries[1]).toMatchObject({ duration: 60, baseFreq: 120, beatFreq: 2 });
   });
 
-  /** A return of zero would read as an instant jump at the very end, so it is floored, not honoured. */
   it('never gives the closing entry a zero duration', () => {
     const entries = generateEntries({
       kind: 'ramp',
@@ -103,7 +96,6 @@ describe('generateEntries', () => {
     });
 
     expect(four).toHaveLength(4 * one.length);
-    // Each cycle opens where the one before it closes — §3.5's wrap is what carries the last one home.
     expect(four[one.length].beatFreq).toBe(four[0].beatFreq);
     expect(one[0].beatFreq).toBeGreaterThan(one[2].beatFreq);
   });
@@ -127,7 +119,6 @@ describe('generateEntries', () => {
     expect(entries.every((entry) => entry.baseFreq === 137)).toBe(true);
   });
 
-  /** Step 6's argument, inherited: a generated voice must not be the clipping case either. */
   it('generates at the same level a newly added voice gets', () => {
     const generated = generateEntries({ kind: 'hold', tone: TONE, seconds: 60 })[0];
     const added = insertVoice(blank(), { kind: 'tone' }).schedule.voices[0].entries[0];
@@ -156,12 +147,6 @@ describe('EEG band presets', () => {
     for (const band of EEG_BANDS) expect(bandFor(bandCentre(band))?.name).toBe(band.name);
   });
 
-  /**
-   * Generators are deliberately **not** clamped to Live mode's slider range, so the Gamma preset sits
-   * above §6.1's 40 Hz beat ceiling and step 7 says so — as a *notice*, because a 70 Hz beat plays
-   * exactly as authored in four shipped presets too. A tool that quietly moved the value instead
-   * would be discarding §6.1's own advice.
-   */
   it('raises step 7’s beat notice for Gamma, and nothing at all for the rest', () => {
     for (const band of EEG_BANDS) {
       const entries = generateEntries({

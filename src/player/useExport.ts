@@ -17,7 +17,7 @@ export interface Exporter {
   error: string | null;
   /** Transient confirmation of a share, since copying to the clipboard is otherwise invisible. */
   notice: string | null;
-  /** Size of the WAV the current settings would produce, exactly as `encodeWav` will write it. */
+  /** Size the WAV would be with the current settings. */
   estimatedBytes: number;
   exportWav(): void;
   exportGnaural(): void;
@@ -28,14 +28,8 @@ export interface Exporter {
 /**
  * Owns an export in flight: render → encode → save, plus the state the panel shows.
  *
- * Deliberately independent of `usePlayer` — an export renders the document as authored, at its
- * own sample rate, in its own `OfflineAudioContext`, and neither reads nor disturbs playback.
- * Nothing about it needs to outlive the player view, so it is held by the panel rather than
- * threaded down from `App`.
- *
- * `sampleRate` is a persisted setting passed in, not state owned here. So is `noise`: the bed the
- * WAV is to carry (§4.5b), or nothing at all — the panel decides, and only the WAV takes it. A
- * `.gnaural` file and a share link describe the document, which the bed is not part of.
+ * Deliberately independent of `usePlayer` — an export renders the document as authored, in its
+ * own `OfflineAudioContext`, and neither reads nor disturbs playback.
  */
 export function useExport(
   schedule: Schedule,
@@ -48,7 +42,7 @@ export function useExport(
   const [notice, setNotice] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
-  // A render outlives navigation away from the player, so state updates are dropped once the
+  // A render can outlive navigation away from the player, so state updates are dropped once the
   // hook is gone rather than warning about an unmounted component.
   const live = useRef(true);
   useEffect(() => {
@@ -109,11 +103,9 @@ export function useExport(
   }, [save, schedule]);
 
   /**
-   * Hand the whole program to someone else as a URL — the native share sheet on the platforms
-   * that have one (Android is the target, §2), the clipboard everywhere else.
-   *
-   * A program too big for a fragment falls back to exporting the file (§5.1), which is the same
-   * program by a slower route rather than a dead end.
+   * Hand the whole program to someone else as a URL — the native share sheet where one exists,
+   * the clipboard everywhere else. A program too big for a fragment falls back to exporting the
+   * file, which is the same program by a slower route rather than a dead end.
    */
   const share = useCallback(async () => {
     setError(null);

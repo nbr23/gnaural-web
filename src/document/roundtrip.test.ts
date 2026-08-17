@@ -12,11 +12,11 @@ function checkFixedPoint(xml: string) {
   const serialized2 = serializeSchedule(parsed2);
   const parsed3 = parseSchedule(serialized2);
 
-  // Model fixed point (PLAN.md §5.1): once normalised by one pass, further
-  // parse -> serialize -> parse cycles do not change the model.
+  // Model fixed point: once normalised by one pass, further parse -> serialize -> parse cycles
+  // don't change the model.
   expect(parsed3).toEqual(parsed2);
-  // Byte-level stability on the second pass (PLAN.md §5.3): the first pass may normalise
-  // (recomputed counts, canonical field order), but after that, serialization must not drift.
+  // Byte-level stability on the second pass: the first pass may normalise (recomputed counts,
+  // canonical field order), but after that serialization must not drift.
   expect(serialized2).toBe(serialized1);
 }
 

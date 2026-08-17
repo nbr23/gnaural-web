@@ -4,13 +4,8 @@ import { CORPUS_TIMEOUT, fixtureNames, loadFixture, namesIn } from './test-fixtu
 import type { WarningKind } from './warnings';
 import { entryWarnings, scheduleWarnings } from './warnings';
 
-/**
- * The bundled corpus exercises some of this and none of it deliberately: what it trips is pinned at
- * the bottom of this file, and every one of those is a real property of a published preset rather
- * than a case built to order. So the cases are built here as XML rather than as fixture files — a
- * file in `fixtures/` would also join the bundled library, which is not what a deliberately broken
- * schedule should do.
- */
+// Cases here are built as raw XML rather than fixture files, since a file under `fixtures/` would
+// join the bundled library — not appropriate for a deliberately broken schedule.
 function xml(body: string): string {
   return `<?xml version="1.0"?><schedule>${body}</schedule>`;
 }
@@ -33,12 +28,6 @@ function kindsOf(warnings: { kind: WarningKind }[]): WarningKind[] {
 }
 
 describe('scheduleWarnings — what the program will do (§3.3, §3.7)', () => {
-  /**
-   * **The only route left into this warning is a type the format does not define.** Every type
-   * Gnaural writes is rendered now except type 2, which has its own permanent message — so what is
-   * left is §3.4's dirty data, which the parser keeps verbatim rather than correcting, and the
-   * message falls back to naming the number.
-   */
   it('warns that an unsupported voice type is silent, and names the type', () => {
     const { schedule } = parseScheduleWithWarnings(
       xml(voice({ type: 0, description: 'tone' }, entry(60)) + voice({ type: 9, description: 'odd' }, entry(60))),
@@ -51,9 +40,6 @@ describe('scheduleWarnings — what the program will do (§3.3, §3.7)', () => {
     expect(warnings[0].message).toContain('type 9');
   });
 
-  /** The assertion that says the warning surface and the engine agree: they read one set
-   *  (`isRenderableType`), and it now holds every type but 2. Types 3 and 4 arrived in step 10,
-   *  types 5 and 6 after them. */
   it('says nothing about the types that are rendered', () => {
     const { schedule } = parseScheduleWithWarnings(
       xml(
@@ -88,7 +74,6 @@ describe('scheduleWarnings — what the program will do (§3.3, §3.7)', () => {
 
     const warnings = scheduleWarnings(schedule);
     expect(kindsOf(warnings)).toEqual(['pcm-voice']);
-    // The distinction that matters: not "not yet", but "never", and the reason why.
     expect(warnings[0].message).toContain('does not record where that file is');
     expect(warnings[0].message).not.toContain('yet');
   });
@@ -105,13 +90,6 @@ describe('scheduleWarnings — what the program will do (§3.3, §3.7)', () => {
     expect(warnings[0].message).toContain('1:00');
   });
 
-  /**
-   * The test above could not see this, because it names its voices 'short' and 'long' — the message
-   * lowercased its mid-sentence subject wholesale, which mangles the *names* and not just the noun.
-   * A browser pass caught it rendering "cuts voices every rule and background noise short" in the
-   * same sentence that spelled "Voice Short and mis-parented" correctly. Capitalised names are what
-   * makes the difference visible, so this states both halves.
-   */
   it('lowercases only the leading noun of a mid-sentence subject, never the voice names', () => {
     const { schedule } = parseScheduleWithWarnings(
       xml(
@@ -162,8 +140,6 @@ describe('parseScheduleWithWarnings — what the file contained (§3.4)', () => 
     );
 
     expect(kindsOf(warnings)).toEqual(['stale-count', 'stale-count']);
-    // A notice, not a warning: §3.4 says to ignore these and rewrite them on export, so nothing
-    // about playback is affected and the file is not "wrong".
     expect(warnings.every((w) => w.severity === 'notice')).toBe(true);
     expect(warnings[0].message).toContain('3 voices');
     expect(warnings[1].message).toContain('14 entries');
@@ -186,7 +162,6 @@ describe('parseScheduleWithWarnings — what the file contained (§3.4)', () => 
     expect(warnings[0].severity).toBe('warning');
     expect(warnings[0].message).toContain('duration');
     expect(warnings[0].message).toContain('volume_left');
-    // The documented fallbacks still apply — nothing is dropped (§3.4).
     expect(schedule.voices[0].entries).toHaveLength(2);
     expect(schedule.voices[0].entries[0].duration).toBe(0);
     expect(schedule.voices[0].entries[0].volumeLeft).toBe(1);
@@ -210,7 +185,7 @@ describe('parseScheduleWithWarnings — what the file contained (§3.4)', () => 
     expect(warnings[0].message).toContain('ghost');
   });
 
-  it('leaves a degenerate but legitimate value alone (§3.4)', () => {
+  it('leaves a degenerate but legitimate value alone', () => {
     // beatfreq=0 is a pure centred tone and volume=0 is a silent lead-in; both are real.
     const { warnings } = parseScheduleWithWarnings(
       xml(voice({}, '<entry duration="60" volume_left="0" volume_right="0" beatfreq="0" basefreq="200"/>')),
@@ -220,7 +195,7 @@ describe('parseScheduleWithWarnings — what the file contained (§3.4)', () => 
   });
 });
 
-describe('entryWarnings — values that are legal and wrong (§6.1)', () => {
+describe('entryWarnings — values that are legal and wrong', () => {
   /** An entry with ordinary values, overridden by whatever the case is about. */
   function node(overrides: Record<string, number> = {}): string {
     const attrs = { duration: 60, volume_left: 1, volume_right: 1, beatfreq: 10, basefreq: 200, ...overrides };
@@ -233,8 +208,6 @@ describe('entryWarnings — values that are legal and wrong (§6.1)', () => {
   }
 
   it('warns about a negative duration, which only an import can produce', () => {
-    // The editor cannot make one — `moveEntry` clamps at zero and the panel does `Math.max(0, …)`
-    // — but the parser has no clamp, which is the whole reason the rule exists.
     const schedule = one({ duration: -5 });
     expect(schedule.voices[0].entries[0].duration).toBe(-5);
 
@@ -254,10 +227,6 @@ describe('entryWarnings — values that are legal and wrong (§6.1)', () => {
     expect(high.map((w) => [w.kind, w.severity])).toEqual([['base-too-high', 'notice']]);
   });
 
-  /**
-   * §6.1's threshold, kept exactly as written *because* the severity split can carry it — four
-   * bundled presets sit above it deliberately. See the corpus assertion below.
-   */
   it('notices a beat above 40 Hz rather than warning about it', () => {
     expect(entryWarnings(one({ beatfreq: 40 }))).toEqual([]);
 
@@ -268,14 +237,11 @@ describe('entryWarnings — values that are legal and wrong (§6.1)', () => {
   });
 
   it('warns when the beat is wider than its carrier, which puts the right channel at or below zero', () => {
-    // The two rules necessarily overlap: with the carrier inside its own range, a beat wide enough
-    // to reach zero is always above 40 Hz too. Both are reported, at their own severities.
     const warnings = entryWarnings(one({ basefreq: 30, beatfreq: 80 }));
     expect(warnings.map((w) => [w.kind, w.severity])).toEqual([
       ['beat-above-band', 'notice'],
       ['beat-exceeds-base', 'warning'],
     ]);
-    // §3.6: right = base − beat/2.
     expect(warnings[1].message).toContain('-10 Hz');
   });
 
@@ -285,32 +251,18 @@ describe('entryWarnings — values that are legal and wrong (§6.1)', () => {
     expect(warning.message).toContain('2.5');
 
     expect(entryWarnings(one({ volume_right: 1.4 }))[0].kind).toBe('volume-out-of-range');
-    // Zero is a legitimate silent lead-in (§3.4), and one is full scale.
     expect(entryWarnings(one({ volume_left: 0, volume_right: 1 }))).toEqual([]);
   });
 
-  /**
-   * A zero-length segment is what step 5's squeeze clamp produces on purpose when a node is dragged
-   * against its neighbour, so warning about it would be an alarm on the user's own gesture.
-   */
   it('says nothing about a zero duration', () => {
     expect(entryWarnings(one({ duration: 0 }))).toEqual([]);
   });
 
   it('leaves a noise voice alone — it reads neither frequency', () => {
-    // Every noise voice in the corpus carries base 100 and beat 0, and a rule applied to every type
-    // would have to make an exception for exactly that.
     expect(entryWarnings(one({ basefreq: 0, beatfreq: 0 }, 1))).toEqual([]);
     expect(entryWarnings(one({ basefreq: 0, beatfreq: 0 }, 5))).toEqual([]);
   });
 
-  /**
-   * An isochronic voice reads both fields, so the range rules apply to it — but not
-   * `beat-exceeds-base`, which describes §3.6's channel split failing. Types 3 and 4 have no split:
-   * both ears get `basefreq` and `beatfreq` is the rate it is switched on and off at, so a beat
-   * wider than the carrier is an ordinary fast pulse, and `beat-above-band` is what has something
-   * to say about it.
-   */
   it('applies the range rules to an isochronic voice, but not the channel-split rule', () => {
     for (const type of [3, 4]) {
       expect(entryWarnings(one({ basefreq: 5, beatfreq: 0 }, type))[0].kind).toBe('base-too-low');
@@ -346,7 +298,6 @@ describe('entryWarnings — values that are legal and wrong (§6.1)', () => {
       xml(voice({ description: 'a' }, node({ volume_left: 2 }))),
     );
 
-    // A bare `+ s` used to be enough for "plays" and "uses" and would say "carrys" here.
     expect(entryWarnings(schedule)[0].message).toContain('Voice a carries');
   });
 
@@ -357,12 +308,6 @@ describe('entryWarnings — values that are legal and wrong (§6.1)', () => {
   });
 });
 
-/**
- * §6.3 makes reopening in Gnaural desktop a definition-of-done item, and `SG_RestoreBackupData`
- * (ScheduleGUI.c:2213) rebuilds the voices from the entries' `parent` attribute alone — it never
- * reads `<id>` back. None of this can arise from a clean document; §3.4's dirty imports and step 6's
- * reorder can produce all three.
- */
 describe('entryWarnings — surviving a round trip through Gnaural', () => {
   it('warns that two adjacent voices sharing an owner will merge', () => {
     const { schedule } = parseScheduleWithWarnings(
@@ -410,13 +355,10 @@ describe('entryWarnings — surviving a round trip through Gnaural', () => {
     const [warning] = entryWarnings(schedule);
     expect(warning.kind).toBe('gnaural-regroup');
     expect(warning.message).toContain('ghost');
-    // Nothing to point at: the whole problem is that it has no node.
     expect(warning.nodes).toEqual([]);
   });
 
   it('reads the parent the serializer will actually write, not the one the file had', () => {
-    // Two voices with different ids and no `parent` attribute anywhere — the serializer derives it
-    // from the voice id, so they do not merge.
     const { schedule } = parseScheduleWithWarnings(
       xml(
         voice({ id: 4, description: 'a' }, '<entry duration="60" basefreq="200" beatfreq="10"/>') +
@@ -445,11 +387,6 @@ describe('the bundled library', () => {
     ]);
   });
 
-  /**
-   * The measurement §6.1's thresholds were chosen against, pinned so a later rule cannot quietly
-   * start alarming the library: across the Android set's 354 entries the *only* thing validation
-   * may say is that four gamma-band presets exceed 40 Hz, and it must say it as a notice.
-   */
   it('raises nothing but a beat notice on four gamma-band presets', () => {
     const offenders = ['powernap.gnaural', 'airplanetravelaid.gnaural', ...namesIn('presets')]
       .map((name) => ({ name, warnings: entryWarnings(parseScheduleWithWarnings(loadFixture(name)).schedule) }))
@@ -468,13 +405,6 @@ describe('the bundled library', () => {
     ]);
   });
 
-  /**
-   * Gnaural's own collection is the looser case and must stay legible as such: seven files raise
-   * something and none of it is a defect — `tibetan-bowls` builds its sound out of carriers below
-   * 20 Hz, `purr` gates a 493 Hz tone because that is what an isochronic cat purr is, and
-   * `academic-performance-enhancement` carries the merge-on-reopen hazard. Pinned by file and kind
-   * rather than by node count, which would make this a change detector.
-   */
   it('raises the frequency rules only where a preset means them, and the regroup hazard once', { timeout: CORPUS_TIMEOUT }, () => {
     const offenders = namesIn('gnaural')
       .map((name) => ({ name, warnings: entryWarnings(parseScheduleWithWarnings(loadFixture(name)).schedule) }))
@@ -491,11 +421,6 @@ describe('the bundled library', () => {
     ]);
   });
 
-  /**
-   * Gnaural's own editor writes a silent node as `-2.55352e-19` rather than as zero — its published
-   * presets carry them, and a file imported from the desktop app will too. The rule is a `warning`,
-   * so a false one on a file Gnaural itself produced teaches the reader to ignore the real ones.
-   */
   it('does not call Gnaural’s own floating-point zero an inverted channel', () => {
     const { schedule } = parseScheduleWithWarnings(
       xml(voice({}, entry(10, 'volume_left="-2.55352e-19" volume_right="0"'))),

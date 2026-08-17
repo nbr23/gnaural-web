@@ -94,7 +94,6 @@ describe('VoiceRows', () => {
     expect(rows()[0].textContent).toContain('10:00');
   });
 
-  /** The rule the caption states, asserted: every control here writes to the document. */
   it('writes mute and hide into the document', () => {
     const harness = mount(twoVoices());
 
@@ -107,10 +106,6 @@ describe('VoiceRows', () => {
     expect(harness.commits[1].schedule.voices[1].hidden).toBe(true);
   });
 
-  /**
-   * Solo means "mute the others", so in a list whose mute is `voice_mute` it could only work by
-   * editing the file. It lives in the player instead, and its absence here is the rule.
-   */
   it('offers no solo, and shows a muted voice as muted', () => {
     const schedule = twoVoices();
     schedule.voices[1] = { ...schedule.voices[1], muted: true };
@@ -141,7 +136,6 @@ describe('VoiceRows', () => {
     testRoot.click(control(0, 'Move down'));
     expect(harness.structural[0].label).toBe('Move voice');
     expect(harness.structural[0].edit.voiceMap).toEqual([1, 0]);
-    // No explicit selection: it is carried across the map rather than moved to this voice.
     expect(harness.structural[0].selection).toBeUndefined();
   });
 
@@ -162,7 +156,6 @@ describe('VoiceRows', () => {
     const tone = harness.structural[0].edit.schedule.voices[2];
     expect(tone.type).toBe(VoiceType.Binaural);
     expect(voiceDuration(tone)).toBe(scheduleDuration(schedule));
-    // The new node is what a person would edit next, so it is selected.
     expect(harness.structural[0].selection).toEqual({ voice: 2, entry: 0 });
 
     testRoot.click(testRoot.byText('button', 'Add isochronic voice'));
@@ -176,17 +169,12 @@ describe('VoiceRows', () => {
     testRoot.click(testRoot.byText('button', 'Add water drops voice'));
     const drops = harness.structural[3].edit.schedule.voices[2];
     expect(drops.type).toBe(VoiceType.WaterDrops);
-    // A probability, not a frequency — the reference's own default for a new voice.
     expect(drops.entries[0].baseFreq).toBe(0.000352858);
 
     testRoot.click(testRoot.byText('button', 'Add rain voice'));
     expect(harness.structural[4].edit.schedule.voices[2].type).toBe(VoiceType.Rain);
   });
 
-  /**
-   * Types 3 and 4 differ only in which ear each pulse lands in, so the editor offers one voice with
-   * a switch rather than two things to add. The toggle is on that voice's own row, and nowhere else.
-   */
   it('switches an isochronic voice between both ears and alternating', () => {
     const schedule = {
       ...twoVoices(),
@@ -219,11 +207,6 @@ describe('VoiceRows', () => {
     expect(harness.commits[0].schedule.voices[0].type).toBe(VoiceType.IsoPulse);
   });
 
-  /**
-   * Step 6 put a nothing-to-play line here, scoped to the one state it could newly create.
-   * `ValidationPanel` carries it now, so this component must not say it a second time — two
-   * surfaces wording the same fact is exactly what taking it from the shared producer avoided.
-   */
   it('leaves the empty-schedule message to the validation panel', () => {
     mount({ ...twoVoices(), voices: [] });
 

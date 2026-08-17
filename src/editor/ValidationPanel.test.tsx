@@ -55,10 +55,6 @@ describe('ValidationPanel', () => {
     expect(testRoot.query('.validation')).toBeNull();
   });
 
-  /**
-   * 9a's severity split, which is what lets §6.1's 40 Hz beat threshold ship against four presets
-   * that deliberately exceed it: a warning is shown outright, a notice is folded away.
-   */
   it('shows warnings outright and folds notices away', () => {
     mount([ragged], [gamma, volume]);
 
@@ -72,7 +68,6 @@ describe('ValidationPanel', () => {
     expect(notices.textContent).toContain('above 40 Hz');
   });
 
-  /** A row per node would be fifteen copies of one sentence on a gamma-band programme. */
   it('walks the nodes of one rule, one press at a time, and wraps', () => {
     const selections = mount([], [gamma]);
     const show = testRoot.byText('button', 'Show') as HTMLButtonElement;
@@ -96,7 +91,6 @@ describe('ValidationPanel', () => {
   });
 
   it('offers nothing to press for a warning with no node to point at', () => {
-    // A schedule-scoped warning, and `gnaural-regroup` against a voice with no entries.
     mount([ragged], [{ severity: 'warning', kind: 'gnaural-regroup', message: 'Voice a is empty.', nodes: [] }]);
 
     expect(testRoot.queryAll('.validation__item')).toHaveLength(2);
@@ -104,11 +98,6 @@ describe('ValidationPanel', () => {
   });
 });
 
-/**
- * §3.7's "one-click fix" and the reopen-in-Gnaural repair, both deferred to step 9 and both offered
- * on the row that states the problem — which is the argument for putting them here rather than in a
- * menu: the sentence and the button that answers it are the same object.
- */
 describe('ValidationPanel repairs', () => {
   it('offers a fix on the row whose rule has one, and nowhere else', () => {
     let padded = 0;
@@ -124,11 +113,6 @@ describe('ValidationPanel repairs', () => {
     expect(padded).toBe(1);
   });
 
-  /**
-   * The caller offers a repair only when running it would change something, which is how the third
-   * `gnaural-regroup` shape — a voice with no entries, which renumbering cannot help — ends up with
-   * a warning and no button.
-   */
   it('shows no fix when the caller offers none for that rule', () => {
     mount([], [{ severity: 'warning', kind: 'gnaural-regroup', message: 'Voice a is empty.', nodes: [] }], {
       'unequal-durations': { label: 'Pad to longest', run: () => undefined },

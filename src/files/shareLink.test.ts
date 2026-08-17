@@ -11,11 +11,8 @@ import {
   shareUrl,
 } from './shareLink';
 
-/**
- * Four of Gnaural's own presets are past §5.1's fragment guard — `hypnagogic-gale` is 10,080
- * entries — and `useExport` answers that by exporting the file instead of a link. Pinned by name so
- * that the set can only change deliberately: a program quietly joining it loses its share button.
- */
+// Four of Gnaural's own presets exceed the fragment guard. Pinned by name so the set can only
+// change deliberately: a program quietly joining it loses its share button.
 const TOO_LARGE_TO_SHARE = [
   'gnaural/euphoria.gnaural',
   'gnaural/full-moon.gnaural',
@@ -30,8 +27,6 @@ describe('share payloads', () => {
     const original = parseSchedule(loadFixture(name));
     const shared = await decodeSharePayload(await encodeSharePayload(original));
 
-    // Serialization is the fixed point the document layer guarantees, so comparing the XML
-    // compares every preserved field too, not just the ones the model names.
     expect(serializeSchedule(shared)).toBe(serializeSchedule(original));
   });
 
@@ -63,11 +58,8 @@ describe('share payloads', () => {
   });
 });
 
-/**
- * A schedule too big to share. Deflate is so effective on repetitive XML that a merely *long*
- * program is nowhere near the guard — the entries have to be incompressible, so every value is
- * random.
- */
+// A schedule too big to share. Deflate is so effective on repetitive XML that a merely long program
+// is nowhere near the guard — the entries have to be incompressible, so every value is random.
 function oversized(): Schedule {
   const voice: Voice = {
     id: 0,

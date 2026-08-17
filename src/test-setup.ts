@@ -4,20 +4,18 @@ import { AudioBuffer, OfflineAudioContext } from 'node-web-audio-api';
 import { resetConnection } from './library/storage';
 
 /**
- * Global test environment setup (registered as vitest `setupFiles`).
- *
- * happy-dom gives us a DOM but no layout engine, no React act signalling, and none of the
- * platform APIs step 8 builds on, so all of them are stubbed here once rather than in every test.
+ * Global test environment setup (registered as vitest `setupFiles`). happy-dom gives us a DOM but
+ * no layout engine, no React act signalling, and none of the platform APIs the app builds on, so
+ * they're stubbed here once rather than in every test.
  */
 
 /** React needs this to allow `await act(...)`, which is how async effects are flushed. */
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 /**
- * A database with nothing in it, plus a storage module that has forgotten the old one.
- *
- * happy-dom ships no IndexedDB at all, so `fake-indexeddb/auto` supplies it; a fresh `IDBFactory`
- * is how it is emptied between tests. Call this in a `beforeEach` for anything that persists.
+ * A database with nothing in it, plus a storage module that has forgotten the old one. happy-dom
+ * ships no IndexedDB, so `fake-indexeddb/auto` supplies it; a fresh `IDBFactory` empties it between
+ * tests.
  */
 export function resetDatabase(): void {
   globalThis.indexedDB = new IDBFactory();
@@ -25,13 +23,10 @@ export function resetDatabase(): void {
 }
 
 /**
- * Web Audio, so pressing Play in a component test builds a real graph instead of throwing.
- *
- * An `OfflineAudioContext` standing in for `AudioContext`: it is the same W3C implementation
- * `engine.test.ts` renders through, needs no audio device, and — because its clock only advances
- * during `startRendering()` — leaves `currentTime` at zero, which is exactly what a test that
- * never waits for real time wants. `AudioBuffer` is global for `keepalive.ts`, which constructs
- * one directly rather than borrowing a context.
+ * Web Audio, so pressing Play in a component test builds a real graph instead of throwing. An
+ * `OfflineAudioContext` stands in for `AudioContext`: its clock only advances during
+ * `startRendering()`, leaving `currentTime` at zero, which is what a test that never waits for
+ * real time wants.
  */
 const TEST_CONTEXT_SECONDS = 600;
 
@@ -43,11 +38,8 @@ globalThis.AudioContext = class extends OfflineAudioContext {
 } as unknown as typeof globalThis.AudioContext;
 
 /**
- * `navigator.mediaSession` and `navigator.wakeLock`, neither of which happy-dom has.
- *
- * Recording stubs rather than spies: what the tests care about is the state the OS would be shown
- * and the handlers it would be able to invoke, so the stub keeps both and lets a test call a
- * handler the way a lock-screen button would.
+ * `navigator.mediaSession` and `navigator.wakeLock`, neither of which happy-dom has. Recording
+ * stubs rather than spies, so a test can call a handler the way a lock-screen button would.
  */
 export interface TestMediaSession {
   metadata: { title?: string; artist?: string; album?: string } | null;
@@ -68,8 +60,7 @@ export const mediaSession: TestMediaSession = {
     else this.handlers.delete(action);
   },
   setPositionState(state) {
-    // Chrome enforces this and the spec requires it; a stub that shrugged at a zero rate let a
-    // real "playbackRate cannot be equal to zero" crash through to a browser.
+    // Chrome enforces this and the spec requires it.
     if (state.playbackRate === 0) throw new TypeError('playbackRate cannot be equal to zero');
     this.position = state;
   },
@@ -88,11 +79,8 @@ export function resetPlatform(): void {
 }
 
 /**
- * What `matchMedia` answers, since happy-dom lays nothing out and evaluates no queries.
- *
- * `(pointer: coarse)` is the one that changes behaviour rather than styling — it is what takes the
- * seek gesture off the chart — so a test can set it and get the phone's answer. Everything else
- * reads false, which is the desktop-shaped default the views are written against.
+ * What `matchMedia` answers, since happy-dom lays nothing out and evaluates no queries. Only
+ * `(pointer: coarse)` is wired up, since it's the one that changes behaviour rather than styling.
  */
 export const media = { coarsePointer: false };
 

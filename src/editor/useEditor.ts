@@ -6,43 +6,19 @@ import type { CommitMeta, NodeRef, Selection } from './history';
 import { HistoryStack } from './history';
 
 export interface Editor {
-  /**
-   * The committed document — what is rendered, validated, autosaved and handed the engine.
-   *
-   * **It stays a single field, reversing what step 4 expected.** That entry predicted a split into
-   * `preview ?? committed` once dragging landed, on the grounds that the chart and the engine want
-   * what the finger is doing while autosave and validation want the last decision. The premise is
-   * right and the conclusion was wrong: publishing an in-flight document here would hand it to every
-   * consumer of the editor, re-rendering the whole tree — including the chart, whose memoised model
-   * and layout are the reason a playhead does not starve the audio thread. A gesture keeps its
-   * in-flight document to itself, in `EditSurface`, and gives the engine a throttled copy that
-   * renders nothing. See PROGRESS.md for the measurement.
-   */
+  // The committed document — what's rendered, validated, autosaved and handed to the engine.
+  // Deliberately a single field rather than preview ?? committed: publishing an in-flight document
+  // here would re-render the whole tree, including the chart's memoised model/layout. A gesture
+  // keeps its in-flight document to itself in EditSurface and gives the engine a throttled copy.
   document: Schedule;
-  /**
-   * Push a new document. A transform that changed nothing returns its input, and is ignored.
-   *
-   * The current selection travels with the commit, so undoing a move restores what was selected
-   * when it was made; the caller does not supply it.
-   */
+  // Pushes a new document; a transform that changed nothing returns its input and is ignored. The
+  // current selection travels with the commit, so undoing a move restores what was selected then.
   commit(schedule: Schedule, meta: CommitMeta): void;
-  /**
-   * Where each voice of the previously published document ended up in this one, or null when
-   * nothing moved.
-   *
-   * The one thing a consumer cannot work out for itself: the engine keys session mute and solo by
-   * voice index, and two documents do not say which voice became which. Set by a structural commit,
-   * **inverted** on undo and taken as-is on redo — the same transition-not-state reading the
-   * selection restore below documents.
-   */
+  // Where each voice of the previously published document ended up in this one, or null when
+  // nothing moved — the engine keys session mute/solo by voice index, and two documents alone can't
+  // say which voice became which. Inverted on undo, taken as-is on redo.
   voiceMap: VoiceMap | null;
-  /**
-   * The selected nodes, empty for none. Session state: changing it never pushes a commit.
-   *
-   * Plural since step 8's marquee, which is what `Selection` and `CommitMeta.selection` have been
-   * shaped for since step 4. Order is the document's, not the order they were picked in: a group
-   * edit reads it as a set of addresses, and nothing downstream cares which node was first.
-   */
+  // Order is the document's, not pick order: a group edit reads it as a set of addresses.
   selection: Selection;
   select(selection: Selection): void;
   undo(): void;
@@ -53,19 +29,11 @@ export interface Editor {
   redoLabel: string | null;
 }
 
-/**
- * The React face of `HistoryStack` — a thin one, deliberately: everything that can be decided
- * without React is decided in `history.ts`, which is why the stack is testable in Node.
- *
- * **The initial document is read once.** After that the editor owns the document, so a later change
- * to the argument is not a new state to merge but a different program — mount a new editor for it
- * (`key` on the view), rather than trying to reconcile two histories.
- *
- * Re-renders happen on commit, undo and redo, and on nothing else. That matters here as much as it
- * does in the player: `CLOCK_INTERVAL_MS` and `StaticPlot` exist because re-rendering this tree at
- * pointer rate is enough main-thread work to starve the audio thread on a phone, and a history hook
- * that published every intermediate value would be the same defect in a new place.
- */
+// The React face of HistoryStack, deliberately thin: everything decidable without React lives in
+// history.ts. The initial document is read once — after that the editor owns it, so a later change
+// to the argument is a different program, not a state to merge (mount a new editor via `key`).
+// Re-renders happen only on commit, undo and redo; a history hook that published every intermediate
+// drag value would starve the audio thread the same way an un-throttled chart would.
 export function useEditor(initial: Schedule): Editor {
   const [stack] = useState(() => new HistoryStack(initial));
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
@@ -100,16 +68,10 @@ export function useEditor(initial: Schedule): Editor {
     [],
   );
 
-  /**
-   * Navigating the history restores the selection the *commit being crossed* was made with.
-   *
-   * A commit's meta describes a transition, not a state, so undo and redo both read the entry on the
-   * far side of it — which for an undo is the one being left. Reading the entry arrived at instead
-   * looks equivalent and is not: undoing the very first edit lands on the opening document, which
-   * nothing produced and which therefore carries no selection, so the node you were working on would
-   * be deselected exactly when you were about to try again. §6.1's "undoing a delete restores the
-   * selection it had" means the selection the delete had.
-   */
+  // Restores the selection the commit *being crossed* was made with — the entry being left, not the
+  // one arrived at. Reading the entry arrived at looks equivalent but isn't: undoing the first edit
+  // lands on the opening document, which carries no selection, deselecting the node you were
+  // working on right when you were about to try again.
   const undo = useCallback(() => {
     if (!stack.canUndo) return;
     const crossed = stack.presentMeta;
@@ -121,11 +83,8 @@ export function useEditor(initial: Schedule): Editor {
     setSelection(inRange(crossed?.selection, stack.present));
   }, [stack]);
 
-  /**
-   * Redo restores the selection that commit was made *with*, which is a pre-edit selection landing
-   * in a post-edit document — so unlike undo it has to be carried across the transition. A voice the
-   * commit deleted has nowhere to land and the selection goes.
-   */
+  // Restores the selection that commit was made with — a pre-edit selection landing in a post-edit
+  // document, so unlike undo it has to be carried across the transition via moveSelection.
   const redo = useCallback(() => {
     if (!stack.canRedo) return;
     stack.redo();
@@ -149,16 +108,11 @@ export function useEditor(initial: Schedule): Editor {
   };
 }
 
-/**
- * One empty selection, shared.
- *
- * Not a fresh `[]` per call: `EditSurface` and the chart's `memo`'d selection layer both key off
- * this array's identity, so a new empty one per render would rebuild every ring in the plot for a
- * selection that has not changed.
- */
+// Shared rather than a fresh [] per call: the chart's memoised selection layer keys off this
+// array's identity, so a new empty one per render would rebuild every ring for an unchanged selection.
 const EMPTY_SELECTION: Selection = [];
 
-/** Follow a selection across a structural transition. A deleted voice takes its nodes with it. */
+// A voice a structural edit deleted takes its selected nodes with it.
 function moveSelection(selection: Selection | undefined, map: VoiceMap | undefined): Selection {
   if (!selection) return EMPTY_SELECTION;
   if (!map) return selection;
@@ -169,15 +123,10 @@ function moveSelection(selection: Selection | undefined, map: VoiceMap | undefin
   });
 }
 
-/**
- * Keep a restored selection pointing at things that exist.
- *
- * A `NodeRef` is a pair of indices and a history move can land on a document with fewer of either,
- * so this is the backstop that keeps stale ones out of the views. Entries are clamped rather than
- * dropped: after undoing a delete the node one along is the useful place to be, and losing the
- * selection is what step 5's own selection defect felt like. Clamping can collide two nodes onto
- * one, so the result is deduplicated.
- */
+// Keeps a restored selection pointing at things that exist: a history move can land on a document
+// with fewer voices or entries than the selection references. Entries are clamped rather than
+// dropped — after undoing a delete, the node one along is the useful place to land — and clamping
+// can collide two nodes onto one, so the result is deduplicated.
 function inRange(selection: Selection | null | undefined, schedule: Schedule): Selection {
   if (!selection || selection.length === 0) return EMPTY_SELECTION;
 

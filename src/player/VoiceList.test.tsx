@@ -84,11 +84,8 @@ function solo(rowIndex: number): HTMLButtonElement {
 const AUDIBLE: VoiceGate = { muted: false, soloed: false };
 
 describe('VoiceList', () => {
-  /**
-   * Solo silences by muting, so the rows it silenced are muted rows and say so with the same
-   * crossed speaker a hand-muted one shows. There is no second cue, because there is no second
-   * reason to be quiet.
-   */
+  /** Solo silences by muting, so the rows it silences read as muted, with the same crossed
+   *  speaker a hand-muted row shows. */
   it('shows a soloed voice as the only unmuted one', () => {
     const schedule = scheduleOf([makeVoice(), makeVoice({ id: 1, description: 'Bed' })]);
     mount(schedule, [
@@ -117,11 +114,8 @@ describe('VoiceList', () => {
     expect(harness.solos).toEqual([0]);
   });
 
-  /**
-   * §3.3: a voice must never be silently dropped. One this app cannot render never sounds, so the
-   * row cannot wait for a gate to tell it that — it would otherwise read as audible next to a
-   * working voice that was muted.
-   */
+  /** An unrenderable voice never sounds, so the row can't wait for a gate to say so — it would
+   *  otherwise read as audible next to a working voice that was muted. */
   it('always shows an unrenderable voice as silent, with its controls disabled', () => {
     const schedule = scheduleOf([
       makeVoice(),
@@ -135,8 +129,7 @@ describe('VoiceList', () => {
     expect(solo(1).disabled).toBe(true);
   });
 
-  /** The other half of that rule: a type that *is* rendered is named rather than warned about, and
-   *  its controls work like any other voice's. Types 5 and 6 crossed that line after 3 and 4. */
+  /** A type that *is* rendered is named rather than warned about, with fully live controls. */
   it('names a water voice and leaves its controls live', () => {
     const schedule = scheduleOf([
       makeVoice({ description: 'Drops', type: VoiceType.WaterDrops }),

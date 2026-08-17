@@ -241,8 +241,7 @@ details[open] > .library__summary > .library__caret {
   }
 }
 
-/* The one that is running, so it can be found in a long list without hunting for the bar at the
-   bottom of the page. */
+/* The one that is running, findable without scrolling to the bar at the bottom of the page. */
 .program-row.is-active {
   border-color: var(--accent-border);
   border-left-color: var(--origin, var(--accent-border));
@@ -314,9 +313,8 @@ details[open] > .library__summary > .library__caret {
   padding: 3px 9px;
 }
 
-/* The row's own transport. Bare like the star beside it rather than a filled primary button: down
-   a list this long the accent has to stay on the one program that is running, which is what
-   `is-active` is for. */
+/* Bare like the star beside it, not the player's filled transport: down a list this long the accent
+   belongs to the one program that is running. */
 .program-row__transport {
   display: inline-flex;
   align-items: center;

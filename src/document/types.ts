@@ -31,37 +31,31 @@ export interface Entry {
 }
 
 /**
- * The address of one node: index into `schedule.voices`, index into that voice's entries.
- *
- * Indices rather than ids because §3.4's ids are not unique in real files — the same keying the
- * engine's session mute/solo, the chart's hit results and the editor's `NodeRef` all use. It lives
- * here so the validation surface and the edit transforms can share one type without either
- * depending on the other, and so that neither has to reach into `src/editor/`.
+ * The address of one node: index into `schedule.voices`, index into that voice's entries. Indices
+ * rather than ids because voice ids are not unique in real files — the same keying the engine's
+ * session mute/solo, the chart's hit results and the editor's `NodeRef` all use.
  */
 export interface EntryLocation {
   voice: number;
   entry: number;
 }
 
-/** Values are fixed by the Gnaural format and must never be reassigned (PLAN.md §3.3). */
+/** Values are fixed by the Gnaural format and must never be reassigned. */
 export const enum VoiceType {
-  Binaural = 0,     // Phase 0
-  PinkNoise = 1,    // Phase 0
+  Binaural = 0,
+  PinkNoise = 1,
   Pcm = 2,          // never renderable — external file, path not in schedule
-  IsoPulse = 3,     // Phase 1
-  IsoPulseAlt = 4,  // Phase 1
-  WaterDrops = 5,   // Phase 1
-  Rain = 6,         // Phase 1
+  IsoPulse = 3,
+  IsoPulseAlt = 4,
+  WaterDrops = 5,
+  Rain = 6,
 }
 
 /**
- * Voice types this app makes a sound for. Everything else is parsed, preserved and silent (§3.3).
- *
- * **Stated once, here, because two readers must never disagree**: the engine skips what it cannot
- * render, and `warnings.ts` promises the listener that everything else was heard. A second copy
- * would eventually either silently drop a voice — §3.3's one prohibition — or warn about one that
- * is sounding. Every type the format defines is here except type 2 (PCM), which never can be: the
- * schedule does not record where the audio file is.
+ * Voice types this app makes a sound for. Everything else is parsed, preserved and silent. Stated
+ * once, here, because the engine and `warnings.ts` must never disagree about what's audible — a
+ * second copy would eventually let one silently drop a voice the other warns about. Every type the
+ * format defines is here except PCM, which never can be: the schedule doesn't record the file path.
  */
 const RENDERABLE_TYPES = new Set<VoiceType>([
   VoiceType.Binaural,
@@ -77,19 +71,10 @@ export function isRenderableType(type: VoiceType): boolean {
 }
 
 /**
- * Voice types whose `basefreq` and `beatfreq` describe a tone — the only ones for which those two
- * fields mean a carrier and a rate, and so the only ones the §6.1 frequency rules and the player's
- * readout mean anything for.
- *
- * Noise (type 1) reads neither: all nine noise voices in the bundled corpus carry base 100 and beat
- * 0. Water drops and rain (types 5 and 6) read both, but as neither a carrier nor a rate — the base
- * is a per-sample probability and the first `beatfreq` is a drop count (§3.3). An isochronic voice
- * reads both, differently from a binaural one but no less literally: the base is its tone and the
- * beat is the rate that tone is switched on and off at.
- *
- * It is also what the chart fits its two frequency lanes to: a probability of 0.00035 drawn beside a
- * carrier at 200 Hz flattens every tone curve in the lane, and a drop count of 100 does the same to
- * the beat lane. See `buildChartModel`.
+ * Voice types whose `basefreq` and `beatfreq` describe a tone (a carrier and a rate) — the only ones
+ * the frequency validation rules and the player's readout mean anything for. Water drops and rain
+ * read both fields too, but as a per-sample probability and a drop count, not a carrier and rate —
+ * mixing them into the same chart lane would flatten every tone curve there. See `buildChartModel`.
  */
 const TONAL_TYPES = new Set<VoiceType>([
   VoiceType.Binaural,

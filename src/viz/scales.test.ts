@@ -32,7 +32,6 @@ describe('linearScale', () => {
   });
 
   it('pads a degenerate domain instead of dividing by zero', () => {
-    // A voice whose base frequency never changes collapses its domain to a single value.
     const scale = linearScale([164, 164], [100, 0]);
     expect(Number.isFinite(scale.toPixel(164))).toBe(true);
     expect(scale.toPixel(164)).toBeCloseTo(50);
@@ -64,7 +63,6 @@ describe('niceTicks', () => {
 
 describe('timeTicks', () => {
   it('uses clock-shaped intervals rather than powers of ten', () => {
-    // 1200s / 6 ~= 200s rough, which rounds up to the 5-minute step.
     expect(timeTicks(1200, 6)).toEqual([0, 300, 600, 900, 1200]);
   });
 
@@ -80,8 +78,6 @@ describe('timeTicks', () => {
 
 describe('timeTicksIn', () => {
   it('labels a zoomed window in values measured from schedule zero', () => {
-    // A 100-second window a long way in still gets round labels — multiples of the 30-second step
-    // measured from zero, not offsets from the window's own start.
     expect(timeTicksIn(1000, 1100, 4)).toEqual([1020, 1050, 1080]);
   });
 
@@ -90,16 +86,9 @@ describe('timeTicksIn', () => {
   });
 });
 
-/**
- * The snap grid. It follows the zoom, which is the only thing that makes snapping usable: the
- * labelled x-ticks are chosen for label spacing, and at 1x on a 73-minute programme their step is
- * around a hundred times the gap between that document's own nodes.
- */
 describe('timeGridStep', () => {
   it('picks the finest clock-round step still far enough apart to aim between', () => {
-    // 600s across 600px at a 14px floor wants 14s, which rounds up to the 15-second step.
     expect(timeGridStep(600, 600)).toBe(15);
-    // Zoomed in ten times, the same plot gets a one-second grid.
     expect(timeGridStep(60, 600)).toBe(2);
   });
 

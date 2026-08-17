@@ -7,7 +7,6 @@ import { afterEach, beforeEach } from 'vitest';
  * Minimal React DOM test harness on happy-dom — no testing-library dependency, since everything
  * these tests need is `createRoot` plus `act`.
  */
-
 export interface TestRoot {
   readonly container: HTMLDivElement;
   render(element: ReactNode): void;
@@ -73,12 +72,9 @@ export interface HookResult<T> {
   /** What the hook returned on its most recent render. */
   readonly current: T;
   /**
-   * Render again, picking up whatever the hook's arguments now close over.
-   *
-   * **Already wrapped in `act`; do not wrap it again.** `act` returns a thenable, so an outer
-   * `act(() => hook.rerender())` turns itself into an *async* act that nobody awaits — the render
-   * and its effects are then deferred past the assertions, and the hook looks as though it ignored
-   * the change.
+   * Render again, picking up whatever the hook's arguments now close over. Already wrapped in
+   * `act`; wrapping it again with `act(() => hook.rerender())` turns it into an async act that
+   * nobody awaits, deferring the render past the assertions.
    */
   rerender(): void;
   unmount(): void;
@@ -86,9 +82,7 @@ export interface HookResult<T> {
 
 /**
  * Mount a hook on its own, for the ones with no component of their own worth rendering.
- *
- * Self-contained rather than built on `setupRoot`, so a test can control when it unmounts — which
- * for anything holding a timer is the interesting moment.
+ * Self-contained rather than built on `setupRoot`, so a test can control when it unmounts.
  */
 export function renderHook<T>(hook: () => T): HookResult<T> {
   const container = document.createElement('div');
@@ -117,11 +111,7 @@ export function renderHook<T>(hook: () => T): HookResult<T> {
 
 /**
  * Give an element a bounding rect, because happy-dom has no layout engine and reports zeros.
- *
- * Anything that converts client coordinates into its own pixel space divides by this — `ScheduleChart`
- * does, so that hit-testing survives a CSS size that disagrees with the width attribute. Without a
- * rect there is nothing to divide by and a pointer test measures the fallback rather than the maths.
- * Assigned on the instance, which happy-dom permits.
+ * `ScheduleChart` converts client coordinates into its own pixel space by dividing by this rect.
  */
 export function stubRect(element: Element, width: number, height: number, left = 0, top = 0): void {
   element.getBoundingClientRect = () =>
@@ -140,7 +130,7 @@ export function stubRect(element: Element, width: number, height: number, left =
 
 /**
  * Dispatch a real `PointerEvent` — happy-dom implements the constructor, and `setPointerCapture` is
- * present and a safe no-op, so the capture path a drag depends on runs unmodified.
+ * a safe no-op, so the capture path a drag depends on runs unmodified.
  */
 export function pointer(
   element: Element,
@@ -154,8 +144,6 @@ export function pointer(
         clientX: position.x,
         clientY: position.y,
         pointerId: position.id ?? 1,
-        // Both modifiers the editing surface reads at pointerdown: Alt inverts squeeze/ripple and
-        // Shift inverts snapping, or adds to the selection when the gesture is a marquee.
         altKey: position.altKey ?? false,
         shiftKey: position.shiftKey ?? false,
       }),
@@ -164,11 +152,10 @@ export function pointer(
 }
 
 /**
- * Set a controlled input's value the way a user would.
- *
- * Assigning `.value` directly also updates React's internal value tracker, so React concludes
- * nothing changed and never fires `onChange`. Going through the prototype's setter leaves the
- * tracker stale, which is what makes the subsequent event look like real input.
+ * Set a controlled input's value the way a user would. Assigning `.value` directly also updates
+ * React's internal value tracker, so React concludes nothing changed and never fires `onChange`.
+ * Going through the prototype's setter leaves the tracker stale, which makes the subsequent event
+ * look like real input.
  */
 export function setInputValue(input: HTMLInputElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
@@ -192,9 +179,8 @@ export function setSelectValue(select: HTMLSelectElement, value: string): void {
 
 /**
  * A key, pressed at an element — or at the document, which is where the app's own shortcuts listen.
- *
- * Dispatched rather than simulated through React: `useKeyboardShortcuts` and the editor's undo both
- * bind to `window`, so what matters is that the event reaches it with the right target.
+ * Dispatched rather than simulated through React, since `useKeyboardShortcuts` and the editor's
+ * undo both bind to `window`.
  */
 export function press(key: string, target: EventTarget = document.body): void {
   act(() => {
@@ -204,13 +190,9 @@ export function press(key: string, target: EventTarget = document.body): void {
 
 /**
  * Flush pending async work — a lazily imported program, a file read, an IndexedDB query — and the
- * renders it causes. A dynamic import settles on a macrotask, so a microtask drain alone is not
- * enough, and a chain of them needs one turn each: fake-indexeddb spends a turn per request, and
- * `App` runs its library read, its settings read and a program load concurrently.
+ * renders it causes. A dynamic import settles on a macrotask, so a microtask drain alone isn't
+ * enough, and a chain of them needs one turn each.
  */
-// The default was twelve ticks, which stopped being enough when the bundled library grew to 55
-// lazily-imported programs: opening one is a dynamic import through Vite's transform, and a preset
-// with ten thousand entries takes several ticks to parse on top of that.
 export async function flush(times = 30): Promise<void> {
   for (let i = 0; i < times; i++) {
     await act(async () => {

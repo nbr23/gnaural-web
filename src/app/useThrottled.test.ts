@@ -39,8 +39,6 @@ describe('useThrottled', () => {
 
     advance(ENGINE_UPDATE_INTERVAL_MS);
 
-    // **The last value is the one that must not be dropped**: it is what the sliders are showing,
-    // and an engine left on an intermediate value is audibly not what the readout says.
     expect(seen).toEqual([1, 30]);
   });
 
@@ -56,7 +54,6 @@ describe('useThrottled', () => {
       advance(ENGINE_UPDATE_INTERVAL_MS);
     }
 
-    // One call per interval, never one per event — and the run ends on the final value.
     expect(seen.length).toBeLessThanOrEqual(6);
     expect(seen.at(-1)).toBe(41);
   });
@@ -77,8 +74,6 @@ describe('useThrottled', () => {
   });
 
   it('calls the latest action, not the one captured when the throttle was created', () => {
-    // The action closes over the player and the settings setter; a stale one would push an edit
-    // into a disposed engine.
     let target = 'first';
     const seen: string[] = [];
     const hook = renderHook(() => useThrottled(() => seen.push(target)));

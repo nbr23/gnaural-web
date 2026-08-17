@@ -1,25 +1,19 @@
 import { useEffect, useState } from 'react';
 
 /**
- * Hash routing, hand-rolled.
- *
- * The fragment rather than a path because there is no server to configure (PLAN.md §2 — no
- * backend), and hand-rolled rather than a router dependency because there is a library and a
- * player and nothing else. It buys one thing that matters on the target platform: Android's back
- * button returns to the library instead of leaving the app.
- *
- * Three kinds of program, three prefixes. Only `#/s/` carries its program with it; the other two
- * are references, one into the bundle and one into IndexedDB.
+ * Hash routing, hand-rolled: the fragment rather than a path since there's no server to configure,
+ * and no router dependency since there's a library and a player and nothing else. It also means
+ * Android's back button returns to the library instead of leaving the app.
  */
 export type Route =
   | { view: 'library' }
-  /** Live mode (§6.1) — sliders, no program to name, so the route carries nothing. */
+  /** Live mode — sliders, no program to name, so the route carries nothing. */
   | { view: 'live' }
   /** A bundled program, by the id in `src/library/programs.ts`. */
   | { view: 'program'; id: string }
   /** A program the user imported, by its IndexedDB key. */
   | { view: 'imported'; id: string }
-  /** A draft being authored (§6.1), by its IndexedDB key. */
+  /** A draft being authored, by its IndexedDB key. */
   | { view: 'editor'; id: string }
   /** A shared program, compressed into the fragment itself — self-contained, so reload-safe. */
   | { view: 'shared'; payload: string };
@@ -41,8 +35,7 @@ export function parseHash(hash: string): Route {
   const editor = /^e\/(.+)$/.exec(path);
   if (editor) return { view: 'editor', id: decodeURIComponent(editor[1]) };
 
-  // base64url by construction, so the payload is taken verbatim — percent-encoding it would only
-  // make an already-long fragment longer.
+  // base64url by construction, so the payload is taken verbatim.
   const shared = /^s\/([A-Za-z0-9\-_]+)$/.exec(path);
   if (shared) return { view: 'shared', payload: shared[1] };
 
@@ -67,13 +60,9 @@ export function formatHash(route: Route): string {
 }
 
 /**
- * Whether the next route change is one the app made, rather than the back button.
- *
- * Changing the fragment does not move the scroll position — there is no element to scroll to — so
- * opening a program from halfway down a long library used to land you halfway down the player.
- * Going *back*, on the other hand, should return to where you were, and the browser already
- * restores that for a history entry. So the scroll reset is tied to the app's own navigations
- * rather than to every `hashchange`.
+ * Whether the next route change is one the app made, rather than the back button. Changing the
+ * fragment doesn't move the scroll position, so navigating scrolls to top explicitly; going back
+ * should restore the previous scroll position, which the browser already does.
  */
 let pushed = false;
 

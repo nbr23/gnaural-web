@@ -1,10 +1,6 @@
-/**
- * Getting a file back out of the app, by whichever route the browser supports — the counterpart
- * to `openFile.ts`.
- *
- * Everything here takes a finished `Blob` and never builds one: the caller owns encoding, so an
- * export can be cancelled or fail with a message before any file dialog appears.
- */
+// Getting a file back out of the app, by whichever route the browser supports — the counterpart to
+// `openFile.ts`. Everything here takes a finished `Blob` and never builds one: the caller owns
+// encoding, so an export can be cancelled or fail before any file dialog appears.
 
 interface FileSystemSaveWindow {
   showSaveFilePicker?: (options: {
@@ -28,13 +24,9 @@ export function fileNameFor(title: string, extension: string): string {
 }
 
 /**
- * Write a blob to disk. Resolves false when the user dismisses the save dialog — a cancel is not
- * an error.
- *
- * The File System Access API where available (Chrome/Edge, including Android — the same route
- * `pickFile` prefers) writes to the chosen file directly, which for a several-hundred-megabyte
- * WAV means the browser streams it rather than holding a download in memory. Everywhere else
- * falls back to an object-URL anchor click.
+ * Write a blob to disk. Resolves false when the user dismisses the save dialog. The File System
+ * Access API where available writes to the chosen file directly, so a several-hundred-megabyte WAV
+ * streams rather than sitting in memory; everywhere else falls back to an object-URL anchor click.
  */
 export async function saveBlob(suggestedName: string, blob: Blob): Promise<boolean> {
   const picker = (window as FileSystemSaveWindow).showSaveFilePicker;

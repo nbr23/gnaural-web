@@ -7,14 +7,7 @@ export function loadFixture(name: string): string {
   return readFileSync(path.join(FIXTURES_DIR, name), 'utf-8');
 }
 
-/**
- * How long a sweep over the whole corpus may take.
- *
- * Vitest's 5 s default was ample for 19 short files and is not for 55: `hypnagogic-gale` alone is
- * 10,080 entries, and happy-dom's `DOMParser` is an order of magnitude slower than a browser's.
- * Parsing every bundled program is a second or two of real work, which is the price of a corpus
- * wide enough to be worth asserting over.
- */
+/** Vitest's 5s default isn't enough for the full corpus — `hypnagogic-gale` alone is 10,080 entries. */
 export const CORPUS_TIMEOUT = 30_000;
 
 /** Every bundled `.gnaural` file, for anything that should hold across the whole corpus. */

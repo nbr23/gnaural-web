@@ -56,7 +56,6 @@ function lines(): Element[] {
 
 const AUDIBLE: VoiceGate = { muted: false, soloed: false };
 
-/** Theta throughout, against the 10 Hz alpha of `makeVoice`. */
 const THETA = makeVoice({ id: 1, description: 'Drift', entries: [makeEntry({ beatFreq: 6 })] });
 
 describe('Readout', () => {
@@ -69,7 +68,6 @@ describe('Readout', () => {
     expect(testRoot.text()).not.toContain('Carrier');
   });
 
-  /** The whole point: two voices in two bands, and neither one speaking for the other. */
   it('gives every audible voice its own band', () => {
     mount(scheduleOf([makeVoice(), THETA]), [AUDIBLE, AUDIBLE]);
 
@@ -80,8 +78,6 @@ describe('Readout', () => {
     expect(lines()[1].textContent).toContain('Theta');
   });
 
-  /** Session mute is what the listener hears, so a silenced voice stops being reported — and with
-   *  one left there is nothing to disambiguate, so the tiles come back. */
   it('drops a voice the session has muted', () => {
     mount(scheduleOf([makeVoice(), THETA]), [AUDIBLE, { muted: true, soloed: false }]);
 
@@ -90,7 +86,6 @@ describe('Readout', () => {
     expect(testRoot.text()).not.toContain('Theta');
   });
 
-  /** Without an engine to ask, the document's own flag is the whole answer. */
   it('falls back to the document mute when there are no gates', () => {
     mount(scheduleOf([makeVoice({ muted: true }), THETA]));
 
@@ -98,17 +93,13 @@ describe('Readout', () => {
     expect(testRoot.text()).not.toContain('Alpha');
   });
 
-  /**
-   * `hidden` says whether the chart draws a voice, not whether it sounds. Reading it here hid a
-   * band the listener was in.
-   */
+  /** `hidden` says whether the chart draws a voice, not whether it sounds. */
   it('reports a voice hidden from the chart', () => {
     mount(scheduleOf([makeVoice({ hidden: true }), THETA]), [AUDIBLE, AUDIBLE]);
 
     expect(lines()).toHaveLength(2);
   });
 
-  /** Noise reads neither field as a tone (§3.3), so it has no band to report. */
   it('ignores voices whose frequencies are not a tone', () => {
     const noise = makeVoice({ id: 1, description: 'Bed', type: VoiceType.PinkNoise });
     mount(scheduleOf([makeVoice(), noise]), [AUDIBLE, AUDIBLE]);
@@ -123,8 +114,6 @@ describe('Readout', () => {
     expect(testRoot.query('.readout')).toBeNull();
   });
 
-  /** Under Delta there is no band to name, so that voice goes without one — its frequencies are
-   *  still true, and they keep the columns the other lines use. */
   it('drops the band of a voice whose beat is off the table, keeping its figures', () => {
     const slow = makeVoice({ id: 1, description: 'Deep', entries: [makeEntry({ beatFreq: 0.2 })] });
     mount(scheduleOf([makeVoice(), slow]), [AUDIBLE, AUDIBLE]);
@@ -144,7 +133,6 @@ describe('Readout', () => {
     expect(testRoot.text()).not.toContain('Band');
   });
 
-  /** A band is a fact about the beat *now*, not about the file: a ramp crosses bands as it runs. */
   it('follows a ramping beat across a band boundary', () => {
     const ramp = makeVoice({
       entries: [makeEntry({ duration: 100, beatFreq: 10 }), makeEntry({ beatFreq: 4 })],

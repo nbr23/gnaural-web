@@ -56,7 +56,6 @@ function anchorsFor(
   });
 }
 
-/** The one block a single-node drag produces, in the grabbed lane. */
 function beatLane(anchors: NonNullable<ReturnType<typeof anchorsFor>>) {
   return anchors.blocks[0].lanes[0];
 }
@@ -74,13 +73,11 @@ describe('dragAnchors', () => {
     expect(anchors.maxTime).toBe(layout.view.end);
   });
 
-  /** No following segment to squeeze into, so the mode does not get a say. */
   it('treats the last node as a ripple whatever the mode says', () => {
     const anchors = anchorsFor(3)!;
     expect(anchors.maxTime).toBe(layout.view.end);
   });
 
-  /** Entry 0's start is the sum of no durations. The drag is value-only, not refused. */
   it('pins the first node in time', () => {
     const anchors = anchorsFor(0)!;
     expect(anchors.minTime).toBe(0);
@@ -118,10 +115,6 @@ describe('dragAnchors', () => {
   });
 });
 
-/**
- * A group drag: one block per affected voice, and the block is a path built once at pointerdown.
- * This is what keeps a selection of seventy nodes costing what a selection of one costs.
- */
 describe('dragAnchors over a selection', () => {
   it('takes the whole run between the lowest and highest selected node', () => {
     const anchors = anchorsFor(1, 'squeeze', [
@@ -131,14 +124,12 @@ describe('dragAnchors over a selection', () => {
 
     expect(anchors.blocks).toHaveLength(1);
     expect(anchors.blocks[0]).toMatchObject({ voice: 0, first: 1, last: 3 });
-    // The run reaches the voice's last entry, so it ripples whatever the control says.
     expect(anchors.blocks[0].rippling).toBe(true);
     expect(beatLane(anchors).block).not.toBeNull();
   });
 
   it('clamps to the tightest of every voice, so the blocks cannot drift apart', () => {
     const twoVoices = schedule([voiceOf(0, [4, 12, 6, 10]), voiceOf(1, [5, 9, 7, 11])]);
-    // The second voice's first entry is short, so it is what stops the group moving earlier.
     twoVoices.voices[1].entries[0] = entry({ beatFreq: 5, duration: 2 });
     const chart = layoutChart(buildChartModel(twoVoices, ['beat', 'base']), 640, 280);
 
@@ -198,11 +189,9 @@ describe('dragOverlay', () => {
 
     expect(beat.node.y).not.toBe(beatLane(anchors).node.y);
     expect(base.node.y).toBe(anchors.blocks[0].lanes[1].node.y);
-    // Both follow in time, because the entry moves for every parameter it carries.
     expect(base.node.x).toBe(beat.node.x);
   });
 
-  /** A squeeze leaves everything past the following node alone, so there is nothing to translate. */
   it('carries no tail under a squeeze', () => {
     const anchors = anchorsFor(1)!;
     const [beat] = dragOverlay(anchors, layout, 15, anchors.value);
@@ -212,10 +201,6 @@ describe('dragOverlay', () => {
     expect(beat.outgoing).not.toBeNull();
   });
 
-  /**
-   * The reason a ripple is O(1) rather than O(entries): every node after the dragged one moves by
-   * the same amount, so the tail is a path built once at pointerdown and translated thereafter.
-   */
   it('translates a pre-built tail under a ripple, and by the node’s own delta', () => {
     const anchors = anchorsFor(1, 'ripple')!;
     const [beat] = dragOverlay(anchors, layout, 15, anchors.value);
@@ -233,10 +218,6 @@ describe('dragOverlay', () => {
     expect(beat.outgoing).not.toBeNull();
   });
 
-  /**
-   * The group equivalent of the tail trick: the block itself is a path built once and translated,
-   * in both axes at once, because a uniform change in value is a uniform change in pixels.
-   */
   it('translates the block rather than rebuilding it, in time and in value together', () => {
     const anchors = anchorsFor(1, 'squeeze', [
       { voice: 0, entry: 1 },
@@ -250,7 +231,6 @@ describe('dragOverlay', () => {
       6,
     );
     expect(beat.block?.dy).not.toBe(0);
-    // Every other lane follows in time alone.
     expect(base.block?.dx).toBe(beat.block?.dx);
     expect(base.block?.dy).toBe(0);
   });

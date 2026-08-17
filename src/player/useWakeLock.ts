@@ -1,16 +1,16 @@
 import { useEffect } from 'react';
 
 /**
- * Hold the screen awake while a program plays (PLAN.md §5.1).
+ * Hold the screen awake while a program plays.
  *
- * **Default off, and a user-facing toggle rather than a side effect of pressing play** — it burns
+ * Default off, and a user-facing toggle rather than a side effect of pressing play — it burns
  * battery, and the common case here is a sleep program where a lit screen is precisely wrong.
- * Playback does not need it: the schedule is already on the audio thread (§4.2), so the screen
- * going off costs nothing.
+ * Playback doesn't need it: the schedule is already on the audio thread, so the screen going off
+ * costs nothing.
  *
- * The sentinel is released by the OS whenever the page is hidden and is not restored on return,
- * so a re-acquire on `visibilitychange` is not belt-and-braces — without it the lock is gone
- * after the first glance at another app.
+ * The sentinel is released by the OS whenever the page is hidden and is not restored on return, so
+ * the re-acquire on `visibilitychange` isn't belt-and-braces — without it the lock is gone after
+ * the first glance at another app.
  */
 export function useWakeLock(enabled: boolean): void {
   useEffect(() => {
@@ -28,8 +28,8 @@ export function useWakeLock(enabled: boolean): void {
           sentinel = null;
         });
       } catch {
-        // Refused — the battery saver is on, or the document is not allowed one. Not an error
-        // worth surfacing: nothing about playback depends on it.
+        // Refused — battery saver is on, or the document isn't allowed one. Nothing about
+        // playback depends on it, so this isn't worth surfacing as an error.
       }
     };
 

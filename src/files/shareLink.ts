@@ -3,24 +3,14 @@ import { serializeSchedule } from '../document/serializer';
 import type { Schedule } from '../document/types';
 
 /**
- * A whole program in a URL, with no server involved (PLAN.md §5.1).
- *
- * The payload is the serialized `.gnaural` deflated and base64url'd into the **fragment** — a
- * fragment is never sent to the server, so a shared link stays as local-first as everything else
- * here (§2, no backend).
- *
- * A sibling of `openFile.ts`/`saveFile.ts` rather than document-layer code: same job of getting a
- * schedule in and out of the app, and `CompressionStream` is a web API the document layer is
- * required to stay free of (§4).
- *
- * `.gnaural` XML is repetitive enough that deflate is dramatic — an ordinary program lands between
- * 716 and 1300 characters, the longest of the Android 19 a 73-minute, 45-entry schedule.
- * `MAX_SHARE_PAYLOAD` is not only a guard against a pathological file, though: four of Gnaural's own
- * presets are past it, `hypnagogic-gale` at 10,080 entries being the extreme, and `useExport` falls
- * back to exporting the file for those.
+ * A whole program in a URL, with no server involved. The payload is the serialized `.gnaural`
+ * deflated and base64url'd into the **fragment** — never sent to the server, so a shared link stays
+ * local-first. `.gnaural` XML is repetitive enough that deflate is dramatic, but `MAX_SHARE_PAYLOAD`
+ * is still needed: four of Gnaural's own presets exceed it (`hypnagogic-gale` at 10,080 entries is
+ * the extreme), and `useExport` falls back to exporting the file for those.
  */
 
-/** §5.1's "fall back to file export past ~8 KB", measured in fragment characters. */
+/** Fall back to file export past this size, measured in fragment characters. */
 export const MAX_SHARE_PAYLOAD = 8192;
 
 export class ShareTooLargeError extends Error {
@@ -57,10 +47,7 @@ async function pipe(bytes: Uint8Array, through: CompressionStream | Decompressio
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-/**
- * base64url — `+/` become `-_` and the padding goes, which is what makes the payload safe to drop
- * into a fragment verbatim, with no percent-encoding to inflate it again.
- */
+/** base64url — `+/` become `-_` and the padding goes, so the payload drops into a fragment verbatim. */
 function toBase64Url(bytes: Uint8Array): string {
   let binary = '';
   // Chunked because `String.fromCharCode(...bytes)` blows the argument limit on a large payload.

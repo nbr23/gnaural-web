@@ -4,19 +4,10 @@ import './UpdatePrompt.css';
 /**
  * Offers the new build once the service worker has one waiting.
  *
- * The registration is `prompt`, not `autoUpdate`, and deliberately so: the 43 programs are lazily
- * imported chunks, and `autoUpdate` claims an open page with a worker whose precache may no longer
- * hold the chunk that page is about to request — a 404 in the middle of a session. Waiting lets
- * the old worker keep serving one consistent build.
- *
- * The cost of that choice is what this component pays off. Without a prompt, a waiting worker
- * activates only once *every* client has closed, so an installed PWA left open can serve a stale
- * build indefinitely — which is not hypothetical here: it is what happened during the Android
- * crackling investigation, where a phone spent a debugging round-trip running the previous build
- * while apparently testing a fix.
- *
- * Dismissing does not update. The worker keeps waiting and the offer returns next launch, which is
- * the right behaviour for someone forty minutes into a sleep programme.
+ * The registration is `prompt`, not `autoUpdate`: the programs are lazily imported chunks, and
+ * `autoUpdate` can claim an open page whose precache no longer holds the chunk it's about to
+ * request. Without a prompt, an installed PWA left open can serve a stale build indefinitely.
+ * Dismissing here doesn't update — the worker keeps waiting and the offer returns next launch.
  */
 export function UpdatePrompt() {
   const {

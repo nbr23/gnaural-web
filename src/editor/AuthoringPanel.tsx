@@ -18,12 +18,9 @@ import type { NodeRef, Selection } from './history';
 
 export interface AuthoringPanelProps {
   schedule: Schedule;
-  /** Only for choosing a default target — nothing here edits a selection. */
   selected: Selection;
   onCommit(schedule: Schedule, label: string): void;
-  /** An edit that rewrites a voice's node list, so it says where the selection should land. */
   onCommitAt(schedule: Schedule, label: string, selection: Selection): void;
-  /** An edit that adds a voice, so it carries a voice map. */
   onStructural(edit: VoiceEdit, label: string, selection?: NodeRef | null): void;
 }
 
@@ -41,24 +38,6 @@ const GENERATOR_NAMES: Record<GeneratorKind, string> = {
   'wake-up': 'Wake-up ramp',
 };
 
-/**
- * §6.1's authoring aids: the things that let someone start a program instead of drawing one.
- *
- * **A generator always writes into a new voice** (the owner's call), so nothing here can destroy
- * work: generating is `insertVoice` with a shape in it, and undo removes the voice it made. Its
- * duration defaults to what the schedule already plays, which is the same rule that keeps `Add
- * voice` from being a §3.7 trap in either direction.
- *
- * **The commands here are voice-scoped or document-scoped, never selection-scoped**, which is what
- * separates them from step 8's group panel: that scales the run of nodes a marquee picked, inside
- * one voice; "Scale program" takes the whole document to a target length, one factor across every
- * voice, so the spread between them survives whatever it is. Neither is expressed in terms of the
- * other and neither consults the squeeze/ripple control.
- *
- * The target voice is an explicit `<select>` rather than an implied "active voice" — step 8 declined
- * to invent one for the marquee, and a chooser that is on screen is not the same thing as a mode.
- * It defaults to the voice the selection is in, because that is usually the one meant.
- */
 export function AuthoringPanel({
   schedule,
   selected,
@@ -81,14 +60,8 @@ export function AuthoringPanel({
   const [to, setTo] = useState<Tone>({ baseFreq: 200, beatFreq: 4 });
 
   const has = schedule.voices.length > 0;
-  /**
-   * How long a generated shape is by default: what the schedule already plays.
-   *
-   * Falling back to `NEW_VOICE_SECONDS` when there is nothing to match is the same rule
-   * `insertVoice` follows, and it is load-bearing rather than tidy — a schedule with no voices has a
-   * playing length of zero, and without this the very first generate on an empty draft would build
-   * a zero-length shape and quietly do nothing at all.
-   */
+  // A schedule with no voices plays for zero seconds, so fall back to NEW_VOICE_SECONDS or the
+  // first generate on an empty draft would build a zero-length shape and do nothing.
   const fallback = playing || NEW_VOICE_SECONDS;
   const duration = numberOr(seconds, fallback) || fallback;
 
@@ -209,9 +182,6 @@ export function AuthoringPanel({
                 onChange={(event) => setOffset(event.target.value)}
               />
             </label>
-            {/* Deliberately not "← Earlier / Later →", which is what the group panel's *move* says:
-                these rotate a whole voice, and two pairs of buttons a screen apart reading the same
-                words while meaning different things is worse than a longer label. */}
             <button
               type="button"
               className="button"
@@ -224,8 +194,6 @@ export function AuthoringPanel({
             </button>
           </div>
 
-          {/* Why an offset is a rotation and not a delay: the format has no per-voice start, and
-              §3.5's wrap already makes a voice a loop. */}
           <p className="editor__hint">
             A voice has no start time of its own, so offsetting rotates it: the end wraps round to
             the beginning and the voice keeps its length.
@@ -255,8 +223,6 @@ export function AuthoringPanel({
             ))}
           </select>
         </label>
-        {/* The shape is the same numbers either way — a carrier and a rate — so the kind is a
-            choice about the voice it lands in rather than about what is generated. */}
         <label className="editor__field">
           <span>As</span>
           <select value={voiceKind} onChange={(event) => setVoiceKind(event.target.value as VoiceKind)}>
@@ -323,15 +289,8 @@ export function AuthoringPanel({
   );
 }
 
-/**
- * A base/beat pair, with the EEG bands as one-press targets.
- *
- * §6.1 lists "EEG-band presets" beside the other generators; they are a *hold* at the band's own
- * geometric centre, so they are chips on this pair rather than a fifth shape. Deliberately the
- * band's own centre and not Live mode's slider-bounded one — which is why Gamma reads 54.8 Hz and
- * the validation panel will say, correctly, that a beat that far above the bands is not heard as
- * one.
- */
+// The band chips use each band's own geometric centre, not Live mode's slider-bounded one — hence
+// Gamma reading 54.8 Hz and tripping the validation panel's "not heard as one" warning.
 function ToneFields({
   legend,
   tone,

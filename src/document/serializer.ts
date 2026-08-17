@@ -1,9 +1,6 @@
 import type { Entry, Schedule, Voice } from './types';
 
-/**
- * Schedule-level `preserved` keys with a canonical position in the element order (PLAN.md
- * §3.1). Every other `preserved` key is unrecognised/future data and gets appended after them.
- */
+/** Schedule-level `preserved` keys with a canonical position; every other key is appended after them. */
 const CANONICAL_SCHEDULE_PRESERVED_KEYS = ['gnauralfile_version', 'gnaural_version', 'date', 'graphview'];
 
 function escapeXmlText(text: string): string {
@@ -28,12 +25,9 @@ function voiceDuration(voice: Voice): number {
 }
 
 /**
- * Serialize a `Schedule` back to `.gnaural` XML.
- *
- * `totaltime`, `voicecount`, and `totalentrycount` are always recomputed from the actual voices
- * and entries (PLAN.md §3.4) — never taken from `preserved`, even if the source file declared
- * different values. Every other unrecognised element/attribute captured in `preserved` at parse
- * time is re-emitted verbatim.
+ * Serialize a `Schedule` back to `.gnaural` XML. `totaltime`, `voicecount`, and `totalentrycount`
+ * are always recomputed from the actual voices and entries, never taken from `preserved`. Every
+ * other unrecognised element/attribute captured in `preserved` at parse time is re-emitted verbatim.
  */
 export function serializeSchedule(schedule: Schedule): string {
   const parts: string[] = [];
@@ -92,12 +86,10 @@ function serializeVoice(voice: Voice): string {
 }
 
 /**
- * The `parent` attribute an entry will be written with.
- *
- * Real files always carry one, so in practice it round-trips from `preserved`; the owning voice's
- * id is the fallback for an entry this app created. Exported because it is not merely a detail of
- * serialization: Gnaural rebuilds its voices from this value and nothing else (`SG_RestoreBackupData`,
- * ScheduleGUI.c:2213), so `warnings.ts` has to read exactly what will be written.
+ * The `parent` attribute an entry will be written with. Real files always carry one, so in practice
+ * it round-trips from `preserved`; the owning voice's id is the fallback for an entry this app
+ * created. Exported because Gnaural rebuilds its voices from this value alone on reload, so
+ * `warnings.ts` has to read exactly what will be written.
  */
 export function entryParent(entry: Entry, voiceId: number): string {
   return entry.preserved.parent ?? String(voiceId);

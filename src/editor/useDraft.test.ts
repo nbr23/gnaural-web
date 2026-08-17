@@ -51,7 +51,6 @@ describe('useDraft', () => {
     hook.unmount();
   });
 
-  /** Leaving the editor a moment after typing is the ordinary case, not an edge one. */
   it('flushes a pending write on unmount', async () => {
     const { draft, schedule } = await openDraft();
     let document: Schedule = schedule;
@@ -80,7 +79,6 @@ describe('useDraft', () => {
 
     const saved = await getDraft(draft.id);
     expect(saved?.title).toBe('Nap');
-    // One write, so one timestamp: the intermediate documents never reached the database.
     expect(saved?.updatedAt).toBeGreaterThan(draft.updatedAt);
     hook.unmount();
   });

@@ -9,19 +9,8 @@ import { SEEK_STEP_SECONDS } from './usePlayer';
 import './Controls.css';
 
 /**
- * The controls every view that plays something carries: the transport, the volume and the wake
- * lock.
- *
- * Shared rather than duplicated because the wake-lock copy is load-bearing — it says playback
- * survives the screen going off, which is the thing people most need told and the thing §5.3
- * spent a hardware session confirming. Two copies of that sentence would eventually disagree. The
- * transport is here for the same reason one step down: four surfaces press play (the player, the
- * editor, Live and the now-playing bar) and they must not disagree about what the icon means.
- *
- * **Icons with the word underneath.** The glyph is what you see; a `visually-hidden` span carries
- * the name, so the accessible name is still "Play" rather than nothing, and `title` puts it in a
- * tooltip — which is the only place a seek button can say *how far* it seeks now that it no longer
- * says "−30s" on its face.
+ * Shared across every view that plays something (player, editor, Live, now-playing bar), so their
+ * transport and wake-lock copy can't drift out of sync.
  */
 
 export function PlayPauseButton({

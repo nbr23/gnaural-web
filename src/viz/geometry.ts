@@ -1,11 +1,9 @@
 /**
  * Pure chart geometry: schedule -> lane models -> pixel layout -> hit-testing.
  *
- * Deliberately renderer-agnostic (PLAN.md §6.2). Nothing here imports React, touches the DOM, or
- * knows what SVG is; the one SVG-shaped function, `polylinePath`, is a thin formatter over point
- * arrays that are themselves the primary output, so a Canvas renderer could consume the same
- * model. Phase 1's editor hit-tests through `timeAtPixel` / `nearestBreakpoint` rather than
- * through DOM events on individual marks.
+ * Deliberately renderer-agnostic. Nothing here imports React, touches the DOM, or knows what SVG
+ * is; the one SVG-shaped function, `polylinePath`, is a thin formatter over point arrays that are
+ * themselves the primary output, so a Canvas renderer could consume the same model.
  */
 
 import { formatHz } from '../app/format';
@@ -21,13 +19,10 @@ import { linearScale } from './scales';
 export type LaneId = 'beat' | 'base' | 'volumeLeft' | 'volumeRight';
 
 /**
- * The stretch of schedule time the chart draws, in seconds — §6.1's "zoom and pan on the time axis".
- *
- * **It belongs to the layout, never to the model.** `buildChartModel` compiles every voice and is
- * memoised on the document; a window that reached it would recompile all of them on every zoom
- * frame. What a window changes is one scale, so it changes in `layoutChart` and everything
- * downstream — `polylinePath`, `timeAtPixel`, `nearestBreakpoint`, the drag geometry, the
- * validation marks — follows for free through `layout.timeScale`.
+ * The stretch of schedule time the chart draws, in seconds. It belongs to the layout, never to
+ * the model: `buildChartModel` compiles every voice and is memoised on the document, so a window
+ * that reached it would recompile all of them on every zoom frame. A window changes one scale in
+ * `layoutChart`, and everything downstream follows for free through `layout.timeScale`.
  */
 export interface ViewWindow {
   start: number;
@@ -35,14 +30,10 @@ export interface ViewWindow {
 }
 
 /**
- * The narrowest window, in seconds.
- *
- * A floor rather than a judgement about how far anyone should be able to zoom: 22 of the 43 bundled
- * files carry entries 0.001 s apart or closer — Gnaural's own output writes an instantaneous jump as
- * a zero-length segment — and no reachable window separates those; 0.001 s of a 2331 s programme is
- * a millionth of the axis. Zoom is what makes the *ordinary* clusters addressable
- * (median gap 1.16 px at 640 px on `airplanetravelaid`, against a 12 px hit radius); the arrow-walk
- * and the numeric panel are what reach the rest, which is why neither is optional.
+ * The narrowest window, in seconds. A floor rather than a judgement about how far anyone should be
+ * able to zoom: some bundled files carry entries 0.001s apart — Gnaural's own output writes an
+ * instantaneous jump as a zero-length segment — and no reachable window separates those. The
+ * arrow-walk and numeric panel are what reach clusters this fine; zoom alone can't.
  */
 export const MIN_VIEW_SECONDS = 0.5;
 
@@ -102,8 +93,7 @@ interface LaneDefinition {
   domainOf(values: number[], padding: number): [number, number];
   /**
    * Whether a fitted domain looks only at voices whose `basefreq`/`beatfreq` mean a carrier and a
-   * rate (`isTonalType`) — see `fittedValues`. Volume means the same thing on every type, so only
-   * the two frequency lanes set it.
+   * rate (`isTonalType`) — see `fittedValues`. Only the two frequency lanes set it.
    */
   tonalFit?: boolean;
   format(value: number): string;
@@ -113,12 +103,9 @@ interface LaneDefinition {
 export const DOMAIN_PADDING = 0.1;
 
 /**
- * Headroom for a lane that is being dragged in.
- *
- * A drag can only reach what is on screen, so 10% around the data would let a beat curve spanning
- * 4–12 Hz be dragged no further than 3.2–12.8 Hz. Wider is more useful and still bounded; anything
- * outside it is what §6.1 asks for a numeric panel for ("dragging is imprecise and people want
- * exact values"), and a manual axis override is step 8's.
+ * Headroom for a lane that is being dragged in. A drag can only reach what's on screen, so the
+ * default 10% padding would let a beat curve spanning 4–12 Hz be dragged no further than
+ * 3.2–12.8 Hz; anything beyond this wider bound needs the numeric panel or a manual axis override.
  */
 export const EDITOR_DOMAIN_PADDING = 0.35;
 
@@ -166,10 +153,8 @@ export function laneField(id: LaneId): EntryValueField {
 
 export interface VoiceIdentity {
   voiceId: number;
-  /**
-   * Categorical palette slot. Derived from the voice's position in `schedule.voices`, never from
-   * its rank or its index among *visible* voices — hiding a voice must not repaint the others.
-   */
+  /** Categorical palette slot, derived from position in `schedule.voices` — never from index among
+   *  *visible* voices, since hiding a voice must not repaint the others. */
   slot: number;
   label: string;
   type: VoiceType;
@@ -183,11 +168,9 @@ export interface SeriesPoint {
 }
 
 /**
- * A node the caller wants drawn attention to — §6.1's inline validation, marked where it happened.
- *
+ * A node the caller wants drawn attention to — inline validation, marked where it happened.
  * Addressed like everything else here, by index into `schedule.voices` and into that voice's
- * entries. `lanes: null` means it belongs to no particular lane; a list means those lanes, and a
- * lane that is closed is not a place a mark can hide (see `IssueMarks`).
+ * entries. `lanes: null` means it belongs to no particular lane; a list means those lanes.
  */
 export interface ChartMark {
   voice: number;
@@ -214,12 +197,10 @@ export interface LaneModel {
 export interface ChartModel {
   /** Length of the longest drawn voice — the extent, so no plotted curve is cropped. */
   duration: number;
-  /**
-   * Where playback actually ends: the shortest voice in the *whole schedule*, hidden and
-   * unrenderable voices included, since any of them can end it (§3.7).
-   */
+  /** Where playback actually ends: the shortest voice in the *whole schedule*, hidden and
+   *  unrenderable voices included, since any of them can end it. */
   playbackDuration: number;
-  /** True when voices differ in length by more than a rounding error, so the §3.7 case is live. */
+  /** True when voices differ in length by more than a rounding error. */
   truncated: boolean;
   voices: VoiceIdentity[];
   lanes: LaneModel[];
@@ -230,19 +211,14 @@ function voiceLabel(voice: Voice): string {
 }
 
 /**
- * The values a lane fits its domain to.
+ * The values a lane fits its domain to. The two frequency lanes fit to tonal voices alone, because
+ * on every other type those fields are not frequencies — a water voice's `basefreq` is a
+ * per-sample probability and its `beatfreq` a drop count, and a noise voice's are just 100 and 0.
+ * Fitted together with a real carrier, any of them flattens every tone curve into a few pixels.
  *
- * **The two frequency lanes fit to tonal voices alone**, because on every other type those fields
- * are not frequencies: a water voice's `basefreq` is a per-sample probability of 0.00035 and its
- * `beatfreq` a drop count of up to 100, and a noise voice's are the 100 and 0 all nine in the
- * corpus carry. Fitted together with a carrier at 200 Hz, any of them flattens every tone curve in
- * the lane into a few pixels — reachable with dirty data since step 5, and ordinary once types 5
- * and 6 can be added.
- *
- * A schedule with no tonal voice at all falls back to fitting everything: there is then nothing to
- * protect, and a lane fitted to no values would draw a noise-only or water-only file as an empty
- * 0–1 axis. Values the fit excludes are still reachable — `LaneRanges` is the manual override, and
- * `NodePanel` is the exact one.
+ * A schedule with no tonal voice at all falls back to fitting everything, since a lane fitted to
+ * no values would draw a noise-only or water-only file as an empty 0–1 axis. Values the fit
+ * excludes are still reachable — `LaneRanges` is the manual override, and `NodePanel` the exact one.
  */
 function fittedValues(series: VoiceSeries[], definition: LaneDefinition): number[] {
   const flatten = (subset: VoiceSeries[]) => subset.flatMap((s) => s.points.map((p) => p.value));
@@ -262,12 +238,10 @@ function paddedDomain(values: number[], padding: number): [number, number] {
 }
 
 /**
- * Volume is bounded and its endpoints mean something, so the lane is **not** fitted to its data:
- * a program running 0.50–0.52 would otherwise read as a dramatic swing, and two voices at quite
- * different levels would draw identically.
- *
- * Values above 1 are not clamped. §3.4 says real files are dirty, and an out-of-range volume has to
- * be visibly out of range for step 7's validation to have anything to point at.
+ * Volume is bounded and its endpoints mean something, so the lane is not fitted to its data: a
+ * program running 0.50–0.52 would otherwise read as a dramatic swing, and two voices at different
+ * levels would draw identically. Values above 1 aren't clamped — an out-of-range volume has to be
+ * visibly out of range for validation to have anything to point at.
  */
 function volumeDomain(values: number[]): [number, number] {
   const max = values.length > 0 ? Math.max(...values) : 1;
@@ -279,22 +253,17 @@ function formatVolume(value: number): string {
 }
 
 /**
- * Manual y-axis bounds, per lane — §6.1's "vertical axis auto-scales to content with a manual
- * override". A lane with no entry here is fitted to its data as it always was.
- *
- * The override is what makes a value reachable by dragging at all when it is far outside the
- * document's own range: a lane fitted to a 200–210 Hz curve, even at `EDITOR_DOMAIN_PADDING`,
- * cannot be dragged to 400 Hz. Session state, like the view window and the open lanes.
+ * Manual y-axis bounds, per lane. A lane with no entry here is fitted to its data as it always
+ * was. The override is what makes a value reachable by dragging when it's far outside the
+ * document's own range — a lane fitted to a 200–210 Hz curve, even at `EDITOR_DOMAIN_PADDING`,
+ * can't be dragged to 400 Hz.
  */
 export type LaneDomains = Partial<Record<LaneId, readonly [number, number]>>;
 
 /**
- * The extent a chart of this schedule draws: its longest *visible* voice.
- *
- * `buildChartModel` reports the same number on the model it returns, and calls this to get it — one
- * rule, so a caller that needs the extent without building a model (the editor's zoom controls) and
- * the model itself cannot come to disagree about how long the picture is. Hidden voices are omitted
- * for the reason the model omits them: `voice_hide` is editor presentation state.
+ * The extent a chart of this schedule draws: its longest *visible* voice. `buildChartModel` calls
+ * this too, so a caller that needs the extent without building a model (the editor's zoom
+ * controls) can't come to disagree with the model about how long the picture is.
  */
 export function drawnDuration(schedule: Schedule): number {
   const drawn = schedule.voices
@@ -307,13 +276,12 @@ export function drawnDuration(schedule: Schedule): number {
  * Build the plottable model for a schedule.
  *
  * Curves come from `compileVoice`, not from the raw entries: it supplies absolute times and the
- * unconditional wrap back to entry[0] over the final segment (§3.5), so the picture matches what
- * is actually heard rather than stopping short at the last authored breakpoint.
+ * unconditional wrap back to entry[0] over the final segment, so the picture matches what is
+ * actually heard rather than stopping short at the last authored breakpoint.
  *
- * Voices with `hidden` set are omitted — the format defines `voice_hide` as editor presentation
- * state. Non-binaural voices are kept: their entries carry real base/beat values that Phase 1
- * must be able to edit, and the legend labels their type so a reader knows the curve is not
- * audible as a tone.
+ * Voices with `hidden` set are omitted, since that's editor presentation state. Non-binaural
+ * voices are kept — the legend labels their type so a reader knows the curve isn't audible as a
+ * tone.
  */
 export function buildChartModel(
   schedule: Schedule,
@@ -372,7 +340,7 @@ export function buildChartModel(
   };
 }
 
-/** Interpolated value of a series at `time`, or null once the voice has ended (§3.7). */
+/** Interpolated value of a series at `time`, or null once the voice has ended. */
 export function seriesValueAt(series: VoiceSeries, time: number): number | null {
   const { points } = series;
   if (points.length === 0) return null;
@@ -474,14 +442,9 @@ export function layoutChart(
 
 /**
  * Which points a windowed lane actually has to draw: everything inside, plus one either side.
- *
- * The neighbours are not an optimisation detail, they are what makes the line *enter* the window
- * from off-screen instead of starting at the first visible node. Returned as slice bounds so a
- * caller can keep each point's own index, which is what addresses an entry.
- *
- * This is where zoom stops being expensive. A full rebuild of the densest bundled document costs
- * 10.7 ms of React and DOM at four lanes against 0.14 ms of geometry, so the saving that matters is
- * *elements not created*: at 4× zoom only 6 of that document's 80 points are inside the window.
+ * The neighbours make the line *enter* the window from off-screen instead of starting at the
+ * first visible node. Returned as slice bounds so a caller can keep each point's own index, which
+ * is what addresses an entry.
  */
 export function visibleRange(points: readonly SeriesPoint[], view: ViewWindow): [number, number] {
   if (points.length === 0) return [0, 0];
@@ -504,15 +467,14 @@ export interface PixelRect {
 }
 
 /**
- * Every authored node inside a rectangle — §6.1's marquee.
+ * Every authored node inside a rectangle — the marquee selection.
  *
- * **The union across lanes, not one lane's answer.** A node is one entry that appears once per
- * lane, so a rectangle dragged across the beat lane and into the base lane means the nodes it
- * covers in either. It spans voices for the reason step 6 gave for insert: empty space cannot name
- * a voice, so a marquee restricted to one would need an "active voice" this editor does not have.
+ * The union across lanes, not one lane's answer: a node is one entry that appears once per lane,
+ * so a rectangle dragged across the beat lane and into the base lane means the nodes it covers in
+ * either. It spans voices too, since empty space can't name one.
  *
- * §3.5's terminal wrap point is excluded, the same rule `nearestBreakpoint`'s `entriesOnly` uses:
- * it is derived rather than authored, so it is not a thing a selection can contain.
+ * The terminal wrap point is excluded, the same rule `nearestBreakpoint`'s `entriesOnly` uses: it's
+ * derived rather than authored, so it isn't a thing a selection can contain.
  */
 export function nodesInRect(layout: ChartLayout, rect: PixelRect): { voice: number; entry: number }[] {
   const left = Math.min(rect.x0, rect.x1);
@@ -562,17 +524,15 @@ export interface BreakpointHit {
   /** Index into `schedule.voices` — the same keying `NodeRef` and the engine's mute gates use. */
   voice: number;
   /**
-   * Index into that voice's entries, or **null at the terminal point**.
-   *
-   * `compileVoice` emits one event per entry plus §3.5's unconditional wrap back to entry[0], so
-   * every point but the last addresses an entry and the last one addresses nothing: its value is
-   * entry[0]'s and its time is the sum of the durations. It is derived, not authored.
+   * Index into that voice's entries, or null at the terminal point. `compileVoice` emits one event
+   * per entry plus the unconditional wrap back to entry[0], so the last point addresses nothing:
+   * it is derived, not authored.
    */
   entry: number | null;
   distance: number;
 }
 
-/** Whether a point in a compiled series is §3.5's derived wrap rather than an authored entry. */
+/** Whether a point in a compiled series is the derived wrap rather than an authored entry. */
 export function isTerminalPoint(series: VoiceSeries, index: number): boolean {
   return index === series.points.length - 1;
 }
@@ -580,10 +540,8 @@ export function isTerminalPoint(series: VoiceSeries, index: number): boolean {
 /**
  * Closest authored breakpoint to a pixel position within `maxDistance`, across every series in
  * the lane. Read-only mode uses this to surface where a voice's entries actually sit; the editor
- * uses the same call to decide what a drag grabs.
- *
- * `entriesOnly` excludes the terminal point, which the editor does because that point is not
- * editable: a pointer there is then an ordinary miss rather than a tap that visibly does nothing.
+ * uses the same call to decide what a drag grabs. `entriesOnly` excludes the terminal point, since
+ * it isn't editable — a pointer there is then an ordinary miss.
  */
 export function nearestBreakpoint(
   lane: LaneLayout,

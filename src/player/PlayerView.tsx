@@ -24,16 +24,12 @@ import type { Player } from './usePlayer';
 import { SEEK_STEP_SECONDS } from './usePlayer';
 import './PlayerView.css';
 
-/**
- * How tall the plot is drawn, in px — a number rather than a rule, since the SVG is laid out from
- * it. Short enough on a phone that the transport stays on the same screen as the chart, taller
- * where the chart sits in a column of its own.
- */
+/** Short enough on a phone that the transport stays on screen with the chart. */
 const CHART_HEIGHT = { narrow: 200, wide: 320 };
 
 export interface PlayerViewProps {
   schedule: Schedule;
-  /** What the *file* contained (§3.4). What the *program* does is derived here from the model. */
+  /** What the *file* contained. What the *program* does is derived here from the model. */
   warnings: ScheduleWarning[];
   subtitle?: string;
   player: Player;
@@ -49,7 +45,7 @@ export interface PlayerViewProps {
   onWakeLockChange(enabled: boolean): void;
   /** Offered only for a program the library does not already hold — today, a shared link. */
   onSaveToLibrary?: () => void;
-  /** Fork this program into a draft and open the editor (§6.1). Never edits it in place. */
+  /** Fork this program into a draft and open the editor. Never edits it in place. */
   onEdit: () => void;
 }
 
@@ -72,8 +68,8 @@ export function PlayerView({
 }: PlayerViewProps) {
   const title = schedule.title.trim() || 'Untitled program';
 
-  // The file's own oddities (§3.4, produced at parse time) and what the program will actually do
-  // (§3.3, §3.7, derived here) are the same statement to a listener, so they read as one list.
+  // The file's own oddities and what the program will actually do are the same statement to a
+  // listener, so they read as one list.
   const all = useMemo(() => [...warnings, ...scheduleWarnings(schedule)], [warnings, schedule]);
   const silent = all.some((warning) => warning.kind === 'nothing-to-play');
 
@@ -82,8 +78,8 @@ export function PlayerView({
 
   return (
     <div className="player">
-      {/* Everything about *listening*. On a wide screen this column stays where it is while the
-          panels beside it scroll, so the chart and the transport are never scrolled away from. */}
+      {/* On a wide screen this column stays put while the panels beside it scroll, so the chart
+          and transport are never scrolled away from. */}
       <div className="player__stage">
         <header className="player__header">
           <button type="button" className="back-link" onClick={() => navigate(LIBRARY)}>
@@ -95,12 +91,12 @@ export function PlayerView({
           )}
         </header>
 
-        {/* With the program rather than with the panels, and never inside one: a file that will
-            not play the way it reads has to say so where the Play button is. */}
+        {/* Outside any panel: a file that won't play the way it reads has to say so where the
+            Play button is. */}
         <WarningList warnings={all} />
 
-        {/* No seek on touch: a plot wide enough to read is wide enough to brush past, and the
-            timeline below is the deliberate way to move the playhead. See `useCoarsePointer`. */}
+        {/* No seek on touch: a plot wide enough to read is wide enough to brush past, so the
+            timeline below is the deliberate way to move the playhead. */}
         <ScheduleChart
           schedule={schedule}
           currentTime={player.offset}
@@ -111,9 +107,8 @@ export function PlayerView({
 
         <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />
 
-        {/* The timeline plots one pass, because that is the curve; a repeating schedule replays it
-            rather than extending it (§3.2). Which pass you are on is the part the timeline cannot
-            show. */}
+        {/* The timeline plots one pass; a repeating schedule replays it rather than extending it.
+            Which pass you're on is the part the timeline can't show. */}
         {schedule.loops <= 0 ? (
           <p className="player__passes">Repeats until stopped — pass {player.pass + 1}</p>
         ) : (
@@ -124,15 +119,14 @@ export function PlayerView({
           )
         )}
 
-        {/* Sticky to the bottom of the viewport on a phone: the panels below run long, and the one
-            control nobody should have to scroll for is the one that stops the sound. */}
+        {/* Sticky to the bottom of the viewport on a phone: the one control nobody should have to
+            scroll for is the one that stops the sound. */}
         <div className="player__transport">
           <SeekButton
             direction="back"
             onClick={() => player.seek(player.offset - SEEK_STEP_SECONDS)}
           />
-          {/* Nothing renderable means Play would produce silence for the schedule's full length.
-              The warning above says why; a disabled button is what stops it being a mystery. */}
+          {/* Nothing renderable means Play would produce silence for the schedule's full length. */}
           <PlayPauseButton
             playing={player.playing}
             disabled={silent}
@@ -143,21 +137,16 @@ export function PlayerView({
             onClick={() => player.seek(player.offset + SEEK_STEP_SECONDS)}
           />
           <StopButton onClick={player.stop} />
-          {/* The elapsed time is on the timeline directly above, where it sits against the
-              duration it is a fraction of. Volume takes the space it used to: it belongs with the
-              controls you reach for while listening, and on a phone that row is the fixed one. */}
           <VolumeSlider value={masterGain} onChange={onMasterGainChange} />
         </div>
 
-        {/* Below the transport, because it is not what anyone came here to look at: the chart
-            above already draws every one of these curves for the whole program, and this only
-            says where on them the playhead is. Last in the column on a phone, where the transport
-            is fixed to the viewport and this scrolls under nothing. */}
+        {/* Below the transport: the chart above already draws these curves for the whole program,
+            and this only says where on them the playhead is. */}
         <Readout schedule={schedule} offset={player.offset} gates={player.voiceGates} />
       </div>
 
-      {/* Everything *about* the program. Folded away by default on a phone, where the page would
-          otherwise be several screens of controls nobody asked for yet. */}
+      {/* Folded away by default on a phone, where this would otherwise be several screens of
+          controls nobody asked for yet. */}
       <div className="player__aside">
         {schedule.description.trim() && (
           <p className="player__description">{schedule.description.trim()}</p>
@@ -169,8 +158,8 @@ export function PlayerView({
               Add to library
             </button>
           )}
-          {/* A copy, always: a bundled program is read-only by nature, and editing an imported one
-              in place would rewrite the file someone brought in. */}
+          {/* Always a copy: editing an imported program in place would rewrite the file someone
+              brought in. */}
           <button type="button" className="button" onClick={onEdit}>
             Edit a copy
           </button>

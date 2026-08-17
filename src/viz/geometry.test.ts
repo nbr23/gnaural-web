@@ -75,7 +75,7 @@ describe('buildChartModel', () => {
     ]);
   });
 
-  it('plots the unconditional wrap back to entry[0] over the final segment (§3.5)', () => {
+  it('plots the unconditional wrap back to entry[0] over the final segment', () => {
     const { lanes, duration } = buildChartModel(makeSchedule([twoEntryVoice]));
     const points = lanes[0].series[0].points;
 
@@ -84,7 +84,7 @@ describe('buildChartModel', () => {
     expect(points[2]).toEqual({ time: 20, value: 10 });
   });
 
-  it('gives each voice its own true length rather than padding to a common one (§3.7)', () => {
+  it('gives each voice its own true length rather than padding to a common one', () => {
     const short = makeVoice({ id: 1, entries: [makeEntry({ duration: 5, baseFreq: 150, beatFreq: 6 })] });
     const model = buildChartModel(makeSchedule([twoEntryVoice, short]));
 
@@ -111,7 +111,6 @@ describe('buildChartModel', () => {
     const model = buildChartModel(makeSchedule([twoEntryVoice, hidden, third]));
 
     expect(model.voices.map((v) => v.voiceId)).toEqual([0, 2]);
-    // Slot follows position in the schedule, so hiding a voice never repaints the survivors.
     expect(model.voices.map((v) => v.slot)).toEqual([0, 2]);
   });
 
@@ -151,7 +150,7 @@ describe('buildChartModel on the powernap fixture', () => {
   const schedule = parseSchedule(loadFixture('powernap.gnaural'));
   const model = buildChartModel(schedule);
 
-  it('plots the one real voice, not the three the header declares (§3.4)', () => {
+  it('plots the one real voice, not the three the header declares', () => {
     expect(model.voices).toHaveLength(1);
     expect(model.truncated).toBe(false);
   });
@@ -161,14 +160,11 @@ describe('buildChartModel on the powernap fixture', () => {
     const beatValues = beat.series[0].points.map((p) => p.value);
     const baseValues = base.series[0].points.map((p) => p.value);
 
-    // The voice's own description is "164 to 110"; PLAN.md §8's summary table says 164->153,
-    // which is the shallowest point of the descent rather than its floor.
     expect(baseValues[0]).toBeCloseTo(164, 6);
     expect(baseValues[baseValues.length - 1]).toBeCloseTo(164, 6);
     expect(Math.min(...baseValues)).toBeCloseTo(110, 6);
     expect(Math.max(...beatValues)).toBeCloseTo(11, 0);
     expect(Math.min(...beatValues)).toBeCloseTo(4, 0);
-    // PLAN.md §8 says these durations sum to 1200.02; they sum to exactly 1200.
     expect(model.duration).toBeCloseTo(1200, 6);
   });
 });
@@ -176,7 +172,7 @@ describe('buildChartModel on the powernap fixture', () => {
 describe('seriesValueAt', () => {
   const series = buildChartModel(makeSchedule([twoEntryVoice])).lanes[0].series[0];
 
-  it('interpolates linearly between breakpoints (§3.5)', () => {
+  it('interpolates linearly between breakpoints', () => {
     expect(seriesValueAt(series, 5)).toBeCloseTo(7);
     expect(seriesValueAt(series, 15)).toBeCloseTo(7);
   });
@@ -261,7 +257,7 @@ describe('polylinePath', () => {
   });
 });
 
-describe('the volume lanes (§6.1)', () => {
+describe('the volume lanes', () => {
   const voice = makeVoice({
     id: 0,
     entries: [
@@ -278,12 +274,9 @@ describe('the volume lanes (§6.1)', () => {
   });
 
   /**
-   * Volume is bounded and its endpoints mean something, unlike a frequency. Fitted to its data, the
-   * 0.50–0.52 curve above would read as a dramatic swing and the 0.2 curve would look identical to
-   * it. The two lanes also have to be comparable to each other: the Android set is centred
-   * throughout, while seven of Gnaural's own presets pan — `hypnagogic-gale` at 10,049 entries —
-   * and a pair of separately fitted lanes would draw a hard-panned voice and a centred one the
-   * same.
+   * Volume is bounded and its endpoints mean something, unlike a frequency. Fitted to its data,
+   * the 0.50–0.52 curve above would read as a dramatic swing, and a hard-panned voice and a
+   * centred one would draw the same.
    */
   it('is a fixed 0-1 domain rather than one fitted to the data', () => {
     const { lanes } = buildChartModel(makeSchedule([voice]), ['volumeLeft', 'volumeRight']);
@@ -291,7 +284,6 @@ describe('the volume lanes (§6.1)', () => {
     expect(lanes[1].domain).toEqual([0, 1]);
   });
 
-  /** §3.4: real files are dirty, and an out-of-range volume has to be visibly out of range. */
   it('grows above 1 rather than clamping a value the file actually carries', () => {
     const loud = makeVoice({
       id: 0,
@@ -331,17 +323,14 @@ describe('hit-testing for the editor', () => {
 
   it('reports the voice and entry a document edit would address', () => {
     const hit = hitAt(1, true);
-    // Keyed by index into `schedule.voices`, since §3.4's ids are not unique.
+    // Keyed by index into `schedule.voices`, since voice ids are not unique.
     expect(hit?.voice).toBe(0);
     expect(hit?.entry).toBe(1);
   });
 
-  /**
-   * `compileVoice` emits one event per entry plus §3.5's unconditional wrap, so the final point is
-   * derived: its value is entry[0]'s and its time is the sum of the durations. The read-only chart
-   * still highlights it on hover; the editor excludes it, so a pointer there is an ordinary miss
-   * rather than a tap on something that cannot move.
-   */
+  /** `compileVoice` emits one event per entry plus an unconditional wrap, so the final point is
+   *  derived. The editor excludes it, so a pointer there is an ordinary miss rather than a tap on
+   *  something that can't move. */
   it('marks the wrap point as no entry, and excludes it when asked', () => {
     const terminal = points.length - 1;
     expect(hitAt(terminal, false)?.entry).toBeNull();
@@ -351,12 +340,8 @@ describe('hit-testing for the editor', () => {
 });
 
 /**
- * §6.1's zoom and pan, as arithmetic on a window rather than as a redraw.
- *
- * The window lives on the *layout*, so the compiled model above it is untouched by a zoom — which
- * is the whole reason a zoom does not recompile every voice. What it does still cost is a React
- * rebuild of the picture, measured at 10.7 ms for the densest bundled document at four lanes; see
- * PROGRESS.md for why that is what rate-limits the gesture.
+ * Zoom and pan, as arithmetic on a window rather than as a redraw. The window lives on the layout,
+ * so the compiled model above it is untouched by a zoom — a zoom doesn't recompile every voice.
  */
 describe('the view window', () => {
   const model = buildChartModel(makeSchedule([twoEntryVoice]));
@@ -382,7 +367,6 @@ describe('the view window', () => {
     expect(clampView({ start: 0, end: 100 }, 20)).toEqual({ start: 0, end: 20 });
   });
 
-  /** The floor is what keeps the corpus's 0.001 s entries from being chased to infinity. */
   it('will not narrow past the minimum span', () => {
     const tight = clampView({ start: 10, end: 10 }, 20);
     expect(tight.end - tight.start).toBe(MIN_VIEW_SECONDS);
@@ -391,7 +375,6 @@ describe('the view window', () => {
   it('keeps the anchored instant under the pointer while zooming about it', () => {
     const zoomed = zoomView({ start: 0, end: 20 }, 20, 2, 5);
     expect(zoomed.end - zoomed.start).toBeCloseTo(10, 6);
-    // 5 s was a quarter of the way across the old window, so it stays a quarter across the new one.
     expect(zoomed.start).toBeCloseTo(2.5, 6);
   });
 
@@ -414,10 +397,6 @@ describe('the view window', () => {
   });
 });
 
-/**
- * Culling. The saving that matters is elements not created: at 4x zoom only 6 of
- * `oobe-lucid-dreams-2`'s 80 points are inside the window.
- */
 describe('visibleRange', () => {
   const points = [0, 10, 20, 30, 40, 50].map((time) => ({ time, value: time }));
 
@@ -440,7 +419,6 @@ describe('visibleRange', () => {
   });
 });
 
-/** §6.1's marquee: a rectangle, and every authored node under it. */
 describe('nodesInRect', () => {
   const second = makeVoice({
     id: 1,
@@ -478,7 +456,6 @@ describe('nodesInRect', () => {
   });
 
   it('takes the union across lanes, since a node is the same node in each', () => {
-    // A rectangle over both lanes finds each entry once, not once per lane.
     const found = nodesInRect(layout, rectOver([0, 1], [-1, 21]));
     expect(found).toHaveLength(4);
   });
@@ -491,7 +468,6 @@ describe('nodesInRect', () => {
     ]);
   });
 
-  /** §3.5's wrap point is derived rather than authored, so a selection cannot contain it. */
   it('never selects the terminal wrap point', () => {
     const found = nodesInRect(layout, rectOver([0, 1], [-1, 100]));
     expect(found.every((node) => node.entry < 2)).toBe(true);
@@ -504,12 +480,10 @@ describe('nodesInRect', () => {
 });
 
 /**
- * What the two frequency lanes fit themselves to.
- *
- * On every type but the tonal ones, `basefreq` and `beatfreq` are not frequencies: a water voice's
- * base is a per-sample probability of 0.00035 and its beat a drop count, and a noise voice's are
- * the 100 and 0 the whole corpus carries. Fitted together with a real carrier, any of them flattens
- * the curves the lane exists to show.
+ * What the two frequency lanes fit themselves to. On every type but the tonal ones, `basefreq` and
+ * `beatfreq` aren't frequencies — a water voice's base is a per-sample probability and its beat a
+ * drop count. Fitted together with a real carrier, either flattens the curves the lane exists to
+ * show.
  */
 describe('fitting the frequency lanes', () => {
   const water = makeVoice({
@@ -525,14 +499,13 @@ describe('fitting the frequency lanes', () => {
 
     expect(mixed.lanes[0].domain).toEqual(alone.lanes[0].domain);
     expect(mixed.lanes[1].domain).toEqual(alone.lanes[1].domain);
-    // The curve is still drawn — it is only the axis that ignores it.
+    // The curve is still drawn — only the axis ignores it.
     expect(mixed.lanes[1].series).toHaveLength(2);
   });
 
   it('falls back to fitting everything when no voice is tonal', () => {
     const { lanes } = buildChartModel(makeSchedule([water]), ['base']);
 
-    // Nothing to protect here, and an empty fit would draw a bare 0–1 axis instead of the data.
     expect(lanes[0].domain[1]).toBeGreaterThan(0);
     expect(lanes[0].domain[1]).toBeLessThan(1);
   });
@@ -548,7 +521,6 @@ describe('fitting the frequency lanes', () => {
   });
 });
 
-/** §6.1's manual axis override, which is what makes a value outside the data draggable at all. */
 describe('lane domain overrides', () => {
   it('replaces the fitted domain for the lane it names, and leaves the others fitted', () => {
     const fitted = buildChartModel(makeSchedule([twoEntryVoice]), ['beat', 'base']);

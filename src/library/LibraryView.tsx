@@ -10,13 +10,7 @@ import { buildCatalog } from './catalog';
 import type { Draft, ImportedProgram } from './storage';
 import './LibraryView.css';
 
-/**
- * The transport, as a row sees it.
- *
- * One object rather than four props because it is drilled through every section to reach the rows,
- * and because the four parts are meaningless apart: which row is running is what decides whether
- * the next press is a play or a pause.
- */
+/** The transport as a row sees it — one object because it is drilled through every section. */
 export interface LibraryTransport {
   /** The row whose program is loaded and started, keyed as `LibraryItem.key`. */
   active: { key: string; playing: boolean } | null;
@@ -397,12 +391,8 @@ function Note({ segments }: { segments: NoteSegment[] }) {
 }
 
 /**
- * One program: a press to open it, a transport, a star, and — for the ones that can go — a two-step
- * remove.
- *
- * **The transport is here so that hearing a program costs one press.** Opening it and pressing Play
- * there is two, plus a press back, and it is what most of the library is for: the row is where
- * someone is choosing, and the choice is made by listening.
+ * One program: a press to open it, a transport that plays it where it stands, a star, and — for the
+ * ones that can go — a two-step remove.
  *
  * The removal asks first because it is the only irreversible action in the app and it used to be a
  * single tap on a 32 px `×` at the corner of a card, next to the press that opens the program.
@@ -443,8 +433,6 @@ function ProgramRow({
 
       <span className="program-row__badge">{item.badge}</span>
 
-      {/* The same glyphs the player and the now-playing bar use, in this row's own bare style: a
-          column of filled primary buttons would put the accent on every row at once. */}
       <button
         type="button"
         className={`program-row__transport${playing ? ' is-active' : ''}`}
@@ -455,8 +443,6 @@ function ProgramRow({
         {playing ? <PauseIcon /> : <PlayIcon />}
       </button>
 
-      {/* Only for the row that has something to stop. Nothing else in the list can be stopped, and
-          a Stop on every row would be a column of controls that do nothing. */}
       {active && (
         <button
           type="button"

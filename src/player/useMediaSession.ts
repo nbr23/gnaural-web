@@ -2,26 +2,22 @@ import { useEffect, useRef } from 'react';
 import type { Player } from './usePlayer';
 import { SEEK_STEP_SECONDS } from './usePlayer';
 
-/** How far the notification's skip buttons move the playhead — the player's own step (§5.1). */
+/** How far the notification's skip buttons move the playhead — the player's own step. */
 export const MEDIA_SEEK_STEP = SEEK_STEP_SECONDS;
 
 /**
- * Lock-screen metadata and controls on Android (PLAN.md §5.1, and a condition of §5.3's done).
+ * Lock-screen metadata and controls on Android.
  *
- * Purely an observer of `usePlayer`, in both directions: it reads the player's state to publish
- * it, and its action handlers call the player's existing verbs. No `AudioContext`, no nodes, no
- * new transport primitives — §4's rule that the UI never touches audio applies just as much to a
- * handler the OS invokes as to a button someone taps.
+ * Purely an observer of `usePlayer`: it reads the player's state to publish it, and its action
+ * handlers call the player's existing verbs. No `AudioContext`, no nodes — the UI never touches
+ * audio directly, whether from a button or an OS-invoked handler.
  *
- * **The playhead is read through a ref, never depended on.** `player.offset` changes 60 times a
- * second while playing; an effect that depended on it would re-register eight action handlers and
- * republish the position on every frame. Instead, position is published on `player.transport` —
- * every deliberate move of the playhead and nothing else — and between those the OS extrapolates
- * from `playbackRate`. `title`/`artist` are passed as strings for the same reason: an object
- * would be a new dependency on every render.
+ * The playhead is read through a ref, never depended on: `player.offset` changes 60 times a second
+ * while playing, and an effect depending on it would re-register the action handlers and republish
+ * position every frame. Position is instead published on `player.transport` — every deliberate
+ * move and nothing else — and the OS extrapolates between those from `playbackRate`.
  *
- * The notification itself is raised by the silent keepalive element in `keepalive.ts`; see there
- * for why Web Audio alone is not enough.
+ * The notification itself is raised by the silent keepalive element in `keepalive.ts`.
  */
 export function useMediaSession(player: Player, title: string | null, artist?: string): void {
   const { playing, duration, transport, play, pause, stop, seek } = player;
@@ -61,8 +57,8 @@ export function useMediaSession(player: Player, title: string | null, artist?: s
     const session = navigator.mediaSession;
     if (!session?.setActionHandler) return;
 
-    // `previoustrack`/`nexttrack` are skips, not track changes: there is one program, and a
-    // notification that offers them should move within it rather than do nothing.
+    // `previoustrack`/`nexttrack` are skips, not track changes: there's one program, so a
+    // notification offering them should move within it rather than do nothing.
     const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
       ['play', () => play()],
       ['pause', () => pause()],
@@ -88,7 +84,7 @@ export function useMediaSession(player: Player, title: string | null, artist?: s
       duration,
       position: Math.min(Math.max(offset.current, 0), duration),
       // Always 1, never 0: the spec forbids a zero rate and Chrome throws on one. `playbackState`
-      // is what tells the OS the playhead is standing still.
+      // tells the OS the playhead is standing still instead.
       playbackRate: 1,
     });
   }, [duration, playing, title, transport]);

@@ -76,10 +76,6 @@ describe('NodePanel', () => {
     expect(testRoot.byText('button', 'Insert node after')).toBeUndefined();
   });
 
-  /**
-   * The insert splits the following segment, so the curve and the voice's length are exactly what
-   * they were — what it adds is a handle.
-   */
   it('inserts after the selected node without changing the length', () => {
     const schedule = withEntries([makeEntry({ duration: 100 }), makeEntry({ duration: 60 })]);
     const harness = mount(schedule, { voice: 0, entry: 0 });
@@ -90,7 +86,6 @@ describe('NodePanel', () => {
     expect(label).toBe('Insert node');
     expect(after.voices[0].entries.map((entry) => entry.duration)).toEqual([50, 50, 60]);
     expect(voiceDuration(after.voices[0])).toBe(voiceDuration(schedule.voices[0]));
-    // The new node is the one to carry on editing.
     expect(selection).toEqual([{ voice: 0, entry: 1 }]);
   });
 
@@ -106,7 +101,6 @@ describe('NodePanel', () => {
     expect(selection).toEqual([{ voice: 0, entry: 0 }]);
   });
 
-  /** A voice with no entries mis-assigns every later voice's properties when Gnaural reopens it. */
   it('refuses to delete the only node of a voice, and says what to do instead', () => {
     mount(withEntries([makeEntry()]), { voice: 0, entry: 0 });
 
@@ -114,11 +108,6 @@ describe('NodePanel', () => {
     expect(testRoot.text()).toContain('Delete the voice itself');
   });
 
-  /**
-   * On types 5 and 6 these two fields are a per-sample probability and a drop count, so the panel
-   * says so. The precision matters as much as the label: the reference's own default of 0.000352858
-   * reads as 0.0004 at the precision a frequency wants, and the field commits what it shows.
-   */
   it('calls a water voice’s fields what they are, at a precision that can hold them', () => {
     const schedule = withEntries([makeEntry({ baseFreq: 0.000352858, beatFreq: 2 })]);
     const water = {

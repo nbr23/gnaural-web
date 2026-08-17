@@ -12,23 +12,19 @@ export interface VoiceListProps {
 }
 
 /**
- * Per-voice mute and solo (PLAN.md §5.1). Runtime state only — silencing a voice to hear another
- * never edits the document.
+ * Per-voice mute and solo. Runtime state only — silencing a voice to hear another never edits the
+ * document.
  *
- * **Solo mutes the others, and that is the whole of it.** The engine holds no solo state; a voice is
- * soloed when it is the only renderable one left unmuted (`PlaybackEngine.isVoiceSoloed`). So a row
- * that is quiet is a row with a crossed speaker, always, and un-muting any other voice drops the
- * solo in front of you rather than leaving a lit button that is no longer true.
- *
- * Each row is keyed with the same colour the chart draws that voice in, so identity carries
- * across the two views. Voice types this app cannot render are labelled as silent rather than
- * hidden, and have their controls disabled: §3.3 is explicit that a voice must never be silently
- * dropped. This is the per-voice half of that; `WarningList` states it once for the program.
+ * Solo mutes the others and nothing more: the engine holds no separate solo state, a voice is
+ * soloed when it's the only renderable one left unmuted (`PlaybackEngine.isVoiceSoloed`), so a
+ * quiet row always shows the same crossed speaker a hand-muted row does. Voice types this app
+ * cannot render are labelled as silent, not hidden, with their controls disabled — a voice must
+ * never be silently dropped.
  */
 const TYPE_LABELS: Partial<Record<VoiceType, string>> = {
   [VoiceType.PinkNoise]: 'noise',
   [VoiceType.IsoPulse]: 'isochronic',
-  // Named apart from type 3 because the difference is audible: the pulse swaps ears.
+  // Named apart from IsoPulse: the difference is audible — the pulse swaps ears.
   [VoiceType.IsoPulseAlt]: 'isochronic (alternating)',
   [VoiceType.WaterDrops]: 'water drops',
   [VoiceType.Rain]: 'rain',
@@ -47,8 +43,7 @@ export function VoiceList({ schedule, gates, onToggleMute, onToggleSolo }: Voice
         const badge = unrendered ?? TYPE_LABELS[voice.type];
         const name = voice.description.trim() || `Voice ${voice.id}`;
         const muted = gate?.muted ?? false;
-        // A voice that cannot be rendered is silent whatever its gate says, so the row must not
-        // wait to be told: it never sounds, and reading as though it does is the §3.3 failure.
+        // A voice that cannot be rendered is silent whatever its gate says — it never sounds.
         const silent = Boolean(unrendered) || muted;
         const label = `${muted ? 'Unmute' : 'Mute'} ${name}`;
 

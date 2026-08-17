@@ -202,7 +202,7 @@
   min-width: 120px;
 }
 
-/* §6.1's manual axis override. One row per open lane, so the common two-lane case is four fields. */
+/* The manual axis override: one row per open lane, so the common two-lane case is four fields. */
 .editor__ranges {
   display: flex;
   flex-wrap: wrap;
@@ -248,9 +248,8 @@
   color: var(--text);
 }
 
-/* §6.1's validation surface. Deliberately the same amber and the same two tiers as the player's
-   `WarningList`, so a warning reads as the same kind of statement wherever it is met; what differs
-   is that these rows can be acted on. */
+/* The same amber and the same two tiers as the player's `WarningList`, so a warning reads as the
+   same kind of statement wherever it is met; what differs is that these rows can be acted on. */
 .validation {
   display: flex;
   flex-direction: column;
@@ -296,8 +295,8 @@
   cursor: pointer;
 }
 
-/* The repair reads as the primary thing to do on a row that has one — it is the whole point of §3.7's
-   "one-click fix" — while **Show** stays the quieter way to go and look. */
+/* The repair reads as the primary thing to do on a row that has one — the whole point of the
+   one-click fix — while **Show** stays the quieter way to go and look. */
 .validation__fix {
   color: var(--text-h);
   border-color: var(--accent-border, var(--border));
@@ -423,7 +422,7 @@
   gap: 8px;
 }
 
-/* §6.1's authoring aids. Three groups under one heading rather than three sections, because they are
+/* The authoring aids: three groups under one heading rather than three sections, because they are
    one answer to one question — "give me something to start from" — and a phone should not have to
    scroll past three headings to find it. */
 .editor__subhead {

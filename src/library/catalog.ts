@@ -132,9 +132,8 @@ const BRAIN_MACHINE_KIT = 'https://github.com/maltman23/Brain_Machine_kit';
 
 const BRAIN_MACHINE_NOTE: NoteSegment[] = [
   { text: 'The three brainwave tables of ' },
-  { text: 'Mitch Altman’s Brain Machine kit', href: BRAIN_MACHINE_KIT },
-  { text: ' — a Sound & Light Machine from MAKE #10, ported to Arduino by Chris Sparnicht. ' },
-  { text: 'The lights are not reproduced: this is the sound half only', strong: true },
+  { text: 'Mitch Altman’s Brain Machine kit. ', href: BRAIN_MACHINE_KIT },
+  { text: 'The lights are not reproduced: this is the sound half only' },
   {
     text:
       ', and the sequences were designed to be heard and seen at once. Their descriptions are the ' +

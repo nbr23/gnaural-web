@@ -4,9 +4,8 @@ import type { ScheduleWarning } from './warnings';
 
 /**
  * Schedule-level child elements that are never captured verbatim into `preserved`: either a
- * dedicated `Schedule` field, the structural `voice` list, or a declared count/duration
- * (`totaltime`, `voicecount`, `totalentrycount`) that PLAN.md §3.4 says to derive from the DOM
- * and rewrite correctly on export rather than round-trip verbatim.
+ * dedicated `Schedule` field, the structural `voice` list, or a declared count/duration that gets
+ * derived from the DOM and rewritten correctly on export rather than round-tripped verbatim.
  */
 const DEDICATED_SCHEDULE_ELEMENTS = new Set([
   'title',
@@ -68,8 +67,6 @@ class ParseReport {
       this.warnings.push({
         severity: 'warning',
         kind: 'unparseable-value',
-        // A warning, not a notice: a value that fell back to a default is a value the file asked
-        // for and did not get, which is audible.
         message: `Some values could not be read and fell back to defaults: ${fields.join(', ')}.`,
       });
     }
@@ -104,12 +101,10 @@ function parseBool01(text: string | undefined, fallback: boolean): boolean {
 }
 
 /**
- * Parse a `.gnaural` XML document into a `Schedule`.
- *
- * Never trusts declared counts (`voicecount`, `totalentrycount`, `totaltime`) — every count is
- * derived from the actual DOM (PLAN.md §3.4). Never drops an entry or voice for having a
- * degenerate value (zero frequency, zero volume). Unrecognised elements/attributes are captured
- * in each level's `preserved` map so serialization can round-trip them losslessly.
+ * Parse a `.gnaural` XML document into a `Schedule`. Never trusts declared counts — every count is
+ * derived from the actual DOM. Never drops an entry or voice for having a degenerate value (zero
+ * frequency, zero volume). Unrecognised elements/attributes are captured in each level's `preserved`
+ * map so serialization can round-trip them losslessly.
  */
 export function parseSchedule(xml: string): Schedule {
   return parseScheduleWithWarnings(xml).schedule;
@@ -117,31 +112,24 @@ export function parseSchedule(xml: string): Schedule {
 
 export interface ParseResult {
   schedule: Schedule;
-  /** What §3.4's defensive handling absorbed. Empty for a clean file, which is most of them. */
+  /** What the defensive parsing absorbed. Empty for a clean file, which is most of them. */
   warnings: ScheduleWarning[];
 }
 
 /**
- * `parseSchedule`, plus a record of everything unusual the file contained (§3.4's "user-visible
- * warning list for anything unusual").
- *
- * Kept as a separate entry point rather than changing `parseSchedule`'s return type: most callers
- * — round-trip tests, the serializer's fixtures, the share-link decoder — want the document and
- * nothing else, and the information collected here has no meaning once the XML is gone.
+ * `parseSchedule`, plus a record of everything unusual the file contained. Kept as a separate entry
+ * point rather than changing `parseSchedule`'s return type: most callers just want the document.
  */
 export function parseScheduleWithWarnings(xml: string): ParseResult {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const root = doc.documentElement;
 
   // A parse failure is reported as a `parsererror` element, which is not always the root: some
-  // implementations wrap it in a document of their own. Look for it anywhere.
+  // implementations wrap it in a document of their own.
   if (!root || doc.querySelector('parsererror')) {
     throw new Error('Malformed XML — this file is not a Gnaural schedule.');
   }
 
-  // Well-formed XML that simply isn't a schedule (an SVG, an RSS feed) would otherwise parse
-  // "successfully" into a schedule with no voices, and the app would present an empty program
-  // rather than saying the file was wrong.
   if (root.tagName !== 'schedule') {
     throw new Error(`Not a Gnaural schedule — the root element is <${root.tagName}>.`);
   }
@@ -191,11 +179,7 @@ export function parseScheduleWithWarnings(xml: string): ParseResult {
   return { schedule, warnings: report.finish() };
 }
 
-/**
- * §3.4's headline case: `powernap.gnaural` declares three voices and fourteen entries against one
- * voice and twelve entries. A notice rather than a warning — the declared counts are ignored by
- * design and rewritten correctly on export, so nothing about playback is affected.
- */
+/** A notice rather than a warning — declared counts are ignored by design and rewritten on export. */
 function checkDeclaredCount(
   report: ParseReport,
   declaredText: string | undefined,

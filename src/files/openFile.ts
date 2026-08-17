@@ -1,10 +1,6 @@
-/**
- * Getting a `.gnaural` file's text into the app, by whichever route the browser supports.
- *
- * Everything here returns plain text and never parses — the caller owns parsing so it can catch
- * a malformed file and show a message instead of an exception, and so the text it stores in the
- * library is the file's own bytes.
- */
+// Getting a `.gnaural` file's text into the app, by whichever route the browser supports. Everything
+// here returns plain text and never parses — the caller owns parsing so it can catch a malformed
+// file and show a message instead of an exception.
 
 export interface OpenedFile {
   name: string;
@@ -21,9 +17,8 @@ interface FileSystemPickerWindow {
 }
 
 /**
- * The File System Access API where available (Chrome/Edge, including Android), falling back to a
- * throwaway `<input type="file">` everywhere else. Returns null when the user cancels — a
- * cancelled picker is not an error.
+ * The File System Access API where available, falling back to a throwaway `<input type="file">`
+ * everywhere else. Returns null when the user cancels.
  */
 export async function pickFile(): Promise<OpenedFile | null> {
   const picker = (window as FileSystemPickerWindow).showOpenFilePicker;

@@ -26,32 +26,22 @@ import { clamp, dragAnchors, dragOverlay } from './dragGeometry';
 import type { NodeRef, Selection } from './history';
 
 export interface EditSurfaceProps {
-  /** The committed document. **Never an in-flight one** — see `ChartInteraction`. */
+  /** The committed document — never an in-flight one; see `ChartInteraction`. */
   schedule: Schedule;
   lanes: readonly LaneId[];
   height: number;
   currentTime?: number;
   selected: Selection;
   mode: MoveMode;
-  /** Snap a time drag to the visible grid. Shift held at pointerdown inverts it for one gesture. */
   snap: boolean;
-  /** Manual y-axis bounds per lane (§6.1). Identity-stable, since the chart memoises on it. */
   domains?: LaneDomains;
-  /** Validation marks, derived from the committed document. Identity-stable between commits. */
   marks?: readonly ChartMark[];
   onSelect(selection: Selection): void;
-  /** One commit per gesture, at the end of it. */
   onCommit(schedule: Schedule, label: string): void;
-  /** An edit that shifts the entry indices, so it says where the selection should land. */
   onCommitAt(schedule: Schedule, label: string, selection: Selection): void;
-  /** The in-flight document, already rate-limited. Reaches the engine and nothing else. */
   onPreview(schedule: Schedule): void;
-  /**
-   * A pointer that hit no node and never moved. Transport, not editing.
-   *
-   * Omitted on touch (see `useCoarsePointer`): a tap that lands on nothing clears the selection and
-   * stops there, rather than also throwing the playhead somewhere nobody asked for.
-   */
+  // Omitted on touch (see useCoarsePointer): a tap on empty space clears the selection and stops
+  // there, rather than also throwing the playhead somewhere nobody asked for.
   onSeek?(time: number): void;
 }
 
@@ -59,24 +49,18 @@ interface Drag {
   pointerId: number;
   anchors: DragAnchors;
   layout: ChartLayout;
-  /** Pointer position minus the node's, so the node does not jump under the finger on grab. */
   grabX: number;
   grabY: number;
   time: number;
   value: number;
-  /**
-   * Fixed when the pointer lands, from the current mode and whether Alt was held. Momentary rather
-   * than sampled per move, so a modifier released mid-drag cannot change what the gesture meant.
-   */
+  // Fixed at pointerdown from the mode and Alt state, so a modifier released mid-drag can't change
+  // what the gesture meant.
   mode: MoveMode;
-  /** Likewise for snapping, which Shift inverts. Zero means no grid. */
   gridStep: number;
-  /** The nodes this gesture moves — the whole selection when the grabbed node is part of it. */
   nodes: Selection;
   moved: boolean;
 }
 
-/** A marquee in flight: where it started, where the pointer is, and whether it adds or replaces. */
 interface Marquee {
   pointerId: number;
   origin: { x: number; y: number };
@@ -86,34 +70,15 @@ interface Marquee {
   moved: boolean;
 }
 
-/** Movement past which a pointer that missed every node is a marquee rather than a tap. */
 const MARQUEE_THRESHOLD_PX = 4;
-/** One press of the zoom buttons, and one double of the wheel. */
 const ZOOM_STEP = 2;
 
-/**
- * §6.1's editing surface: the Phase 0 plot with nodes that can be selected, dragged, marquee'd and
- * moved as a group, over a time axis that zooms and pans.
- *
- * **This component is the only thing that re-renders while a finger is down.** The drag's in-flight
- * state lives here rather than in `EditorView`, for the reason Live mode put its slider values in
- * `LiveView`: everything above this — the readout, the timeline, the header fields, the node panel —
- * would otherwise re-render at pointer rate, and `Readout` alone recompiles every audible voice
- * when its schedule changes. Below it, `ScheduleChart` keeps the committed document for the whole gesture, so
- * its memoised model, layout and `StaticPlot` all hold; what moves is the overlay.
- *
- * **The view window lives here for the same reason, and is rate-limited for a sharper one.** A zoom
- * changes the layout, which is the one thing every memo below is keyed on, so a zoom frame really
- * does rebuild the whole picture: measured at 10.7 ms for the densest bundled document at four
- * lanes, against 0.34 ms for a frame that only moves the playhead. A pinch at 60 Hz would be two
- * thirds of the main thread. So continuous gestures — wheel, pinch, the pan rail — go through the
- * same 100 ms throttle the engine push uses, and only the buttons apply at once.
- *
- * The in-flight *document* has exactly two consumers, neither of them a React tree: the engine,
- * reached through a throttled call that renders nothing, and — as pixels rather than as a
- * `Schedule` — a drag overlay. This is a deliberate departure from what step 4 recorded, which
- * expected `useEditor` to publish `preview ?? committed`; see PROGRESS.md.
- */
+// This is the only component that re-renders while a finger is down: the drag's in-flight state
+// lives here rather than in EditorView so everything above it (readout, timeline, node panel)
+// doesn't re-render at pointer rate. The view window lives here too, and is rate-limited harder —
+// a zoom changes the layout memo every child is keyed on, measured at 10.7ms/frame for the
+// densest bundled document vs 0.34ms for a playhead-only frame — so continuous zoom/pan gestures
+// share the engine's 100ms throttle; only the zoom buttons apply immediately.
 export function EditSurface({
   schedule,
   lanes,
@@ -146,18 +111,10 @@ export function EditSurface({
   }, []);
 
   const duration = useMemo(() => drawnDuration(schedule), [schedule]);
+  // Null view means "the whole thing", so a document that grows or shrinks under an untouched view
+  // keeps showing all of itself. Must stay memoized: this feeds the chart's layout memo, and a
+  // fresh object per render rebuilt the whole picture on every pointermove (4.0ms/move vs 0.6ms).
   const [view, setView] = useState<ViewWindow | null>(null);
-  /**
-   * The resolved window. Null state means "the whole thing", so a document that grows or shrinks
-   * under an untouched view keeps showing all of itself rather than holding a window that was right
-   * for a different document.
-   *
-   * **Memoised, and that is load-bearing rather than tidy.** This object is the chart's `view` prop
-   * and therefore a dependency of its `layout` memo, which every memo below — `StaticPlot`,
-   * `IssueMarks`, `SelectionRing` — is keyed on in turn. A fresh object per render would rebuild the
-   * whole picture on every `pointermove` of a drag, which is the 1220 ms defect exactly. It was
-   * written that way first and measured at 4.0 ms per move against 0.6 ms; see PROGRESS.md.
-   */
   const window = useMemo(
     () => (view ? clampView(view, duration) : fullView(duration)),
     [duration, view],
@@ -195,17 +152,13 @@ export function EditSurface({
 
   const documentFor = useCallback((current: Drag): Schedule => {
     const { anchors } = current;
-    // Both axes at once: §6.1 asks for "drag to move in time and value", and the two transforms
-    // compose because each reuses everything the other did not touch. A group is the same pair of
-    // edits over more addresses — the time shift is one delta for every voice, and the value shift
-    // is one delta for every node, which is what preserves the shape of what was selected.
     const moved = moveEntries(scheduleRef.current, {
       nodes: current.nodes,
       deltaTime: current.time - anchors.time,
       mode: current.mode,
     });
-    // No clamp here: `anchors.minValue`/`maxValue` are already the bounds that keep *every* selected
-    // node inside the lane, and `move` applied them to the grabbed node before this ran.
+    // No clamp here: anchors.minValue/maxValue already bound the grabbed node to keep every
+    // selected node inside the lane, applied before this ran.
     return adjustEntries(moved, {
       nodes: current.nodes,
       field: laneField(anchors.laneId),
@@ -355,35 +308,22 @@ export function EditSurface({
     [documentFor, onCommit, onSeek, onSelect, selected, setBox, setGesture],
   );
 
-  /** A second finger landed: whatever one finger was doing is not what was meant. */
   const cancelGesture = useCallback(() => {
     setBox(null);
     setGesture(null);
   }, [setBox, setGesture]);
 
-  /**
-   * Keyboard operation of the surface: **navigation only, values in the panel.**
-   *
-   * Arrows walk the nodes — left and right within a voice, up and down between voices — and Escape
-   * lets go. Nudging a *value* from here would have to pick one of up to four lanes to nudge, and
-   * there is nothing in a selection that says which; the numeric panel is a set of ordinary form
-   * fields that is already keyboard-operable and already the answer §6.1 gives for exact values.
-   *
-   * **Shift+Left/Right extends the selection**, which is the marquee's keyboard equivalent: without
-   * it a group — and therefore the group panel, and therefore group scaling — would be reachable
-   * only with a pointer.
-   *
-   * Delete and Backspace remove the selection — §6.1's "select and delete" — and leave the
-   * neighbour selected so a second press repeats rather than needing a re-select. There is no
-   * keyboard shortcut for the inverse: `Insert` does not exist on a Mac or a phone, and the panel's
-   * button is reachable everywhere.
-   */
+  // Keyboard is navigation only — arrows walk nodes, Shift extends the selection, Delete removes
+  // it — values are edited through the numeric panel instead, since a selection alone doesn't say
+  // which of up to four lanes an arrow key should nudge.
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<SVGSVGElement>): boolean => {
       const voices = schedule.voices;
       const focus = selected[selected.length - 1] ?? null;
 
+      // With nothing selected Escape is left alone, and falls through to leaving the editor.
       if (event.key === 'Escape' && selected.length > 0) {
+        event.preventDefault();
         onSelect([]);
         return true;
       }
@@ -490,13 +430,6 @@ export function EditSurface({
   );
 }
 
-/**
- * Zoom and pan as controls, beside the gestures rather than instead of them.
- *
- * The rail is a real `<input type="range">` for the reason step 5 kept `Timeline` as one: it is
- * keyboard-operable and a native touch target for free, and a phone should not have to discover a
- * gesture to reach the second half of a programme. It appears only when there is something to pan.
- */
 function ViewControls({
   factor,
   window,
@@ -552,7 +485,6 @@ function ViewControls({
   );
 }
 
-/** Which way each arrow walks the selection. */
 const KEY_STEPS: Record<string, { voice: number; entry: number }> = {
   ArrowLeft: { voice: 0, entry: -1 },
   ArrowRight: { voice: 0, entry: 1 },
@@ -572,7 +504,6 @@ function union(current: Selection, added: readonly NodeRef[]): Selection {
   return [...seen.values()].sort((a, b) => a.voice - b.voice || a.entry - b.entry);
 }
 
-/** The moving part: per voice and lane, two segments, a translated block, and a marker. */
 function DragOverlay({ drag, layout }: { drag: Drag; layout: ChartLayout }) {
   const overlays = dragOverlay(drag.anchors, layout, drag.time, drag.value);
   const colours = new Map(drag.anchors.blocks.map((block) => [block.voice, block.colour]));
@@ -648,13 +579,8 @@ function MarqueeBox({ rect }: { rect: PixelRect }) {
   );
 }
 
-/**
- * The live value, beside the finger.
- *
- * It is here rather than in the numeric panel deliberately: the panel is outside this component and
- * updating it per move would re-render the editor, which is the one thing this arrangement exists to
- * avoid. The panel catches up on pointerup, when the value becomes a decision.
- */
+// Rendered here rather than through the numeric panel: the panel is outside this component, and
+// updating it per move would re-render the editor. It catches up on pointerup instead.
 function DragLabel({ drag, overlay }: { drag: Drag; overlay: { node: { x: number; y: number } } | undefined }) {
   if (!overlay) return null;
   const flip = overlay.node.x > drag.layout.width - 90;

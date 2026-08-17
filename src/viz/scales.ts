@@ -1,6 +1,5 @@
 /**
- * Renderer-agnostic scales (PLAN.md §6.2 — "keep the geometry/hit-test logic renderer-agnostic").
- * No DOM, no React, no SVG: value <-> pixel arithmetic only.
+ * Renderer-agnostic scales. No DOM, no React, no SVG: value <-> pixel arithmetic only.
  */
 
 export interface Scale {
@@ -68,11 +67,10 @@ export function timeTicks(duration: number, count: number): number[] {
 }
 
 /**
- * The same, over an arbitrary window — what a zoomed axis labels.
- *
- * The step is chosen from the window's own span, so labels stay about as far apart however far in
- * the view is; the values themselves stay round multiples measured from schedule zero, so a label
- * means the same instant at every zoom level.
+ * The same, over an arbitrary window — what a zoomed axis labels. The step is chosen from the
+ * window's own span, so labels stay about as far apart however far in the view is; the values stay
+ * round multiples measured from schedule zero, so a label means the same instant at every zoom
+ * level.
  */
 export function timeTicksIn(start: number, end: number, count: number): number[] {
   const rough = (end - start) / Math.max(1, count);
@@ -80,11 +78,8 @@ export function timeTicksIn(start: number, end: number, count: number): number[]
   return gridLines(start, end, step);
 }
 
-/**
- * Steps for the snap grid — the clock ladder again, extended below a second because a grid is not
- * labelled and can therefore be far finer than `TIME_STEPS`, and because zoomed in far enough the
- * interesting distances are fractions of a second.
- */
+/** Steps for the snap grid — the clock ladder again, extended below a second since a grid isn't
+ *  labelled and can be far finer than `TIME_STEPS`. */
 const GRID_STEPS = [
   0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600,
 ];
@@ -94,12 +89,8 @@ export const MIN_GRID_PX = 14;
 
 /**
  * The grid interval for a window, in seconds: the finest clock-round step still at least
- * `minPixels` apart on screen.
- *
- * **The grid follows the zoom**, which is the whole reason snapping is usable at all here: the
- * x-ticks are chosen for label spacing and are far too coarse to snap to (at 1× on a 73-minute
- * programme the labelled step is 300 s, about 100× the median gap between that document's nodes).
- * Zooming in is what makes the grid mean something, and is why the snap control ships off.
+ * `minPixels` apart on screen. The grid follows the zoom, which is what makes snapping usable at
+ * all — the labelled x-ticks are chosen for label spacing and are far too coarse to snap to.
  */
 export function timeGridStep(span: number, pixels: number, minPixels = MIN_GRID_PX): number {
   if (span <= 0 || pixels <= 0) return GRID_STEPS[0];
@@ -120,7 +111,7 @@ export function gridLines(start: number, end: number, step: number): number[] {
   const first = Math.ceil(start / step);
   const last = Math.floor(end / step);
   // A window narrow enough to be all grid would draw thousands of lines; the step is chosen
-  // against MIN_GRID_PX so this is a guard, not a path anything normally takes.
+  // against MIN_GRID_PX so this is a guard, not a path anything normally hits.
   if (last - first > 400) return [];
 
   for (let i = first; i <= last; i++) lines.push(Number((i * step).toPrecision(12)));

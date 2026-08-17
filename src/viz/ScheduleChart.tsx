@@ -51,23 +51,20 @@ export interface ChartPointer {
 }
 
 /**
- * Turns the read-only plot into §6.1's editing surface, without teaching it what a document edit is.
+ * Turns the read-only plot into an editing surface, without teaching it what a document edit is.
  *
  * The chart resolves pointer coordinates, hit-tests, and draws the nodes; the caller decides what a
- * grab means and draws the moving part into `overlay`. **The caller must not push its in-flight
- * document back in through `schedule`** — that would invalidate `buildChartModel`, `layoutChart`
- * and `StaticPlot` on every `pointermove`, which is the measured defect those memos exist to
- * prevent. During a gesture `schedule` holds still and the overlay is what moves.
+ * grab means and draws the moving part into `overlay`. The caller must not push its in-flight
+ * document back in through `schedule` — that would rebuild the memoised model on every
+ * `pointermove`. During a gesture `schedule` holds still and the overlay is what moves.
  */
 export interface ChartInteraction {
   /** Wider than the read-only default, so a value drag can reach past the data. */
   domainPadding?: number;
   /**
-   * Drawn with a ring, one per node. Addressed the way the document is (§3.4): indices, not ids.
-   *
-   * **Identity-stable between selection changes, for the same reason `marks` must be**: a marquee
-   * can select every node in the document, which at four lanes is 308 rings, and this layer is
-   * `memo`'d so a drag does not rebuild them on every `pointermove`.
+   * Drawn with a ring, one per node. Addressed by index rather than id. Must be identity-stable
+   * between selection changes — a marquee can select every node in the document, and this layer is
+   * `memo`'d so a drag doesn't rebuild them on every `pointermove`.
    */
   selected?: readonly EntryLocation[];
   /** A gesture is in flight: the static curves become a ghost and the crosshair gets out of the way. */
@@ -75,9 +72,8 @@ export interface ChartInteraction {
   /** Draw the snap grid the caller is snapping to. Omit for no grid. */
   grid?: boolean;
   /**
-   * Nodes to mark as needing attention. **Must be identity-stable while a gesture runs** — they are
-   * drawn by a `memo`'d layer, exactly like `StaticPlot`, so a fresh array per `pointermove` would
-   * rebuild them per move for a document that has not changed.
+   * Nodes to mark as needing attention. Must be identity-stable while a gesture runs — drawn by a
+   * `memo`'d layer, so a fresh array per `pointermove` would rebuild them per move.
    */
   marks?: readonly ChartMark[];
   /** Rendered above the static plot in the layout's pixel space. Keep it O(1) — it runs per move. */
@@ -86,19 +82,15 @@ export interface ChartInteraction {
   onPointerMove?(pointer: ChartPointer): void;
   onPointerUp?(pointer: ChartPointer): void;
   /**
-   * Zoom by `factor` about `anchor` seconds — a wheel with ctrl/⌘ held, or a two-finger pinch.
-   *
-   * The chart recognises the gesture, because only it has the layout and the element's rect, and
-   * the caller owns the window: this component stays fully controlled and holds no view state,
-   * exactly as it holds no clock.
+   * Zoom by `factor` about `anchor` seconds — a wheel with ctrl/⌘ held, or a two-finger pinch. The
+   * chart recognises the gesture since only it has the layout and the element's rect; the caller
+   * owns the window, so this component stays fully controlled.
    */
   onZoom?(factor: number, anchor: number): void;
   /** Pan by a number of seconds — a horizontal wheel, or a two-finger drag. */
   onPan?(seconds: number): void;
-  /**
-   * A second finger landed, so whatever one-finger gesture was in flight is not what was meant.
-   * The caller drops it without committing; the pinch takes over until one finger is left.
-   */
+  /** A second finger landed, so the one-finger gesture in flight is dropped without committing;
+   *  the pinch takes over until one finger is left. */
   onGestureCancel?(): void;
   /** Return true to claim the key; anything unclaimed falls through to the crosshair readout. */
   onKeyDown?(event: ReactKeyboardEvent<SVGSVGElement>, layout: ChartLayout): boolean;
@@ -114,19 +106,16 @@ export interface ScheduleChartProps {
   height?: number;
   /**
    * Seek handler. When supplied the plot becomes draggable to scrub — transport, not document
-   * editing, so the component stays read-only in the sense Phase 1 cares about.
-   *
-   * Ignored when `interaction` is supplied: there the same pointer has to select and drag, and a
-   * gesture cannot be both. See `EditSurface`, which seeks on a miss and reserves the drag.
+   * editing. Ignored when `interaction` is supplied, since there the same pointer has to select
+   * and drag and a gesture can't be both; see `EditSurface`, which seeks on a miss and reserves
+   * the drag.
    */
   onSeek?: (time: number) => void;
   /** Supply this and the plot becomes editable. Absent, the component is exactly what it was. */
   interaction?: ChartInteraction;
   /**
    * The stretch of time to draw. Omit for the whole schedule, which is what the player wants.
-   *
-   * A controlled prop, not internal state: zoom is session state belonging to the editor, and the
-   * chart's job is to draw what it is given. It reaches `layoutChart` only, so the compiled model
+   * A controlled prop, not internal state: it reaches `layoutChart` only, so the compiled model
    * above it is untouched by a zoom.
    */
   view?: ViewWindow;
@@ -159,23 +148,19 @@ const VOICE_TYPE_LABELS: Partial<Record<VoiceType, string>> = {
 
 /**
  * Least vertical distance between two y-axis labels, measured rather than chosen: the tick text is
- * 11px in a 15px line box, so anything closer overprints.
- *
- * Deliberately **not** `MIN_GRID_PX`, which governs the *time grid* — that constant can be as fine
- * as 14px precisely because a grid line carries no label (step 8). A label is the opposite case.
+ * 11px in a 15px line box, so anything closer overprints. Deliberately not `MIN_GRID_PX`, which
+ * governs the time grid — a grid line carries no label, so it can be far finer.
  */
 const MIN_TICK_LABEL_PX = 15;
 
 /**
- * Y-axis positions for a lane. The beat lane reads against the EEG bands it is shaded with
- * (PLAN.md §1) rather than arbitrary round numbers — those boundaries are what the value means.
+ * Y-axis positions for a lane. The beat lane reads against the EEG bands it's shaded with rather
+ * than arbitrary round numbers, since those boundaries are what the value means.
  *
- * **The boundaries are geometric (0.5, 4, 8, 13, 30, 100) while the lane is linear**, so any domain
- * reaching into Gamma crushes the low ones into the bottom few pixels. Measured in a browser at
- * 390px over a 0–60 Hz domain, the five labels sat 3.8, 4.5, 5.5 and 18.9 px apart in a 15px box —
- * four of the five overprinted into an illegible smear. They are therefore thinned by pixel
- * distance, and a lane too short to carry two of them falls back to round numbers rather than
- * labelling a single band edge.
+ * The boundaries are geometric (0.5, 4, 8, 13, 30, 100) while the lane is linear, so a domain
+ * reaching into Gamma crushes the low ones into the bottom few pixels — measured in a browser at
+ * four of five labels overprinting into an illegible smear. They're thinned by pixel distance, and
+ * a lane too short to carry two of them falls back to round numbers.
  */
 function laneTicks(lane: LaneLayout): number[] {
   const [min, max] = lane.model.domain;
@@ -190,11 +175,9 @@ function laneTicks(lane: LaneLayout): number[] {
 }
 
 /**
- * Drop the ticks a reader could not tell apart, keeping the **higher** values.
- *
- * Highest-first because the crowding is always at the bottom of a beat lane — the band boundaries
- * are geometric — so walking down from the top keeps the widely-spaced ones that carry the most
- * information and discards the cluster near zero.
+ * Drop the ticks a reader couldn't tell apart, keeping the higher values. Highest-first because
+ * crowding is always at the bottom of a beat lane, so walking down from the top keeps the
+ * widely-spaced ones and discards the cluster near zero.
  */
 function legibleTicks(values: readonly number[], scale: Scale): number[] {
   const kept: number[] = [];
@@ -239,17 +222,12 @@ interface HoverState {
  * Read-only plot of a schedule's beat and base frequency curves against time, with a live
  * playhead.
  *
- * Beat (0.5-30 Hz) and base (100-400 Hz) get their own lanes on a shared time axis rather than
- * two y-scales on one plot: a dual-axis chart implies a correlation that isn't in the data, and
- * stacked lanes are already the shape PLAN.md §6.1 specifies for the editor.
+ * Beat and base get their own lanes on a shared time axis rather than two y-scales on one plot —
+ * a dual-axis chart implies a correlation that isn't in the data.
  *
- * The component owns no audio and no clock. `currentTime` is a plain number supplied by the
- * caller, which polls `PlaybackEngine.getCurrentOffset()` itself — PLAN.md §4: the UI observes
- * the engine's clock and never drives it, and no component lifecycle hook touches audio
- * resources. Geometry is memoised so a 60fps `currentTime` only moves the playhead.
- *
- * Phase 1 makes this same view interactive; the geometry, scales, and hit-testing it will need
- * live in `geometry.ts` / `scales.ts` and are renderer-agnostic (§6.2).
+ * The component owns no audio and no clock. `currentTime` is a plain number the caller polls from
+ * `PlaybackEngine.getCurrentOffset()` itself. Geometry is memoised so a 60fps `currentTime` only
+ * moves the playhead.
  */
 export function ScheduleChart({
   schedule,
@@ -290,13 +268,8 @@ export function ScheduleChart({
     [layout, width],
   );
 
-  /**
-   * The snap grid, drawn only when the caller is snapping to it.
-   *
-   * Snapping to something invisible would be a mystery rather than a feature, and the step is a
-   * function of the zoom (`timeGridStep`), so what is drawn and what is snapped to are the same
-   * arithmetic run once.
-   */
+  /** The snap grid, drawn only when the caller is snapping to it — snapping to something invisible
+   *  would be a mystery rather than a feature. */
   const grid = useMemo(() => {
     if (!layout || !interaction?.grid) return [];
     const plot = layout.lanes[0]?.width ?? 0;
@@ -312,9 +285,8 @@ export function ScheduleChart({
       if (!svg || !layout) return null;
 
       // Scale client coordinates into the SVG's own system, so hit-testing stays correct even if
-      // CSS ever renders the element at a different size than its width attribute. A rect with no
-      // extent — a detached or hidden element, and every element under a DOM with no layout engine
-      // — scales 1:1 rather than dividing by zero.
+      // CSS renders the element at a different size than its width attribute. A rect with no
+      // extent (detached/hidden element) scales 1:1 rather than dividing by zero.
       const rect = svg.getBoundingClientRect();
       return {
         x: (event.clientX - rect.left) * (rect.width > 0 ? layout.width / rect.width : 1),
@@ -324,7 +296,6 @@ export function ScheduleChart({
     [layout],
   );
 
-  /** Resolve a raw pointer event into what the caller decides on: a lane, a time, and a node. */
   const resolvePointer = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>): ChartPointer | null => {
       const position = pointerPosition(event);
@@ -348,11 +319,9 @@ export function ScheduleChart({
   );
 
   /**
-   * Fingers currently on the plot, by pointer id.
-   *
-   * A map rather than a count because a pinch needs both positions. One finger is the editing
-   * gesture the caller owns; **two are the chart's own** — a phone sets `touch-action: none` while
-   * editing, so if this component does not implement pinch and two-finger pan, nothing does.
+   * Fingers currently on the plot, by pointer id — a map rather than a count because a pinch needs
+   * both positions. One finger is the editing gesture the caller owns; two are the chart's own,
+   * since `touch-action: none` is set on the plot while editing.
    */
   const touches = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; centre: number } | null>(null);
@@ -437,16 +406,13 @@ export function ScheduleChart({
 
   /**
    * Wheel: ctrl/⌘ zooms about the pointer, a horizontal wheel pans, a plain vertical wheel is the
-   * page's business and is left alone.
-   *
-   * A native listener rather than React's `onWheel`, because React attaches wheel at the root as
-   * **passive** and `preventDefault` there does nothing — and a trackpad pinch arrives as
-   * ctrl+wheel, so without it the browser would zoom the page under the gesture.
+   * page's business and is left alone. A native listener rather than React's `onWheel`, because
+   * React attaches wheel at the root as passive and `preventDefault` there does nothing — and a
+   * trackpad pinch arrives as ctrl+wheel, so without it the browser would zoom the page under the
+   * gesture.
    */
-  // Read through a ref rather than as a dependency: `interaction` is a fresh object on every render
-  // of an editing caller, and a caller re-renders on every `pointermove` of a drag — so depending on
-  // it would rebind a DOM listener per move, which is exactly the kind of per-move work this surface
-  // is arranged to avoid.
+  // Read through a ref rather than as a dependency: `interaction` is a fresh object on every
+  // render of an editing caller, and depending on it would rebind a DOM listener on every drag move.
   const interactionRef = useRef(interaction);
   interactionRef.current = interaction;
 
@@ -486,8 +452,8 @@ export function ScheduleChart({
   const stepHover = useCallback(
     (event: ReactKeyboardEvent<SVGSVGElement>) => {
       if (!layout) return;
-      // An editing caller gets first refusal on every key: with a node selected the arrows move
-      // between nodes, and only what it does not claim falls through to the crosshair readout.
+      // An editing caller gets first refusal on every key; only what it doesn't claim falls
+      // through to the crosshair readout.
       if (interaction?.onKeyDown?.(event, layout)) return;
 
       const { duration } = layout.model;
@@ -508,7 +474,10 @@ export function ScheduleChart({
           next = duration;
           break;
         case 'Escape':
-          setHover(null);
+          if (hover) {
+            event.preventDefault();
+            setHover(null);
+          }
           return;
         default:
           return;
@@ -529,7 +498,7 @@ export function ScheduleChart({
   }
 
   if (!layout) {
-    // First paint, before the container has been measured. Reserve the height so nothing jumps.
+    // First paint, before the container has been measured — reserve the height so nothing jumps.
     return <div className={containerClass(className, editing, false)} ref={containerRef} style={{ height }} />;
   }
 
@@ -608,10 +577,8 @@ export function ScheduleChart({
 
 /**
  * Two fingers: the change in their separation is a zoom, the change in their midpoint is a pan.
- *
- * Both are reported as *deltas* against the previous frame rather than as an absolute state, so the
- * caller can rate-limit them — which it must, since a full redraw of the densest bundled document
- * costs 10.7 ms at four lanes and a pinch at 60 Hz would be two thirds of the main thread.
+ * Both are reported as deltas against the previous frame rather than as absolute state, so the
+ * caller can rate-limit a redraw that's expensive at 60 Hz.
  */
 function trackPinch(
   touches: Map<number, { x: number; y: number }>,
@@ -631,16 +598,15 @@ function trackPinch(
   if (last.distance > PINCH_EPSILON && Math.abs(distance - last.distance) > PINCH_EPSILON) {
     interaction.onZoom?.(distance / last.distance, last.centre);
   }
-  // Panning is reported after the zoom and measured in the window the zoom has just changed, which
-  // is why the anchor above is the *previous* midpoint: the instant between the fingers stays put,
-  // and this moves what is left.
+  // The anchor above is the *previous* midpoint: the instant between the fingers stays put, and
+  // the pan below moves what's left.
   if (centre !== last.centre) interaction.onPan?.(last.centre - centre);
 }
 
 function containerClass(className: string | undefined, editing: boolean, dragging: boolean): string {
   const names = ['schedule-chart'];
-  // `touch-action: none` hangs off this one: without it a phone pans the page instead of
-  // delivering `pointermove`, and the drag never happens at all.
+  // `touch-action: none` hangs off this class: without it a phone pans the page instead of
+  // delivering `pointermove`.
   if (editing) names.push('schedule-chart--editing');
   if (dragging) names.push('schedule-chart--dragging');
   if (className) names.push(className);
@@ -654,13 +620,10 @@ function chartLabel(schedule: Schedule, voiceCount: number, duration: number): s
 }
 
 /**
- * Everything in the plot that does not move: lanes, band shading, grid, curves, axis.
- *
- * **Memoised on the layout alone**, which is what keeps an advancing playhead from rebuilding it.
- * Without this, every tick of the clock re-ran `polylinePath` over every breakpoint of every voice
- * — 77 of them per voice in `oobe-lucid-dreams-2` — and rebuilt two lanes of ticks and band
- * shading, on the same thread the audio graph is competing for. On a phone that is enough garbage
- * per second to make playback crackle; see PROGRESS.md.
+ * Everything in the plot that does not move: lanes, band shading, grid, curves, axis. Memoised on
+ * the layout alone, so an advancing playhead doesn't rebuild it — without this every tick of the
+ * clock re-ran `polylinePath` over every breakpoint of every voice, enough garbage per second on a
+ * phone to make playback crackle.
  */
 const StaticPlot = memo(function StaticPlot({
   layout,
@@ -704,10 +667,8 @@ const StaticPlot = memo(function StaticPlot({
 
 /**
  * One clip rectangle per lane, so a zoomed view cannot draw a curve or a node outside its own plot.
- *
- * Culling keeps the *count* down — at 4× zoom only 6 of `oobe-lucid-dreams-2`'s 80 points are inside
- * the window — but the points bracketing the window are deliberately kept so lines enter from
- * off-screen, and without a clip those land on the y-axis labels.
+ * The points bracketing the window are deliberately kept so lines enter from off-screen, and
+ * without this clip those would land on the y-axis labels.
  */
 const LaneClips = memo(function LaneClips({ layout, id }: { layout: ChartLayout; id: string }) {
   return (
@@ -812,12 +773,9 @@ function Lane({
 }
 
 /**
- * A voice's curve in one lane.
- *
- * `split` draws the final segment dashed, because it is not authored: §3.5's unconditional wrap
- * makes the last entry glide back to entry[0]'s values whether or not the schedule loops, and the
- * editor is where somebody needs to be told that the stretch they cannot edit is generated. The
- * read-only chart keeps drawing one continuous line, which is the truth about what is heard.
+ * A voice's curve in one lane. `split` draws the final segment dashed, because it is not authored
+ * — the last entry unconditionally glides back to entry[0]'s values, and the editor is where
+ * somebody needs to be told that stretch is generated rather than editable.
  */
 function Series({
   series,
@@ -831,8 +789,6 @@ function Series({
   split: boolean;
 }) {
   const colour = seriesColor(series.slot);
-  // Only what the window can show, plus the point either side so a line enters from off-screen
-  // rather than starting at the first visible node.
   const [from, to] = visibleRange(series.points, layout.view);
   const points = series.points.slice(from, to);
 
@@ -846,7 +802,7 @@ function Series({
     );
   }
 
-  // Where §3.5's generated final segment begins, in this slice's own coordinates. Off the end of a
+  // Where the generated final segment begins, in this slice's own coordinates. Off the end of a
   // window that stops short of the voice, in which case the whole slice is authored curve.
   const cut = series.points.length - 1 - from;
   return (
@@ -870,12 +826,10 @@ function Series({
 }
 
 /**
- * One marker per entry, plus a hollow ring on §3.5's wrap point.
- *
- * The read-only chart deliberately marks only the hovered breakpoint — `airplanetravelaid` has 45
- * entries in one voice and marking all of them is noise when none of them can be touched. In the
- * editor they are the thing being touched, so they are all drawn, and the difference between a
- * filled node and the hollow ring is the difference between an entry and a derived point.
+ * One marker per entry, plus a hollow ring on the derived wrap point. The read-only chart marks
+ * only the hovered breakpoint — noise when nodes can't be touched — while the editor draws them
+ * all, since they're the thing being touched; the hollow ring distinguishes a derived point from
+ * an authored entry.
  */
 function Nodes({
   series,
@@ -893,7 +847,7 @@ function Nodes({
   return (
     <g>
       {series.points.slice(from, to).map((point, offset) => {
-        // The slice keeps each point's own index, because that index is what addresses an entry.
+        // The slice keeps each point's own index, since that index is what addresses an entry.
         const index = from + offset;
         return index === last ? (
           <circle
@@ -904,7 +858,7 @@ function Nodes({
             r={3.5}
             style={{ stroke: colour }}
           >
-            <title>Wraps back to the start of the voice (§3.5) — not editable</title>
+            <title>Wraps back to the start of the voice — not editable</title>
           </circle>
         ) : (
           <circle
@@ -922,12 +876,10 @@ function Nodes({
 }
 
 /**
- * Nodes §6.1's validation has something to say about.
- *
- * **Memoised for the same reason `StaticPlot` is**, and on the same terms: it is derived from the
- * committed document, so it must not be rebuilt on every `pointermove` of a drag that has not
- * committed anything. The ring is deliberately larger than `SelectionRing`'s and takes no voice
- * colour — a mark is a statement about the value, not another way of saying which voice it is in.
+ * Nodes validation has something to say about. Memoised for the same reason `StaticPlot` is: it's
+ * derived from the committed document and must not rebuild on every `pointermove` of an
+ * uncommitted drag. The ring is deliberately larger than `SelectionRing`'s and takes no voice
+ * colour — a mark is a statement about the value, not the voice it's in.
  */
 const IssueMarks = memo(function IssueMarks({
   layout,
@@ -941,10 +893,9 @@ const IssueMarks = memo(function IssueMarks({
   return (
     <g className="schedule-chart__marks">
       {marks.flatMap((mark, index) => {
-        // A mark belongs to the lane its rule is about — but lanes are collapsible session state,
-        // and a warning that disappears because the volume lanes happen to be closed is a warning
-        // nobody sees. So a mark with nowhere of its own to go is drawn in every open lane; the
-        // node is the same node in all of them, and the label says which value is meant.
+        // Lanes are collapsible session state, and a warning that disappears because a lane is
+        // closed is a warning nobody sees — so a mark with nowhere of its own to go is drawn in
+        // every open lane, with the label saying which value is meant.
         const own = layout.lanes.filter((lane) => mark.lanes?.includes(lane.model.id) ?? false);
         const lanes = own.length > 0 ? own : layout.lanes;
 
@@ -973,12 +924,9 @@ const IssueMarks = memo(function IssueMarks({
 
 /**
  * The selection, ringed in every lane each node appears in — one entry, several parameters.
- *
- * **`memo`'d, on the same terms as `IssueMarks` and for a sharper reason.** A marquee can select
- * every node in the document, which at four lanes is 308 rings; this layer sits in the chart's body,
- * which re-renders on every `pointermove` of a drag, so an unmemoised version would rebuild all of
- * them per move — the 1220 ms defect in a new place. The selection cannot change mid-gesture, so the
- * memo holds for the whole of one.
+ * `memo`'d for a sharper reason than `IssueMarks`: a marquee can select every node in the document,
+ * and this layer sits in the chart's body, which re-renders on every `pointermove` of a drag. The
+ * selection can't change mid-gesture, so the memo holds for the whole of one.
  */
 const SelectionRing = memo(function SelectionRing({
   layout,
@@ -996,7 +944,7 @@ const SelectionRing = memo(function SelectionRing({
           const series = lane.model.series.find((s) => s.slot === node.voice);
           const point: SeriesPoint | undefined = series?.points[node.entry];
           if (!series || !point) return [];
-          // Off-window nodes are still in the selection and simply have nowhere to be drawn.
+          // Off-window nodes are still selected; they simply have nowhere to be drawn.
           if (point.time < layout.view.start || point.time > layout.view.end) return [];
 
           return [
@@ -1016,10 +964,8 @@ const SelectionRing = memo(function SelectionRing({
   );
 });
 
-/**
- * EEG band shading behind the beat curve. Deliberately a neutral alternating wash rather than a
- * hue ramp — it must read as context and never compete with the voice colours in front of it.
- */
+/** EEG band shading behind the beat curve — a neutral alternating wash rather than a hue ramp, so
+ *  it reads as context and never competes with the voice colours in front of it. */
 function BandLayer({ lane }: { lane: LaneLayout }) {
   const [min, max] = lane.model.domain;
 
@@ -1079,13 +1025,13 @@ function TimeAxis({ layout, xTicks }: { layout: ChartLayout; xTicks: number[] })
 
 /**
  * Where the shortest voice ends — the point at which Gnaural resets every voice and the schedule
- * effectively finishes, even though longer voices keep drawing past it (§3.7).
+ * effectively finishes, even though longer voices keep drawing past it.
  */
 function TruncationMarker({ layout }: { layout: ChartLayout }) {
   const x = layout.timeScale.toPixel(layout.model.playbackDuration);
   const first = layout.lanes[0];
   const last = layout.lanes[layout.lanes.length - 1];
-  // Near the right edge the label would overhang, so hang it off the other side of the rule.
+  // Near the right edge the label would overhang, so flip it to the other side of the rule.
   const flip = x > first.x + first.width - 70;
 
   return (
@@ -1116,8 +1062,8 @@ function Playhead({ layout, x }: { layout: ChartLayout; x: number }) {
   return (
     <g>
       <line className="schedule-chart__playhead" x1={x} y1={first.y} x2={x} y2={last.y + last.height} />
-      {/* Cap hangs inside the first lane rather than above it, where at t=0 it would sit on the
-          lane title. */}
+      {/* Cap hangs inside the first lane rather than above it, where at t=0 it'd sit on the lane
+          title. */}
       <polygon
         className="schedule-chart__playhead-cap"
         points={`${x - 4},${first.y} ${x + 4},${first.y} ${x},${first.y + 7}`}

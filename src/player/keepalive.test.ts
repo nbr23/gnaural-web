@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SilentKeepalive } from './keepalive';
 
-/**
- * The element is appended to the document by design (Chrome raises a media notification far more
- * consistently for an attached one), which also means a test can reach it without the class
- * exposing it.
- */
+/** The keepalive element is appended to the document by design, which means a test can reach it
+ *  without the class exposing it. */
 function element(): HTMLAudioElement {
   const found = document.querySelector('audio');
   if (!found) throw new Error('the keepalive element was never created');

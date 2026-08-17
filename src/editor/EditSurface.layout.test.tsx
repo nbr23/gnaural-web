@@ -5,19 +5,9 @@ import { TEST_WIDTH } from '../test-setup';
 import { pointer, setupRoot, stubRect } from '../test-utils';
 import { EditSurface } from './EditSurface';
 
-/**
- * The re-render budget, checked by counting the *work* rather than by comparing the output.
- *
- * Step 5's invariant test asserts that every static series path is byte-identical across a drag,
- * and step 7 extended it to the validation marks. Both compare what came out — which is exactly why
- * neither could see the defect this file exists for: `EditSurface` built its view window as a fresh
- * object on every render, so `layoutChart` re-ran and `StaticPlot`, `IssueMarks` and `SelectionRing`
- * were all rebuilt on every `pointermove`, producing byte-identical paths each time. Measured at
- * 4.0 ms per move against 0.6 ms before the memo was added.
- *
- * So this counts calls into the geometry layer instead. A drag may rebuild nothing; a zoom must
- * rebuild exactly once.
- */
+// Counts calls into the geometry layer rather than comparing output, since output-only checks
+// missed a prior regression where a fresh view-window object on every render caused layoutChart to
+// re-run on every pointermove (4.0ms/move vs 0.6ms before memoizing).
 const layoutCalls = vi.fn();
 const modelCalls = vi.fn();
 
@@ -132,11 +122,8 @@ describe('the editing surface re-render budget', () => {
     expect(layoutCalls).not.toHaveBeenCalled();
   });
 
-  /**
-   * A zoom is the one gesture that legitimately rebuilds the picture — once, which is why the
-   * continuous forms of it are rate-limited. It must not rebuild the compiled *model*: that is per
-   * voice and per entry, and a window is not a property of the document.
-   */
+  // A zoom must rebuild the layout exactly once, but never the compiled model — that's per voice
+  // and per entry, and a window is not a property of the document.
   it('lays it out once for a zoom, and never recompiles the voices', () => {
     mount();
     layoutCalls.mockClear();

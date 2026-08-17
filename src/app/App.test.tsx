@@ -57,16 +57,12 @@ describe('library view', () => {
     root.render(<App />);
 
     expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
-    // Both collections, each with its own categories: Gnaural's two and Android's eight.
     expect(root.text()).toContain('Contrib');
     expect(root.text()).toContain('Gnaural edits');
     expect(root.text()).toContain('OOBE');
   });
 
   it('shows which build it is running, on whatever view is open', async () => {
-    // With `registerType: 'prompt'` an installed PWA can serve a build older than the one just
-    // deployed, and this is the only always-visible answer to "which one is this?" — asked from
-    // wherever the bug was noticed, which is usually the player rather than the library.
     root.render(<App />);
     const stamp = /^build \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
 
@@ -78,16 +74,21 @@ describe('library view', () => {
     expect(root.query('.app-footer__build')?.textContent).toMatch(stamp);
   });
 
+  it('links to its own source from the footer', () => {
+    root.render(<App />);
+    const link = root.query('.app-footer__source') as HTMLAnchorElement | null;
+
+    expect(link?.href).toBe('https://github.com/nbr23/gnaural-web');
+    expect(link?.target).toBe('_blank');
+    expect(link?.textContent).toBe('Fork on GitHub');
+  });
+
   it('attributes the bundled descriptions to their authors rather than to the app', () => {
-    // Several presets describe what the audio is *for* ("an aid for Attention Deficit
-    // Hyperactivity Disorder"). The prose is upstream and preserved verbatim for credit, so §2's
-    // no-medical-claims rule is met by saying whose words they are, not by rewriting them.
     root.render(<App />);
 
     const notes = root.queryAll('.library__note').map((note) => note.textContent ?? '');
     expect(notes.some((note) => note.includes("original authors' words"))).toBe(true);
     expect(notes.some((note) => note.includes('their words'))).toBe(true);
-    // In bold, because it is the sentence the rule is met by and not a footnote to the rest.
     const bold = root.queryAll('.library__note strong').map((clause) => clause.textContent ?? '');
     expect(bold.some((clause) => clause.includes("original authors' words"))).toBe(true);
   });
@@ -108,7 +109,6 @@ describe('library view', () => {
 
     expect(root.queryAll('.program-row')).toHaveLength(1);
     expect(root.text()).toContain('Schumann Resonance');
-    // The rail is built from the same filtered tree, so it cannot offer an empty section.
     expect(root.queryAll('.library__rail-link').map((link) => link.textContent)).toEqual([
       'binauralbeat1',
       'Meditation1',
@@ -124,7 +124,6 @@ describe('library view', () => {
     await flush();
 
     expect(root.query('.library__section')?.textContent).toContain('Favourites');
-    // Once in its own section and once where it belongs — starring is not a move.
     expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length + 1);
 
     root.click(root.query('.program-row__star'));
@@ -137,13 +136,11 @@ describe('library view', () => {
     const open = (element: Element) => (element as HTMLDetailsElement).open;
     expect(root.queryAll('.library__section--top').every(open)).toBe(true);
     expect(root.queryAll('.library__section--child').some(open)).toBe(false);
-    // Folded is a fold, not a filter: find-in-page and the search still reach the rows.
     expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
   });
 
   it('remembers which sections were folded away', async () => {
     root.render(<App />);
-    // The summary's click behaviour is the browser's; what the app listens for is `toggle`.
     fold(root.byText('.library__category', ANDROID_PACKAGE)?.closest('details'));
     await wait(WRITE_DEBOUNCE);
 
@@ -164,14 +161,11 @@ describe('routing', () => {
 
     expect(window.location.hash).toBe('#/p/powernap');
     expect(root.query('.player__title')?.textContent).toBe('Power Nap');
-    // The chart and transport come with it.
     expect(root.queryAll('path.schedule-chart__series').length).toBeGreaterThan(0);
     expect(root.byText('.button', 'Play')).toBeDefined();
   });
 
   it('opens a program at the top of the page, not where the library was scrolled to', async () => {
-    // A fragment change scrolls nothing — there is no element to scroll to — so a program opened
-    // from halfway down a nineteen-row library used to open halfway down the player.
     const scrollTo = vi.fn();
     Object.defineProperty(window, 'scrollTo', { configurable: true, value: scrollTo });
 
@@ -219,7 +213,6 @@ describe('player view', () => {
     expect(root.text()).toContain('Beat');
     expect(root.text()).toContain('Band');
     expect(root.query('.timeline__range')).not.toBeNull();
-    // Two voices — one binaural, one noise — each listed and labelled by type (§3.3).
     expect(root.queryAll('.voice-list__row')).toHaveLength(2);
     expect(root.text()).toContain('noise');
   });
@@ -252,17 +245,9 @@ describe('player view', () => {
     stubRect(svg, TEST_WIDTH, 200);
     pointer(svg, 'pointerdown', { x: TEST_WIDTH / 2, y: 100 });
 
-    // Halfway across the plot of a twenty-minute programme, give or take the axis gutter.
     expect(elapsedSeconds()).toBeGreaterThan(8 * 60);
   });
 
-  /**
-   * The chart is a picture on a phone, not a transport.
-   *
-   * A plot wide enough to read is wide enough to brush past while reaching for something else, and
-   * a stray touch used to throw the playhead across the programme. The timeline below it is a
-   * native touch target and cannot be hit by accident, so nothing is lost.
-   */
   it('does not scrub from the chart on touch', async () => {
     media.coarsePointer = true;
     window.location.hash = '#/p/powernap';
@@ -310,13 +295,31 @@ describe('keyboard shortcuts', () => {
     root.render(<App />);
     await flush();
 
-    // Typing a space into the export sample-rate select, or pressing the Stop button with the
-    // keyboard, must do what that control does — not toggle playback behind it.
     press(' ', root.query('.export__rate select') as Element);
     press(' ', root.byText('.button', 'Stop') as Element);
     await flush();
 
     expect(root.byText('.button--primary', 'Play')).toBeDefined();
+  });
+
+  it('goes back to the library with escape, without stopping what is playing', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    press(' ');
+    await flush();
+
+    press('Escape');
+    await flush();
+
+    expect(window.location.hash).toBe('#/');
+    expect(root.queryAll('.program-row').length).toBeGreaterThan(0);
+    expect(root.query('.now-playing')).toBeDefined();
+
+    press('Escape');
+    await flush();
+    expect(window.location.hash).toBe('#/');
   });
 });
 
@@ -329,7 +332,6 @@ describe('export and share', () => {
     expect(root.byText('.button', 'Share link')).toBeDefined();
     expect(root.byText('.button', 'Export .gnaural')).toBeDefined();
     expect(root.byText('.button', 'Export WAV')).toBeDefined();
-    // 20 minutes of 44.1 kHz stereo — large enough that the estimate is the point of showing it.
     expect(root.query('.export__estimate')?.textContent).toBe('≈ 202 MB');
   });
 
@@ -341,7 +343,6 @@ describe('export and share', () => {
     root.act(() => setSelectValue(root.query('.export__rate select') as HTMLSelectElement, '22050'));
     expect(root.query('.export__estimate')?.textContent).toBe('≈ 101 MB');
 
-    // Remounting is the closest a test gets to a reload: the setting comes back from IndexedDB.
     await wait(WRITE_DEBOUNCE);
     root.remount(<App />);
     await flush();
@@ -372,7 +373,6 @@ describe('share links', () => {
     await flush();
 
     expect(root.query('.player__title')?.textContent).toBe('Power Nap');
-    // Not in the library yet, so it offers to keep it — a bundled program does not.
     expect(root.byText('.button', 'Add to library')).toBeDefined();
   });
 
@@ -387,7 +387,6 @@ describe('share links', () => {
 
     expect(window.location.hash).toMatch(/^#\/i\//);
     expect(await listImported()).toHaveLength(1);
-    // Now it is one of the user's own, so the offer is gone.
     expect(root.byText('.button', 'Add to library')).toBeUndefined();
   });
 
@@ -417,7 +416,6 @@ describe('opening a file', () => {
 
     expect(window.location.hash).toMatch(/^#\/i\//);
     expect(root.query('.player__title')?.textContent).toBe('Power Nap');
-    // The byline names the file it arrived as, which the library metadata cannot supply.
     expect(root.query('.player__byline')?.textContent).toBe('dropped.gnaural');
   });
 
@@ -444,7 +442,6 @@ describe('opening a file', () => {
     expect(root.text()).toContain('Imported');
     expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length + 1);
 
-    // Removing asks first — the × arms the row, the answer removes it.
     root.click(root.query('.library__remove'));
     root.click(root.byText('.program-row__action', 'Remove'));
     await flush();
@@ -474,8 +471,6 @@ describe('opening a file', () => {
     root.click(root.byText('.back-link', 'Library'));
     await flush();
 
-    // A bundled row says its category, which the section it sits in does not; an imported one says
-    // where it came from, which nothing else on the row does.
     const badges = new Set(root.queryAll('.program-row__badge').map((tag) => tag.textContent));
     expect(badges).toContain('Imported');
     expect(badges).toContain('Sleep');
@@ -499,7 +494,6 @@ describe('opening a file', () => {
     await flush();
 
     expect(root.query('[role="alert"]')?.textContent).toContain('broken.gnaural');
-    // And stays on the library rather than half-loading a player.
     expect(root.queryAll('.program-row').length).toBeGreaterThan(0);
     expect(await listImported()).toHaveLength(0);
   });
@@ -568,7 +562,7 @@ describe('playing from the library', () => {
     return found;
   }
 
-  /** Press a row's transport, by what it is offering — which is the assertion as much as the act. */
+  /** Press a row's transport, by what it is offering — which is half the assertion. */
   function pressRow(title: string, action: 'Play' | 'Pause' | 'Stop'): void {
     const button = row(title).querySelector(`[aria-label="${action} ${title}"]`);
     if (!button) throw new Error(`${title} offers no ${action}`);
@@ -585,7 +579,6 @@ describe('playing from the library', () => {
   it('starts a program from its row, and hands it to the player when the row is opened', async () => {
     await play();
 
-    // Still the library: the press asked for the audio, not for the page.
     expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
     expect(root.query('.player__title')).toBeNull();
     expect(root.query('.now-playing__title')?.textContent).toBe('Power Nap');
@@ -595,7 +588,6 @@ describe('playing from the library', () => {
     root.click(row('Power Nap (Android)').querySelector('.program-row__open'));
     await flush();
 
-    // The same session, not a second load of the same program.
     expect(window.location.hash).toBe('#/p/powernap');
     expect(root.byText('.button--primary', 'Pause')).toBeDefined();
   });
@@ -621,7 +613,6 @@ describe('playing from the library', () => {
     await play();
 
     pressRow('Schumann Resonance', 'Play');
-    // A second lazily-imported program in the one test: the default flush is not always enough.
     await flush(60);
 
     expect(root.queryAll('.program-row.is-active')).toHaveLength(1);
@@ -667,7 +658,6 @@ describe('media session', () => {
     expect(root.query('.timeline__times')?.textContent).toContain('10:00');
     expect(mediaSession.position?.position).toBeCloseTo(600, 0);
     expect(mediaSession.position?.duration).toBeCloseTo(1200, 0);
-    // A zero rate is a TypeError in Chrome; `playbackState` is what stops the OS extrapolating.
     expect(mediaSession.position?.playbackRate).toBe(1);
     expect(mediaSession.playbackState).toBe('paused');
   });
@@ -685,7 +675,6 @@ describe('media session', () => {
   });
 
   it('publishes nothing while no program is loaded', async () => {
-    // A sentinel, so this cannot pass just because the stub started empty.
     mediaSession.metadata = { title: 'left over' };
     mediaSession.playbackState = 'playing';
 
@@ -730,7 +719,6 @@ describe('wake lock', () => {
     root.act(() =>
       setCheckbox(root.query('.wake-lock input') as HTMLInputElement, true),
     );
-    // Enabling it alone must not light the screen — only playing does.
     expect(wakeLocks).toHaveLength(0);
 
     root.click(root.byText('.button--primary', 'Play'));
@@ -784,7 +772,6 @@ describe('settings', () => {
 
     root.remount(<App />);
     await flush();
-    // Not per-program: it is a preference about listening, so it carries to the next one.
     window.location.hash = '#/p/sleep-smr';
     await flush();
 
@@ -793,7 +780,7 @@ describe('settings', () => {
   });
 });
 
-describe('live mode (§6.1)', () => {
+describe('live mode', () => {
   it('opens from the library and has sliders instead of a timeline', async () => {
     root.render(<App />);
     root.click(root.byText('.button', 'Live'));
@@ -813,13 +800,11 @@ describe('live mode (§6.1)', () => {
     root.click(root.byText('.button--primary', 'Play'));
     await flush();
 
-    // A program with no title of its own still has to be nameable on a lock screen.
     expect(mediaSession.metadata?.title).toBe('Live');
 
     root.click(root.byText('.back-link', 'Library'));
     await flush();
     expect(root.query('.now-playing__title')?.textContent).toBe('Live');
-    // No total: the twelve-hour container is true and tells a listener nothing.
     expect(root.query('.now-playing__time')?.textContent).not.toContain('/');
 
     root.click(root.query('.now-playing__open'));
@@ -828,10 +813,6 @@ describe('live mode (§6.1)', () => {
   });
 
   it('keeps playing through a slider move, rather than reloading the graph', async () => {
-    // `load()` is a teardown: it silences everything and returns to zero, and `usePlayer` would
-    // report not-playing again. An edit has to go through `update()` instead, which is the whole
-    // reason step 1 exists — and a slider bound to the schedule *prop* would quietly do the wrong
-    // one on every pixel of a drag.
     window.location.hash = '#/live';
     root.render(<App />);
     await flush();
@@ -858,7 +839,6 @@ describe('live mode (§6.1)', () => {
     root.remount(<App />);
     await flush();
 
-    // Two decimals always, so a ramping figure keeps its width — see `formatHzFixed`.
     expect(root.query('.readout')?.textContent).toContain('40.00 Hz');
   });
 
@@ -875,14 +855,13 @@ describe('live mode (§6.1)', () => {
     expect(saved.durationSeconds).toBe(300);
     expect(saved.sourceName).toBe('Live session');
 
-    // It lands in the library as an ordinary program: routed to, playable, exportable, shareable.
     expect(window.location.hash).toBe(`#/i/${saved.id}`);
     expect(root.query('.player__title')?.textContent).toContain('Hz beat at');
     expect(root.query('.export')).not.toBeNull();
   });
 });
 
-describe('the editor (§6.1)', () => {
+describe('the editor', () => {
   /** Fork the bundled Power Nap into a draft and land in the editor. */
   async function openDraftOf(program = 'powernap') {
     window.location.hash = `#/p/${program}`;
@@ -905,14 +884,13 @@ describe('the editor (§6.1)', () => {
     root.blur(input);
   }
 
-  it('starts a blank draft from the library (§6.3, authored from scratch)', async () => {
+  it('starts a blank draft from the library', async () => {
     root.render(<App />);
     root.click(root.byText('.button', 'New program'));
     await flush();
 
     expect(window.location.hash).toMatch(/^#\/e\/.+/);
     expect(root.query('.editor__title')?.textContent).toBe('New program');
-    // One tone voice, twenty minutes long — the same voice "Add a voice" would have made.
     expect(root.queryAll('.voice-rows__row')).toHaveLength(1);
     expect(root.query('.timeline__times')?.textContent).toContain('20:00');
     expect(await listDrafts()).toHaveLength(1);
@@ -926,7 +904,6 @@ describe('the editor (§6.1)', () => {
 
     const [draft] = await listDrafts();
     expect(draft.sourceName).toBe('Power Nap');
-    // The bundled program is untouched: a copy is the only thing the editor ever opens.
     expect(await listImported()).toHaveLength(0);
   });
 
@@ -959,11 +936,8 @@ describe('the editor (§6.1)', () => {
 
     const [draft] = await listDrafts();
     expect(draft.title).toBe('Saved by itself');
-    // XML, not a blob of the model: what is recovered is exportable and openable in Gnaural.
     expect(parseSchedule(draft.xml).title).toBe('Saved by itself');
 
-    // Reopening the app at the library — the closest a test gets to a reload — finds it under
-    // Drafts, with the title it was last given rather than the one it was forked with.
     window.location.hash = '';
     root.remount(<App />);
     await flush();
@@ -972,14 +946,10 @@ describe('the editor (§6.1)', () => {
   });
 
   it('keeps playing through an edit, rather than reloading the graph', async () => {
-    // The same invariant Live mode's slider test pins, now with a second caller of `update()`:
-    // `load()` is a teardown, and an editor that pushed documents in through the `schedule` prop
-    // would silence and rewind the program on every commit.
     await openDraftOf();
     root.click(root.byText('.button--primary', 'Play'));
     await flush();
 
-    // By label, not by position: the lane toggles are `.editor__check` too, and now come first.
     const swap = root
       .byText('.editor__check', 'Swap left and right')
       ?.querySelector('input') as HTMLInputElement;
@@ -990,10 +960,6 @@ describe('the editor (§6.1)', () => {
     expect(root.byText('.button--primary', 'Pause')).toBeDefined();
   });
 
-  /**
-   * The same invariant again, against the edits that change the *shape* of the graph — adding a
-   * voice is `update()`'s crossfade path, which until step 6 had no caller at all.
-   */
   it('keeps playing through a structural edit, and undoes it', async () => {
     await openDraftOf();
     root.click(root.byText('.button--primary', 'Play'));
@@ -1012,11 +978,6 @@ describe('the editor (§6.1)', () => {
     expect(root.byText('.button--primary', 'Pause')).toBeDefined();
   });
 
-  /**
-   * The editor deliberately never re-hands `usePlayer` its `schedule` prop, so anything reading
-   * that prop for a voice count reads the document as it was when the draft opened. A voice a
-   * structural edit added must still be mutable, and must still say so.
-   */
   it('mutes a voice a structural edit added', async () => {
     await openDraftOf();
     root.click(root.byText('button', 'Add noise voice'));
@@ -1044,15 +1005,12 @@ describe('the editor (§6.1)', () => {
     const [saved] = await listImported();
     expect(saved.title).toBe('Ready to share');
     expect(window.location.hash).toBe(`#/i/${saved.id}`);
-    // An ordinary program from here on: playable, exportable, shareable.
     expect(root.query('.export')).not.toBeNull();
-    // And the draft is still there to keep working on.
     expect(await listDrafts()).toHaveLength(1);
   });
 
   it('discards a draft from the editor', async () => {
     await openDraftOf();
-    // Two steps: discarding is the one thing in the editor undo cannot take back.
     root.click(root.byText('.button', 'Discard draft'));
     root.click(root.byText('.button', 'Discard for good'));
     await flush();
@@ -1069,11 +1027,6 @@ describe('the editor (§6.1)', () => {
     expect(root.queryAll('.program-row').length).toBeGreaterThan(0);
   });
 
-  /**
-   * §6.1 asks for four independently collapsible lanes. Collapsing could not wait for step 8's zoom
-   * work: the chart divides its height between the lanes it is given, so four inside the read-only
-   * 280 px would leave about 44 px of plot each.
-   */
   it('opens and closes the volume lanes', async () => {
     await openDraftOf();
 
@@ -1114,21 +1067,17 @@ describe('the editor (§6.1)', () => {
       y: Number(marker.getAttribute('cy')),
     });
 
-    // A tap is a selection and nothing else: no move, so no commit.
     expect(root.text()).toContain('Node 3 of 12');
     expect(root.byText('.button', 'Undo')?.hasAttribute('disabled')).toBe(true);
 
-    // §6.1's reason for the panel: a drag cannot reach every value, and typing can.
     type('Beat (Hz)', '17.5');
     expect(field('Beat (Hz)').value).toBe('17.5');
     expect(root.byText('.button', 'Undo')?.textContent).toContain('change beat frequency');
 
     root.click(root.byText('.button', 'Undo'));
-    // Undo restores the selection the commit was made with, so the obvious next action works.
     expect(root.text()).toContain('Node 3 of 12');
   });
 
-  /** The player's rule, in the editor: on touch a tap that hits nothing deselects, and stops. */
   it('does not move the playhead when a touch lands on empty plot', async () => {
     media.coarsePointer = true;
     await openDraftOf();
@@ -1143,7 +1092,6 @@ describe('the editor (§6.1)', () => {
     pointer(svg, 'pointerup', { x, y });
     expect(root.text()).toContain('Node 3 of 12');
 
-    // Well away from any node, and 12 px is inside the hit radius of nothing.
     pointer(svg, 'pointerdown', { x: x + 60, y: y + 40 });
     pointer(svg, 'pointerup', { x: x + 60, y: y + 40 });
 
@@ -1151,11 +1099,6 @@ describe('the editor (§6.1)', () => {
     expect(elapsedSeconds()).toBe(0);
   });
 
-  /**
-   * §6.1's inline validation, end to end: an edit that is legal in the format and wrong for a
-   * person raises a row under the chart, a mark on the node it happened at, and no obstacle of any
-   * kind — §6.1 says warnings, not hard errors, so Save goes on working.
-   */
   it('validates a committed edit, marks the node, and blocks nothing', async () => {
     await openDraftOf();
 
@@ -1168,7 +1111,6 @@ describe('the editor (§6.1)', () => {
     pointer(svg, 'pointerdown', at);
     pointer(svg, 'pointerup', at);
 
-    // Step 5 left volumes unclamped on purpose, so that this has something to point at.
     type('Volume left', '2.5');
 
     expect(root.query('.validation [role="alert"]')?.textContent).toContain('outside 0–1');
@@ -1180,10 +1122,6 @@ describe('the editor (§6.1)', () => {
     expect(root.queryAll('circle.schedule-chart__mark')).toHaveLength(0);
   });
 
-  /**
-   * A schedule with no voices is an allowed state (step 6), not a refusal — but it is silence, and
-   * the player already disables Play for it. The editor now says the same thing in the same words.
-   */
   it('disables Play once the last voice is gone, and says why', async () => {
     await openDraftOf();
 
@@ -1211,20 +1149,12 @@ describe('the editor (§6.1)', () => {
     pointer(svg, 'pointerup', { x: at.x + 24, y: at.y - 30 });
     await wait(200);
 
-    // The third caller of `player.update`, honouring the same invariant Live mode's test pins:
-    // the `schedule` prop keeps its identity, so `load()` — a teardown — never runs.
     expect(root.byText('.button--primary', 'Pause')).toBeDefined();
     expect(root.byText('.button', 'Undo')?.textContent).toContain('move node');
-    // One commit for the whole gesture, not one per move.
     root.click(root.byText('.button', 'Undo'));
     expect(root.byText('.button', 'Undo')?.hasAttribute('disabled')).toBe(true);
   });
 
-  /**
-   * §6.1's authoring aids, against a running engine. Generating is a *structural* edit — it adds a
-   * voice — so this is `update()`'s crossfade path reached from a second caller, and the invariant
-   * is the one every step since 4 has pinned: the transport must not reload.
-   */
   it('generates a voice while playing, without reloading the graph', async () => {
     await openDraftOf();
     root.click(root.byText('.button--primary', 'Play'));
@@ -1237,8 +1167,6 @@ describe('the editor (§6.1)', () => {
 
     expect(root.queryAll('.voice-rows__row')).toHaveLength(2);
     expect(root.byText('.button--primary', 'Pause')).toBeDefined();
-    // Generating never overwrites: the voice that was there is still there, and the new one spans
-    // what the schedule already played, so §3.7's warning does not fire on the user's own command.
     expect(root.text()).toContain('Ramp');
     expect(root.text()).not.toContain('not the same length');
 
@@ -1258,7 +1186,6 @@ describe('the editor (§6.1)', () => {
 
     expect(root.queryAll('.voice-rows__row')).toHaveLength(2);
     expect(root.byText('.button--primary', 'Pause')).toBeDefined();
-    // §6.3: what the editor writes has to reopen in Gnaural desktop as the same two voices.
     expect(root.text()).not.toContain('merge into one voice');
   });
 
@@ -1277,17 +1204,9 @@ describe('the editor (§6.1)', () => {
     expect(root.text()).toContain('Now 10:00');
   });
 
-  /**
-   * §3.7's one-click fix, deferred by step 6 and landed here, end to end — including that the row
-   * offering it is the row that raised the warning, and that both are gone afterwards.
-   */
   it('pads a ragged schedule to its longest voice, from the warning that reports it', async () => {
     await openDraftOf();
 
-    // Add a voice — which lands at the playing length, so the schedule is still even — and then
-    // shorten it. Adding leaves its one node selected, so the numeric panel is already pointed at
-    // it, and a duration always ripples within its own voice. That is the whole of how this app can
-    // make a schedule ragged, and the reason §3.7's repair is owed at all.
     root.click(root.byText('button', 'Add tone voice'));
     await wait(200);
     expect(root.text()).not.toContain('not the same length');
@@ -1302,15 +1221,9 @@ describe('the editor (§6.1)', () => {
     expect(root.text()).not.toContain('not the same length');
     expect(root.byText('.validation__fix', 'Pad to longest')).toBeUndefined();
     expect(root.byText('.button', 'Undo')?.textContent).toContain('pad voices');
-    // Padded up to the longest voice — the drafted one — rather than down to the short one.
     expect(root.text()).toContain('20:00');
   });
 
-  /**
-   * §6.1's marquee, group move and group undo, end to end — and the point of the whole step: the
-   * densest bundled voice puts 26 of its 44 node gaps inside the 12 px hit radius, so selecting a
-   * region and operating on it is how a real document is edited, not tapping one node at a time.
-   */
   it('marquees a group of nodes, moves them together, and undoes it in one step', async () => {
     await openDraftOf();
 
@@ -1322,18 +1235,14 @@ describe('the editor (§6.1)', () => {
       y: Number(markers[index].getAttribute('cy')),
     });
 
-    // A box from empty space above the curve, down and across the first three nodes.
     pointer(svg, 'pointerdown', { x: at(0).x - 10, y: 2 });
     pointer(svg, 'pointermove', { x: at(2).x + 4, y: 250 });
     pointer(svg, 'pointerup', { x: at(2).x + 4, y: 250 });
 
-    // The group panel replaces the exact-values panel, because exact values need one node.
     expect(root.text()).toContain('3 nodes in 1 voice');
     expect(root.text()).not.toContain('Tap a node on the chart');
 
     const before = root.queryAll('circle.schedule-chart__node').map((n) => n.getAttribute('cx'));
-    // Scoped to the group panel: the authoring aids added in step 9 carry number fields of their
-    // own, and an unscoped `.editor__fields input` would silently start driving one of those.
     root.act(() =>
       setInputValue(root.query('.group-panel input[type="number"]') as HTMLInputElement, '30'),
     );
@@ -1344,7 +1253,6 @@ describe('the editor (§6.1)', () => {
     const after = root.queryAll('circle.schedule-chart__node').map((n) => n.getAttribute('cx'));
     expect(after).not.toEqual(before);
 
-    // One commit for the group, and the selection it was made with comes back with the undo.
     root.click(root.byText('.button', 'Undo'));
     expect(root.queryAll('circle.schedule-chart__node').map((n) => n.getAttribute('cx'))).toEqual(
       before,
@@ -1352,7 +1260,6 @@ describe('the editor (§6.1)', () => {
     expect(root.text()).toContain('3 nodes in 1 voice');
   });
 
-  /** §6.1's zoom, and the manual axis override that lands with it. */
   it('zooms the time axis and overrides a lane range', async () => {
     await openDraftOf();
 
@@ -1367,8 +1274,6 @@ describe('the editor (§6.1)', () => {
     root.click(zoom('Fit'));
     expect(root.query('.editor__zoom')?.textContent).toBe('1.0×');
 
-    // The axis override: a lane fitted to its data cannot be dragged past it, and this is the way
-    // out that step 5 recorded as owed to step 8.
     const max = root.query('input[aria-label="Beat maximum"]') as HTMLInputElement;
     expect(Number(max.value)).toBeLessThan(30);
     root.act(() => setInputValue(max, '40'));
@@ -1376,8 +1281,8 @@ describe('the editor (§6.1)', () => {
   });
 });
 
-describe('the app-level noise layer (§4.5b)', () => {
-  it('is off until someone turns it on (§3.8 item 6)', async () => {
+describe('the app-level noise layer', () => {
+  it('is off until someone turns it on', async () => {
     window.location.hash = '#/p/powernap';
     root.render(<App />);
     await flush();
@@ -1400,7 +1305,6 @@ describe('the app-level noise layer (§4.5b)', () => {
     expect(root.query('.export__include')?.textContent).toContain('Include background noise');
     expect(root.query('.export__include')?.textContent).toContain('program as authored');
 
-    // Ticked only by a person — the same rule the layer itself follows (§3.8 item 6).
     root.act(() => setCheckbox(include, true));
     expect((root.query('.export__include input') as HTMLInputElement).checked).toBe(true);
   });
@@ -1417,7 +1321,7 @@ describe('the app-level noise layer (§4.5b)', () => {
   });
 });
 
-describe('the warning surface (§3.3, §3.4, §3.7)', () => {
+describe('the warning surface', () => {
   function drop(text: string, name = 'odd.gnaural') {
     const event = new Event('drop', { bubbles: true, cancelable: true });
     Object.defineProperty(event, 'dataTransfer', { value: { files: [new File([text], name)] } });
@@ -1433,11 +1337,6 @@ describe('the warning surface (§3.3, §3.4, §3.7)', () => {
     </voice>`;
   }
 
-  /**
-   * Every type the format defines is now rendered except type 2, so the type this warning is *for*
-   * is one no version of Gnaural ever wrote — §3.4's dirty files, kept verbatim rather than
-   * corrected. That is the only route left into the message, and it still has to work.
-   */
   it('says a voice type it cannot render will be silent, and still plays the rest', async () => {
     root.render(<App />);
     drop(`<?xml version="1.0"?><schedule><title>Mixed</title>
@@ -1445,15 +1344,9 @@ describe('the warning surface (§3.3, §3.4, §3.7)', () => {
     await flush();
 
     expect(root.query('.warnings__list[role="alert"]')?.textContent).toContain('does not render yet');
-    // Something is still audible, so the transport stays live.
     expect((root.byText('.button', 'Play') as HTMLButtonElement).disabled).toBe(false);
   });
 
-  /**
-   * Types 3 and 4 became renderable in step 10, so a file made only of them is an ordinary
-   * programme: no alarm, a playable transport, and a voice list that says what the voice is rather
-   * than that it will be silent.
-   */
   it('treats an isochronic programme as an ordinary one', async () => {
     root.render(<App />);
     drop(`<?xml version="1.0"?><schedule><title>Pulses</title>
@@ -1466,8 +1359,6 @@ describe('the warning surface (§3.3, §3.4, §3.7)', () => {
     expect(root.text()).not.toContain('not yet rendered');
   });
 
-  /** The same for types 5 and 6, which arrived after them: water drops and rain are ordinary
-   *  voices now, and the list names them rather than warning about them. */
   it('treats a water programme as an ordinary one', async () => {
     root.render(<App />);
     drop(`<?xml version="1.0"?><schedule><title>Weather</title>
@@ -1495,7 +1386,6 @@ describe('the warning surface (§3.3, §3.4, §3.7)', () => {
     root.render(<App />);
     await flush();
 
-    // §3.4 tells the parser to ignore the declared counts, so this is transparency, not a fault.
     expect(root.query('.warnings__list[role="alert"]')).toBeNull();
     expect(root.query('.warnings__notices summary')?.textContent).toContain('2 notes');
     expect(root.text()).toContain('says it has 3 voices but contains 1');
@@ -1510,7 +1400,7 @@ describe('the warning surface (§3.3, §3.4, §3.7)', () => {
   });
 });
 
-describe('the headphone notice (§4.4, §5.1)', () => {
+describe('the headphone notice', () => {
   it('appears on a first visit and stays dismissed on the next', async () => {
     root.render(<App />);
     await flush();
@@ -1526,14 +1416,12 @@ describe('the headphone notice (§4.4, §5.1)', () => {
   });
 
   it('waits for the stored answer rather than flashing the default', () => {
-    // Rendered but not flushed: the IndexedDB read has not settled, so nothing is asserted yet
-    // about whether this person has already dismissed it.
     root.render(<App />);
 
     expect(root.query('.headphones')).toBeNull();
   });
 
-  it('says what the audio is, and makes no claim about what it does (§2)', async () => {
+  it('says what the audio is, and makes no claim about what it does', async () => {
     root.render(<App />);
     await flush();
 
@@ -1556,9 +1444,8 @@ describe('the silent keepalive element', () => {
     root.click(root.byText('.button', 'Play'));
     expect(audio()?.paused).toBe(false);
 
-    // 8b left this running across a pause. That made the element look, to the platform, like media
-    // that was still playing — so its notification's play button had nothing to do, fired no
-    // `play` event, and reached the app not at all. Found on hardware.
+    // Regression guard: if this element stays running across a pause, the platform still thinks
+    // media is playing, so the lock-screen play button fires no `play` event (found on hardware).
     root.click(root.byText('.button', 'Pause'));
     expect(audio()?.paused).toBe(true);
 
@@ -1575,8 +1462,8 @@ describe('the silent keepalive element', () => {
     root.click(root.byText('.button', 'Pause'));
     expect(root.byText('.button', 'Play')).toBeDefined();
 
-    // What Chrome does to the element when the notification's play button is pressed. The app has
-    // to notice this directly: the MediaSession `play` action handler was never invoked.
+    // What Chrome does to the element when the lock-screen play button is pressed, bypassing the
+    // MediaSession `play` action handler entirely.
     root.act(() => {
       audio()?.dispatchEvent(new Event('play'));
     });
@@ -1605,14 +1492,11 @@ describe('the silent keepalive element', () => {
     root.click(root.byText('.button', 'Play'));
     root.click(root.byText('.button', 'Pause'));
 
-    // `pause()` stops the element, which fires a `pause` event straight back. The guard is the
-    // engine's own flag, set synchronously, so the return trip finds nothing to do.
     root.act(() => {
       audio()?.dispatchEvent(new Event('pause'));
     });
 
     expect(root.byText('.button', 'Play')).toBeDefined();
-    // And a single press still resumes — the echo has not left anything in a half-state.
     root.click(root.byText('.button', 'Play'));
     expect(root.byText('.button', 'Pause')).toBeDefined();
   });

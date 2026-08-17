@@ -1,15 +1,9 @@
 /**
- * Where each voice of one document ended up in the next — the one delta a stack of documents still
- * needs.
- *
- * Everything else about an edit can be read off the two documents, because §4.1 makes them
- * immutable and the transforms reuse what they do not touch. Voice *identity* cannot: the engine
- * keys session mute and solo by index into `schedule.voices` (§3.4 — ids are not unique in real
- * files), and a document cannot be asked what moved. So a structural transform reports it, the
- * commit carries it, and undo applies its inverse.
- *
- * The alternative — a synthetic uid on `Voice` — stays rejected: the serializer would have to
- * ignore it and a share link would not preserve it.
+ * Where each voice of one document ended up in the next — the one delta a stack of immutable
+ * documents still needs. The engine keys session mute/solo by index into `schedule.voices` (ids
+ * aren't unique in real files), and a document alone can't say what moved — so a structural
+ * transform reports it, the commit carries it, and undo applies its inverse. A synthetic uid on
+ * `Voice` was rejected: the serializer would have to ignore it and a share link wouldn't preserve it.
  */
 
 /** Old voice index -> new voice index, or `REMOVED`. Length is the *previous* voice count. */
@@ -43,10 +37,7 @@ export function moveVoiceMap(count: number, from: number, to: number): VoiceMap 
   });
 }
 
-/**
- * The map that undoes this one. Voices the map created have no previous index and report `REMOVED`,
- * which is exactly right: undoing past them, they did not exist.
- */
+/** The map that undoes this one. Voices the map created have no previous index and report `REMOVED`. */
 export function invertVoiceMap(map: VoiceMap, nextCount: number): VoiceMap {
   const inverse = new Array<number>(nextCount).fill(REMOVED);
   map.forEach((to, from) => {
@@ -56,11 +47,9 @@ export function invertVoiceMap(map: VoiceMap, nextCount: number): VoiceMap {
 }
 
 /**
- * Two transitions as one.
- *
- * Needed because the push to the engine is throttled and keeps only the most recent document: two
- * structural commits inside one throttle interval deliver one document, so their maps have to
- * arrive as one map rather than one of them being dropped.
+ * Two transitions as one. Needed because the push to the engine is throttled and keeps only the
+ * most recent document: two structural commits inside one throttle interval have to arrive as one
+ * map rather than one of them being dropped.
  */
 export function composeVoiceMaps(first: VoiceMap, second: VoiceMap): VoiceMap {
   return first.map((middle) => (middle < 0 ? REMOVED : second[middle] ?? REMOVED));

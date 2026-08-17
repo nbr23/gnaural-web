@@ -1,34 +1,18 @@
 import { useCallback, useEffect, useRef } from 'react';
 
 /**
- * How often an edit reaches the engine. The precedent is `CLOCK_INTERVAL_MS` in `usePlayer`, and
- * so is the reasoning, but the number comes from somewhere more specific.
- *
- * Named for the engine rather than for Live mode, and living in `app/` rather than in `live/`,
- * because the editor is the second caller: any surface that pushes documents at `PlaybackEngine.
- * update()` under a finger needs exactly this rate limit, for exactly this reason.
- *
- * **A transition is already ~70 ms wide.** `scheduleLookahead` is at least 50 ms — and Android
- * reports `baseLatency` 0, so the floor is exactly what applies there — plus `CLICK_FREE_RAMP` at
- * 20 ms. Calling faster than that means every update cancels the previous one's ramp before it has
- * landed, which is the ramp-in-the-past bug rebuilt from the caller's side. 100 ms is the first
- * round number clear of the window.
+ * How often an edit reaches the engine. A transition is already ~70 ms wide (`scheduleLookahead`'s
+ * 50 ms floor plus `CLICK_FREE_RAMP`'s 20 ms), so calling faster than that would cancel each
+ * update's ramp before it lands. 100 ms is the first round number clear of that window.
  */
 export const ENGINE_UPDATE_INTERVAL_MS = 100;
 
 /**
  * Rate-limit a value going somewhere expensive, delivering the first change at once and the last
- * change always.
- *
- * **The trailing edge is not an optimisation, it is the correctness condition.** A throttle that
- * drops the final change leaves the audio at a frequency the readout does not show — every
- * intermediate value may be dropped, the last one may not. It also flushes on unmount, so leaving
- * the view mid-drag cannot strand the engine on a stale value.
- *
- * `setTimeout` rather than `requestAnimationFrame`, which is what `usePlayer`'s clock uses: rAF is
- * right for a *poll*, since a backgrounded tab should stop polling, and wrong for this, since the
- * driver is a finger on a slider — a trailing edge that never fires because the tab was hidden
- * would strand exactly the value that must not be dropped.
+ * change always — dropping the final change would leave the audio at a frequency the readout
+ * doesn't show. Flushes on unmount too, so leaving the view mid-drag can't strand a stale value.
+ * `setTimeout` rather than `requestAnimationFrame`: the driver is a finger on a slider, not a poll,
+ * so the trailing edge must still fire once the tab is backgrounded.
  */
 export function useThrottled<T>(
   action: (value: T) => void,

@@ -6,7 +6,6 @@ import { VoiceType } from '../document/types';
 import { renderHook } from '../test-utils';
 import { useEditor } from './useEditor';
 
-/** Two voices of four entries, so a selection in these tests points at something real. */
 function schedule(title: string): Schedule {
   const voice = (id: number): Voice => ({
     id,
@@ -61,7 +60,6 @@ describe('useEditor', () => {
     hook.unmount();
   });
 
-  /** A commit that changes nothing must not leave an undo step behind. */
   it('ignores a commit of the document already present', () => {
     const hook = renderHook(() => useEditor(schedule('one')));
 
@@ -75,7 +73,6 @@ describe('useEditor', () => {
     hook.unmount();
   });
 
-  /** The editor owns the document after it opens; a new one is a new editor, not a merge. */
   it('reads the initial document once', () => {
     let initial = schedule('one');
     const hook = renderHook(() => useEditor(initial));
@@ -87,10 +84,6 @@ describe('useEditor', () => {
     hook.unmount();
   });
 
-  /**
-   * §6.1 wants undo to restore what was selected, so undoing a move puts the node back *and* leaves
-   * it selected — otherwise the obvious next action, trying again, needs a re-select first.
-   */
   it('carries the selection with a commit and restores it on undo and redo', () => {
     const hook = renderHook(() => useEditor(schedule('one')));
 
@@ -105,8 +98,6 @@ describe('useEditor', () => {
 
     act(() => hook.current.select([{ voice: 1, entry: 0 }]));
     act(() => hook.current.undo());
-    // The commit's own selection, not the opening document's absence of one: undoing an edit and
-    // finding the node deselected is exactly wrong when the next action is to try again.
     expect(hook.current.selection).toEqual([{ voice: 0, entry: 3 }]);
 
     act(() => hook.current.redo());

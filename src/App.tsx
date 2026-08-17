@@ -33,11 +33,6 @@ interface LoadedProgram {
   /** The route this was resolved for, so re-entering it does not re-parse and reload the engine. */
   route: Route;
   schedule: Schedule;
-  /**
-   * What §3.4's defensive parse absorbed. Held per loaded program rather than persisted with an
-   * imported one: recomputing costs a parse that has already happened, and a stored list could
-   * drift from the file it describes.
-   */
   warnings: ScheduleWarning[];
   /** Byline for the player — a bundled program's credit, or the file it arrived as. */
   subtitle?: string;
@@ -55,46 +50,32 @@ function App() {
   const [current, setCurrent] = useState<LoadedProgram | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  /**
-   * A program the library was asked to play, by route key, until it is playing.
-   *
-   * Pressing Play on a row is two steps rather than one: a bundled program is a lazy chunk and an
-   * imported one is a database row, so what the press starts does not exist yet when it happens.
-   */
+  /** A program the library asked to hear, by route key: what a press starts is not loaded yet. */
   const [autoplay, setAutoplay] = useState<string | null>(null);
 
-  // Rebuilt on every render, which `usePlayer` tolerates by depending on the two values.
   const noise = { colour: settings.noiseColour, gain: settings.noiseGain };
   const player = usePlayer(current?.schedule ?? null, settings.masterGain, noise);
 
   useMediaSession(player, current?.schedule.title ?? null, current?.subtitle);
   // Held here rather than in `PlayerView`, which unmounts while a program keeps playing.
   useWakeLock(settings.wakeLock && player.playing);
-  // Space and the arrows, from wherever you are. A live session has nowhere to seek to — its
-  // document is one constant hold — so it gets play/pause and no arrows, exactly as `LiveView`
-  // omits the ±30 s buttons.
-  useKeyboardShortcuts(player, route.view !== 'live');
+  useKeyboardShortcuts(
+    player,
+    route.view !== 'live',
+    route.view === 'library' ? null : () => navigate(LIBRARY),
+  );
 
-  /**
-   * The route a resolution is in flight or settled for.
-   *
-   * A ref rather than an effect cleanup flag because the effect re-runs on things the resolution
-   * does not depend on — the library read settling, most obviously — and a cleanup-based cancel
-   * would abandon a load that is still perfectly valid.
-   */
+  /** The route a resolution is in flight or settled for. */
   const resolving = useRef<string | null>(null);
 
   /**
-   * Load what a route names, unless that load is already in flight or settled.
-   *
-   * Shared by the routed load below and by the library's play buttons, which start a program
-   * without navigating to it — loading is not the same event as arriving somewhere.
+   * Load what a route names, unless that load is already in flight or settled. Shared by the routed
+   * load below and by the library's play buttons, which load without navigating.
    */
   const openRoute = useCallback(
     (route: Route) => {
       const key = formatHash(route);
       if (resolving.current === key) return;
-      // An imported route names an IndexedDB key, so it cannot be resolved before the read settles.
       if (route.view === 'imported' && !library.imported) return;
 
       resolving.current = key;
@@ -108,12 +89,7 @@ function App() {
         .catch((thrown) => {
           if (resolving.current !== key) return;
           resolving.current = null;
-          // Nothing landed, so nothing can start: a play that was waiting on this load is dropped
-          // rather than left armed for whatever is opened next.
           setAutoplay(null);
-          // Back to the library either way — a route that resolved to nothing has nothing to show,
-          // and the banner explains it there. A route that named something that never existed says
-          // nothing at all, because there is no program to name.
           if (!(thrown instanceof MissingProgramError)) {
             setError(thrown instanceof Error ? thrown.message : 'That program could not be read.');
           }
@@ -124,14 +100,10 @@ function App() {
   );
 
   useEffect(() => {
-    // Going back to the library keeps the program loaded, and therefore keeps it playing: the
-    // now-playing bar and the lock screen are both transport enough to leave audio running behind.
     if (route.view === 'library') return;
     openRoute(route);
   }, [route, openRoute]);
 
-  // The player is a fresh object every render, so the effect below reads it through a ref: it must
-  // run when the awaited program lands and at no other time.
   const playerRef = useRef(player);
   playerRef.current = player;
 
@@ -140,17 +112,12 @@ function App() {
   useEffect(() => {
     if (!armed) return;
     setAutoplay(null);
-    // `usePlayer`'s load effect is declared before this one, so the engine is already holding the
-    // schedule that just landed.
     playerRef.current.play();
   }, [armed]);
 
   /**
-   * Play a program from its row in the library, without leaving it (§5.1's list is where people
-   * choose, and choosing used to cost a page).
-   *
-   * `prime()` before anything asynchronous: the resolution below is an await, and an `AudioContext`
-   * opened after one is not opened inside the gesture that asked for sound (§4.4).
+   * Play a program from its row in the library, without leaving it. `prime()` before the await:
+   * an `AudioContext` opened after one is not opened inside the gesture that asked for sound.
    */
   const playRoute = useCallback(
     (target: Route) => {
@@ -172,8 +139,6 @@ function App() {
       }
 
       setError(null);
-      // Every file the user opens is kept. Nothing is session-only any more, so a reload, a share
-      // and a return visit all land on the same program.
       navigate({ view: 'imported', id: (await library.add(name, text, schedule, 'file')).id });
     },
     [library],
@@ -203,13 +168,7 @@ function App() {
     });
   }, [current, library]);
 
-  /**
-   * Keep a live session as a program.
-   *
-   * Deliberately the *same* path an opened file takes — serialize, hand to `library.add`, route to
-   * it — so it inherits the dedupe, the card, the share link, the WAV export and the player,
-   * rather than growing a second kind of saved program that only Live mode knows how to make.
-   */
+  /** Keep a live session as a program, by the same path an opened file takes. */
   const keepProgram = useCallback(
     async (schedule: Schedule, sourceName: string) => {
       const text = serializeSchedule(schedule);
@@ -221,14 +180,6 @@ function App() {
     [library],
   );
 
-  /**
-   * Fork what is loaded into a draft and open it (§6.1).
-   *
-   * Its text is `serializeSchedule`, not the source file's bytes: an import keeps the user's own
-   * bytes because re-exporting should hand them back, but a draft is a document about to be
-   * rewritten, and the round-trip is a fixed point either way.
-   */
-  /** §6.3's "authored from scratch": a blank draft, by the same fork path "Edit a copy" takes. */
   const newProgram = useCallback(async () => {
     const schedule = newSchedule('New program');
     const draft = await library.fork('scratch', serializeSchedule(schedule), schedule);
@@ -245,8 +196,6 @@ function App() {
 
   const discardDraft = useCallback(
     async (id: string) => {
-      // Same rule as removing an imported program: what has no library entry and no route to
-      // return to has nowhere left to be, so it is unloaded, which also stops it.
       if (current?.route.view === 'editor' && current.route.id === id) {
         resolving.current = null;
         setCurrent(null);
@@ -259,8 +208,6 @@ function App() {
 
   const removeImported = useCallback(
     async (id: string) => {
-      // Deleting what is loaded also unloads it, which stops it — a program with no library entry
-      // and no route to return to has nowhere left to be.
       if (current?.route.view === 'imported' && current.route.id === id) {
         resolving.current = null;
         setCurrent(null);
@@ -272,9 +219,8 @@ function App() {
 
   const onLibrary = route.view === 'library';
 
-  // The editor's autosave writes straight to IndexedDB on a debounce, so the mirrored list is
-  // stale by the time anyone comes back to look at it. Re-read on arrival rather than pushing
-  // every keystroke through here, which would re-render the library behind the editor.
+  // The editor autosaves straight to IndexedDB on a debounce, so the mirrored list is stale by the
+  // time anyone comes back to look at it.
   const { reloadDrafts } = library;
   useEffect(() => {
     if (onLibrary) void reloadDrafts();
@@ -282,7 +228,6 @@ function App() {
 
   const awaiting = !onLibrary && !current && !error;
   const draftId = current?.route.view === 'editor' ? current.route.id : null;
-  // Only once it has actually been started: a program merely opened and left has nothing to show.
   const nowPlaying = onLibrary && current && (player.playing || player.offset > 0) ? current : null;
 
   return (
@@ -299,8 +244,6 @@ function App() {
     >
       <UpdatePrompt />
 
-      {/* Gated on the settings read, not just the flag: the default is "not yet seen", so
-          rendering before the read lands would flash this on every launch. */}
       {hydrated && !settings.headphoneNoticeSeen && (
         <HeadphoneNotice onDismiss={() => set('headphoneNoticeSeen', true)} />
       )}
@@ -381,8 +324,6 @@ function App() {
           onRemoveImported={(id) => void removeImported(id)}
           drafts={library.drafts}
           onDiscardDraft={(id) => void discardDraft(id)}
-          // Same rule as the bar below — a row and the bar are the same session seen twice, so a
-          // program merely loaded shows a Play and only a started one offers a Stop.
           transport={{
             active: nowPlaying
               ? { key: formatHash(nowPlaying.route), playing: player.playing }
@@ -413,12 +354,7 @@ function App() {
   );
 }
 
-/**
- * Turn a route into a playable program.
- *
- * The three sources differ only in where the XML comes from: a lazily imported bundle chunk, an
- * IndexedDB row, or the fragment itself.
- */
+/** Turn a route into a playable program. */
 async function resolveRoute(
   route: Route,
   imported: ImportedProgram[],
@@ -444,24 +380,16 @@ async function resolveRoute(
       }
     }
 
-    // Read straight from the database rather than from the library mirror: a draft is one row, and
-    // waiting for the whole list to settle would delay opening one that was just forked.
     case 'editor': {
       const draft = await getDraft(route.id);
       if (!draft) throw new MissingProgramError();
       try {
-        // A draft's XML is this app's own output, from the fork and from every autosave since, so
-        // §3.4's file-level warnings cannot apply to one — whatever the original file said about
-        // itself did not survive serialization. Same as a shared link, for the same reason.
         return { schedule: parseSchedule(draft.xml), warnings: [], subtitle: draft.sourceName };
       } catch {
         throw new Error(`${draft.title} could not be read.`);
       }
     }
 
-    // Live mode's document is synthesised, not loaded, and the sliders correct it through
-    // `player.update` as soon as the settings read lands — so the values here are only what is
-    // true for the frame before that. §3.4's warnings cannot apply to a document nothing parsed.
     case 'live':
       return { schedule: buildLiveSchedule(DEFAULT_LIVE_VALUES), warnings: [] };
 
@@ -474,12 +402,8 @@ async function resolveRoute(
       }
       return {
         schedule,
-        // A link carries a `Schedule`, never XML, so §3.4's file-level warnings cannot apply to
-        // one — whatever the original file said about itself did not survive serialization.
-        // `scheduleWarnings` still runs over it in the player.
         warnings: [],
         subtitle: schedule.author || 'Shared link',
-        // The link carried the program, not a file, so re-serializing is the honest source text.
         unsaved: { name: schedule.title.trim() || 'Shared program', text: serializeSchedule(schedule) },
       };
     }

@@ -1,15 +1,8 @@
-/*
- * Chart roles as custom properties, so the light/dark values swap in one place and the markup is
- * written against roles rather than raw hex.
- *
- * The categorical slots the series are drawn in (`--viz-series-*`) live in `src/index.css`: the
- * library colours its categories and the readout its bands from the same eight, and one validated
- * palette beats three invented ones. What stays here is what only a chart has — its surface, grid,
- * axis and band shading.
- *
- * Dark is the default and light is the media-query opt-out, matching index.css: the chart must
- * follow the app's own dark-by-default choice (§5.1) rather than the OS setting.
- */
+/* Chart roles as custom properties, so light/dark values swap in one place and the markup is
+   written against roles rather than raw hex. The categorical series slots (`--viz-series-*`) live
+   in `src/index.css` instead — the library and readout draw from the same eight, so what stays
+   here is only what a chart has: surface, grid, axis and band shading. Dark is the default and
+   light the media-query opt-out, matching index.css. */
 
 .schedule-chart {
   --viz-surface: #16171d;
@@ -113,8 +106,8 @@
   stroke-linecap: round;
 }
 
-/* Threshold annotation, not a gridline — dashing is carrying meaning here (§3.7: playback ends
-   with the shortest voice, even though longer voices keep drawing). */
+/* Threshold annotation, not a gridline — dashing carries meaning here: playback ends with the
+   shortest voice, even though longer voices keep drawing. */
 .schedule-chart__truncation {
   stroke: var(--viz-axis);
   stroke-width: 1;
@@ -146,7 +139,7 @@
   stroke-width: 2;
 }
 
-/* --- Editing surface (§6.1). None of this exists on the read-only chart. --- */
+/* --- Editing surface. None of this exists on the read-only chart. --- */
 
 /* Without this a phone treats a drag as a page pan and `pointermove` never arrives. */
 .schedule-chart--editing .schedule-chart__plot {
@@ -164,8 +157,8 @@
   stroke-width: 1.5;
 }
 
-/* §3.5's wrap point: derived from entry[0] rather than authored, so it is drawn hollow and is not
-   a hit target. The segment leading to it is dashed for the same reason. */
+/* The wrap point is derived from entry[0] rather than authored, so it's drawn hollow and isn't a
+   hit target — the segment leading to it is dashed for the same reason. */
 .schedule-chart__wrap-node {
   fill: var(--viz-surface);
   stroke-width: 1.5;
@@ -180,9 +173,9 @@
   stroke-width: 2;
 }
 
-/* A validation mark (§6.1). Wider than the selection ring and in the app's warning colour rather
-   than the voice's, because it says something about the value rather than about which voice it is
-   in — so the two can be worn by the same node without either being ambiguous. */
+/* A validation mark: wider than the selection ring and in the app's warning colour rather than the
+   voice's, since it says something about the value rather than which voice it's in — so the two
+   can be worn by the same node without either being ambiguous. */
 .schedule-chart__mark {
   fill: none;
   stroke: var(--warn, #fbbf24);
@@ -199,7 +192,7 @@
   stroke-dasharray: 2 4;
 }
 
-/* §6.1's marquee. Deliberately neutral rather than an accent colour — it is over the top of every
+/* The marquee is deliberately neutral rather than an accent colour — it's over the top of every
    voice at once, and belongs to none of them. */
 .schedule-chart__marquee {
   fill: var(--viz-ink);

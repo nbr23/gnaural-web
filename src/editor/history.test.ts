@@ -3,7 +3,6 @@ import { updateSchedule } from '../document/edit';
 import type { Schedule } from '../document/types';
 import { HistoryStack } from './history';
 
-/** The stack only ever compares and stores documents, so the thinnest possible one will do. */
 function schedule(title: string): Schedule {
   return {
     title,
@@ -77,10 +76,6 @@ describe('HistoryStack', () => {
     expect(stack.present.title).toBe('elsewhere');
   });
 
-  /**
-   * A no-op edit must not push a step. `updateSchedule` returns its input unchanged when the patch
-   * changes nothing, and the stack takes that identity as the answer.
-   */
   it('ignores a commit of the document already present', () => {
     const stack = new HistoryStack(schedule('one'));
     titled(stack, 'two');
@@ -101,7 +96,6 @@ describe('HistoryStack', () => {
     stack.undo();
     stack.undo();
     expect(stack.canUndo).toBe(false);
-    // 'one' fell off the bottom; the session keeps going from what is left.
     expect(stack.present.title).toBe('two');
   });
 

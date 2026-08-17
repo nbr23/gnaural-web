@@ -8,11 +8,9 @@ export interface TimelineProps {
 }
 
 /**
- * The scrubbable timeline. A real `<input type="range">` rather than a custom track, so it is
- * keyboard-operable and hits native touch targets for free.
- *
- * While dragging, the input holds its own value: the rAF poll is writing `offset` every frame,
- * and letting that win would drag the thumb out from under the finger.
+ * A real `<input type="range">` rather than a custom track, for free keyboard operation and touch
+ * targets. While dragging, the input holds its own value rather than `offset` — the rAF poll
+ * writes `offset` every frame, and letting that win would drag the thumb out from under the finger.
  */
 export function Timeline({ offset, duration, onSeek }: TimelineProps) {
   const [scrubbing, setScrubbing] = useState<number | null>(null);

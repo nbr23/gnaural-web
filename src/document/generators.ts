@@ -1,25 +1,11 @@
 import type { Entry } from './types';
 
 /**
- * §6.1's generators: the shapes an author starts from instead of drawing curves by hand.
- *
- * Pure breakpoint arithmetic and nothing else — these build an `Entry[]`, never a `Schedule`, so the
- * transform that puts one into a document stays in `edit.ts` with the identity invariants. Each
- * shape is written into a **new voice** (the owner's call): a generator is never destructive, and
- * the voice it makes is the same kind of voice `insertVoice` already makes.
- *
- * **Every shape totals exactly the duration it was asked for, return leg included, and that is
- * §3.5 rather than a styling choice.** The last entry glides back to entry[0]'s values whether or
- * not the schedule loops, so a voice is a closed curve: there is no way to ramp somewhere and stay
- * there. A generator therefore has to decide how long the journey home takes, and it says so —
- * `returnSeconds` is a field on the shapes that have one, not a fraction hidden in here. Getting the
- * total exactly right is what keeps a generated voice from making the schedule ragged (§3.7), since
- * the panel defaults the duration to what the schedule already plays.
- *
- * **Values are not clamped** (the owner's call). §6.1's "sensible" 20–1500 Hz band and its 40 Hz
- * beat ceiling are step 7's validation thresholds, and a generated document is subject to them like
- * any other: the Gamma preset lands above the beat ceiling and raises step 7's notice, which is the
- * honest reading — four shipped presets do the same, and a beat there plays exactly as written.
+ * Generators: the shapes an author starts from instead of drawing curves by hand. Pure breakpoint
+ * arithmetic that builds an `Entry[]`, never a `Schedule` — always written into a new voice by
+ * `edit.ts`. Every shape totals exactly the duration it was asked for, return leg included, since a
+ * voice is a closed curve with no way to ramp somewhere and stay there. Values are not clamped —
+ * they're subject to the same validation thresholds as any other entry.
  */
 
 /** A tone, as the panel's two fields give it. */
@@ -29,36 +15,28 @@ export interface Tone {
 }
 
 export type GeneratorSpec =
-  /** One entry, a constant hold. The same document Live mode builds, and the band presets' shape. */
+  /** One entry, a constant hold. */
   | { kind: 'hold'; tone: Tone; seconds: number }
-  /** §6.1's "linear ramp between two bands over a duration", plus the return §3.5 requires. */
+  /** Linear ramp between two bands over a duration, plus the return leg a closed curve requires. */
   | { kind: 'ramp'; from: Tone; to: Tone; seconds: number; returnSeconds: number }
-  /** §6.1's sleep-cycle template: repeated descents into delta with a rise between them. */
+  /** Sleep-cycle template: repeated descents into delta with a rise between them. */
   | { kind: 'sleep-cycle'; baseFreq: number; seconds: number }
-  /** §6.1's wake-up ramp: delta up into beta, then home. */
+  /** Wake-up ramp: delta up into beta, then home. */
   | { kind: 'wake-up'; baseFreq: number; seconds: number; returnSeconds: number };
 
 export type GeneratorKind = GeneratorSpec['kind'];
 
-/**
- * The level a generated node sits at.
- *
- * The same 0.5 `insertVoice` gives a new tone voice, for the reason step 6 recorded: a new voice at
- * full scale on a programme already near it is the clipping case §5.3's null test had to be designed
- * around.
- */
+/** The level a generated node sits at — the same 0.5 `insertVoice` gives a new tone voice. */
 const GENERATED_VOLUME = 0.5;
 
 /** A sleep cycle is about 90 minutes; the template repeats one for as long as it is given. */
 export const SLEEP_CYCLE_SECONDS = 90 * 60;
 
 /**
- * One cycle, as fractions of its length paired with the beat frequency reached there.
- *
- * Descend from alpha through theta into delta, stay there, then rise back towards theta for the
- * REM-ish stretch — after which §3.5's wrap carries it back to the alpha this table opens with,
- * which is exactly the next cycle's descent. **So the template needs no return leg**: its last
- * segment is the return, and a single cycle and eight cycles are the same shape repeated.
+ * One cycle, as fractions of its length paired with the beat frequency reached there: descend from
+ * alpha through theta into delta, stay there, then rise back towards theta for the REM-ish stretch.
+ * The wrap back to entry[0] carries it back to alpha, which is the next cycle's descent — so the
+ * template needs no explicit return leg.
  */
 const SLEEP_CYCLE: readonly { at: number; beatFreq: number }[] = [
   { at: 0, beatFreq: 10 },
@@ -118,11 +96,9 @@ function entry(tone: Tone, duration: number): Entry {
 }
 
 /**
- * How long the journey home gets, kept inside the shape's own length.
- *
- * A return of zero would give the final entry a zero duration, which §3.5 then reads as an instant
- * jump back to the opening values at the very end — so it is floored at a sliver rather than
- * allowed, and it can never eat the whole shape.
+ * How long the journey home gets, kept inside the shape's own length. A return of zero would give
+ * the final entry a zero duration — an instant jump back to the opening values — so it's floored at
+ * a sliver.
  */
 function returnLeg(requested: number, seconds: number): number {
   const wanted = Number.isFinite(requested) ? requested : 0;

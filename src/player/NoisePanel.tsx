@@ -3,10 +3,8 @@ import type { NoiseColour } from '../engine/noise';
 import { NOISE_COLOURS } from '../engine/noise';
 import './NoisePanel.css';
 
-/**
- * `gnaural` first because it is the sound this app already makes: a schedule's own noise voice
- * (§4.5a) is exactly this generator, so a bed under a program that has one matches it.
- */
+/** `gnaural` first: it's the same generator a schedule's own noise voice uses, so a bed under a
+ *  program that has one matches it. */
 const COLOUR_LABELS: Record<NoiseColour, string> = {
   gnaural: 'Gnaural (lowpass)',
   white: 'White',
@@ -17,24 +15,15 @@ const COLOUR_LABELS: Record<NoiseColour, string> = {
 export interface NoisePanelProps {
   noise: NoiseLayerSettings;
   onChange(noise: NoiseLayerSettings): void;
-  /**
-   * Set for the four presets whose ambient bed did not survive conversion
-   * (`fixtures/presets/README.md`), which names this feature as their remedy. It is a pointer to a
-   * control that is already here, not a per-program setting: nothing is enabled on the listener's
-   * behalf, and what they choose stays chosen for every program (§3.8 item 6).
-   */
+  /** Set for the four presets whose ambient bed did not survive conversion — points at this
+   *  control as the remedy rather than enabling anything on the listener's behalf. */
   lostAmbientBed?: boolean;
 }
 
 /**
- * The app-level noise layer (PLAN.md §4.5b): a bed of noise under whatever is playing, with no
- * sampled audio and nothing added to the document (§4.6).
- *
- * Off unless someone turns it on, and it stays where they put it across programs — it is a
- * preference about listening, not a property of a schedule. So nothing that *describes* the
- * program carries it: not the share link, not the `.gnaural` file. A WAV is rendered audio rather
- * than a description, so `ExportPanel` offers to mix it in, and that offer is where the choice is
- * made — never here.
+ * The app-level noise layer: a bed of noise under whatever is playing, off by default and
+ * persisted across programs as a listening preference rather than a property of a schedule. Never
+ * carried by a share link or `.gnaural` file; `ExportPanel` offers to mix it into a WAV.
  */
 export function NoisePanel({ noise, onChange, lostAmbientBed }: NoisePanelProps) {
   const on = noise.gain > 0;
@@ -56,9 +45,6 @@ export function NoisePanel({ noise, onChange, lostAmbientBed }: NoisePanelProps)
 
         <label className="noise__colour">
           <span className="noise__label">Colour</span>
-          {/* Not disabled while the level is at zero: choosing a colour before turning it up is a
-              reasonable order to do this in, and a colour change with no layer built costs
-              nothing. */}
           <select
             value={noise.colour}
             onChange={(event) => onChange({ ...noise, colour: event.target.value as NoiseColour })}

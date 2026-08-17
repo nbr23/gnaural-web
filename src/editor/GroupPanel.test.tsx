@@ -79,7 +79,6 @@ describe('GroupPanel', () => {
     expect(testRoot.text()).toContain('0:10 to 0:30');
   });
 
-  /** §3.7 is what the mode decides, so the panel says which is in force rather than assuming. */
   it('says whether the program will change length', () => {
     mount(group, 'squeeze');
     expect(testRoot.text()).toContain('stays the same length');
@@ -105,8 +104,6 @@ describe('GroupPanel', () => {
     testRoot.click(button('Stretch'));
 
     expect(harness.commits[0].label).toBe('Scale selection');
-    // The block spans 10..30; doubled it spans 10..50, and the squeeze takes the extra 20 s out of
-    // the segment after it, so the voice is exactly as long as it was.
     expect(entryStartTimes(harness.commits[0].schedule.voices[0])).toEqual([0, 10, 50, 60]);
     expect(voiceDuration(harness.commits[0].schedule.voices[0])).toBe(100);
   });
@@ -121,7 +118,6 @@ describe('GroupPanel', () => {
     expect(entryStartTimes(harness.commits[0].schedule.voices[0])).toEqual([0, 10, 20, 60]);
   });
 
-  /** Scaling stretches the time *between* nodes, so one node in a voice has no span to stretch. */
   it('refuses to scale a selection with no span, and says why', () => {
     mount([
       { voice: 0, entry: 1 },
@@ -140,11 +136,9 @@ describe('GroupPanel', () => {
     expect(harness.commitsAt[0].label).toBe('Delete nodes');
     expect(harness.commitsAt[0].schedule.voices[0].entries).toHaveLength(2);
     expect(harness.commitsAt[0].selection).toEqual([{ voice: 0, entry: 0 }]);
-    // Length-preserving, exactly as a single delete is.
     expect(voiceDuration(harness.commitsAt[0].schedule.voices[0])).toBe(100);
   });
 
-  /** Step 6's floor, where a group delete is the way to meet it. */
   it('states that a voice always keeps a node', () => {
     mount(group);
     expect(testRoot.text()).toContain('keeps at least one node');

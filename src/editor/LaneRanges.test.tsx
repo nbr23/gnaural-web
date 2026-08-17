@@ -37,7 +37,6 @@ describe('LaneRanges', () => {
     expect(field('Beat maximum').value).toBe('13');
   });
 
-  /** Only open lanes: a closed lane has no axis on screen to override. */
   it('offers a range for each open lane and no others', () => {
     mount({}, ['beat']);
     expect(testRoot.queryAll('input')).toHaveLength(2);
@@ -73,7 +72,6 @@ describe('LaneRanges', () => {
     mount({ beat: [0, 40] });
     expect(field('Beat minimum').value).toBe('0');
     expect(field('Beat maximum').value).toBe('40');
-    // The lane nobody overrode still reads from the data.
     expect(field('Base minimum').value).toBe('90');
   });
 });

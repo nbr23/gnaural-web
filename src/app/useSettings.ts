@@ -12,48 +12,34 @@ const WRITE_DEBOUNCE_MS = 250;
 export const DEFAULT_SETTINGS: Settings = {
   masterGain: 1,
   exportSampleRate: DEFAULT_EXPORT_SAMPLE_RATE,
-  /** Off by default (PLAN.md §5.1) — it burns battery and the common case is a sleep program. */
+  /** Off by default — it burns battery and the common case is a sleep program. */
   wakeLock: false,
   headphoneNoticeSeen: false,
-  /**
-   * **Silent by default (§4.5b), and only a person turns it on.** §3.8 item 6 records the Android
-   * importer forcing noise onto every segment at a hardcoded gain whatever the file said; this is
-   * the same feature and the default is the whole difference.
-   */
+  /** Silent by default, and only a person turns it on. */
   noiseColour: SILENT_NOISE_LAYER.colour,
   noiseGain: SILENT_NOISE_LAYER.gain,
   liveBaseFreq: DEFAULT_LIVE_VALUES.baseFreq,
   liveBeatFreq: DEFAULT_LIVE_VALUES.beatFreq,
   favourites: [],
-  /**
-   * Nothing overridden: the top-level sections start open and everything nested inside them starts
-   * folded. Nineteen bundled programs in their category groups is more list than one screen, and
-   * the group headings with their counts are the map to it.
-   */
+  /** Nothing overridden: top-level sections start open, everything nested starts folded. */
   sectionOverrides: [],
 };
 
 export interface SettingsStore {
   settings: Settings;
   /**
-   * Whether the stored values have arrived yet.
-   *
-   * Everything else here tolerates the defaults showing first — a volume slider that jumps from 1
-   * to 0.35 a frame later is not worth a blank launch. A *first-run* notice does not tolerate it:
-   * its default is "not yet seen", so without this it would flash on every single launch and then
-   * vanish. Anything gated on a boolean the user has already answered must wait for the read.
+   * Whether the stored values have arrived yet. Most UI tolerates the defaults showing first, but a
+   * first-run notice whose default is "not yet seen" would otherwise flash on every launch —
+   * anything gated on a boolean the user has already answered must wait for this.
    */
   hydrated: boolean;
   set<K extends keyof Settings>(key: K, value: Settings[K]): void;
 }
 
 /**
- * The handful of preferences that outlive a visit (PLAN.md §5.1), backed by IndexedDB.
- *
- * **Defaults are synchronous and stored values arrive after.** Gating the first render on a
- * database read would mean a blank frame on every launch to save a volume slider from moving, and
- * nothing here is applied to audio before the user's first gesture anyway — by which time the read
- * has long settled.
+ * The handful of preferences that outlive a visit, backed by IndexedDB. Defaults are synchronous
+ * and stored values arrive after, since gating the first render on a database read would mean a
+ * blank frame on every launch.
  */
 export function useSettings(): SettingsStore {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);

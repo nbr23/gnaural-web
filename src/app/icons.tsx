@@ -1,12 +1,6 @@
 /**
- * Transport glyphs, drawn rather than typed.
- *
- * The media-control codepoints (U+23F8, U+23EA…) are the obvious alternative and the wrong one:
- * Android and iOS render most of them as colour emoji, at their own size, regardless of the
- * text-presentation selector. These are paths in `currentColor` at `1em`, so a transport button
- * looks like the rest of the app in both schemes and at any font size.
- *
- * Every icon is `aria-hidden`: the buttons in `src/player/Controls.tsx` carry the name.
+ * Transport glyphs, drawn rather than typed: the media-control codepoints (U+23F8, U+23EA…) render
+ * as colour emoji at their own size on Android/iOS, regardless of the text-presentation selector.
  */
 
 const BOX = 24;
@@ -66,11 +60,6 @@ export function SeekForwardIcon() {
   );
 }
 
-/**
- * The two states of one control, so they share a cone and differ only to its right: the waves are
- * where the cross goes. Drawn to the same width either way, so a row of them does not shift when
- * one is toggled.
- */
 const SPEAKER_CONE = 'M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z';
 
 export function SpeakerOnIcon() {

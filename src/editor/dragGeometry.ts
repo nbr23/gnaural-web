@@ -1,24 +1,14 @@
-/**
- * Pixel geometry for a node drag: what to freeze when a finger lands, and what to redraw while it
- * moves. React-free and DOM-free, the same split `viz/geometry.ts` keeps from `ScheduleChart.tsx`.
- *
- * **The whole point of this module is that a drag is O(1) per move.** The chart's static layer is
- * memoised on its layout, and the layout is built from the *committed* document — so during a
- * gesture it holds still and this supplies the handful of marks that move over the top of it. If a
- * drag instead pushed its in-flight document back into the chart, `buildChartModel`, `layoutChart`
- * and `StaticPlot` would all rebuild on every `pointermove`, which is the defect measured at 1220 ms
- * of scripting per 5 s of playback and fixed once already (see PROGRESS.md).
- *
- * A ripple is the case that looks like it should cost O(entries): every node after the dragged one
- * moves. It does not — they all move by the *same* amount, so the tail is a path string built once
- * when the finger lands and translated thereafter.
- *
- * **A group drag is that same trick applied twice.** Step 8 generalised a drag from one node to one
- * *block* per affected voice: the block's own path is built at pointerdown and translated, and a
- * uniform change in value is a uniform change in pixels because the scale is linear — so the grabbed
- * lane translates its block by `(dx, dy)` and every other lane by `(dx, 0)`. A selection of seventy
- * nodes therefore costs exactly what a selection of one costs, per lane per voice.
- */
+// Pixel geometry for a node drag: what to freeze when a finger lands, and what to redraw while it
+// moves. React-free and DOM-free, the same split viz/geometry.ts keeps from ScheduleChart.tsx.
+//
+// A drag is O(1) per move: the chart's static layer stays memoised on the committed document
+// throughout the gesture, and this module supplies the handful of marks drawn over it instead of
+// pushing the in-flight document back through the chart (previously measured at 1220ms of
+// scripting per 5s of playback). A ripple moves every node after the dragged one by the same
+// amount, so its tail is one path string built at pointerdown and translated, not rebuilt per node.
+// A group drag applies the same trick per affected voice: one block per voice, translated by
+// (dx, dy) in the grabbed lane and (dx, 0) elsewhere, so a 70-node selection costs what a 1-node
+// selection costs.
 
 import type { MoveMode } from '../document/edit';
 import type { EntryLocation, Schedule } from '../document/types';
@@ -32,56 +22,42 @@ export interface Point {
 
 export interface LaneAnchors {
   laneId: LaneId;
-  /** The dragged node's committed position in this lane. */
+  // The dragged node's committed position in this lane.
   node: Point;
-  /** The preceding breakpoint, which never moves. Null when the block starts at entry 0. */
+  // The preceding breakpoint, which never moves. Null when the block starts at entry 0.
   previous: Point | null;
-  /**
-   * The block itself, as a path in committed pixel space — null for a block of one node, which is
-   * drawn as the marker alone.
-   */
+  // The block itself, as a path in committed pixel space — null for a block of one node.
   block: string | null;
-  /** The block's own last node, which is where the outgoing segment starts. */
   blockEnd: Point;
-  /** The breakpoint after the block. Under a ripple it moves with it; under a squeeze it does not. */
+  // The breakpoint after the block. Moves with it under a ripple; stays put under a squeeze.
   next: Point | null;
-  /**
-   * Everything after `next`, as a path in committed pixel space. Translated horizontally under a
-   * ripple and unused under a squeeze, where nothing past `next` moves at all.
-   */
+  // Everything after `next`, as a path in committed pixel space. Only translated under a ripple.
   tail: string | null;
 }
 
-/** One voice's share of a drag: the run of entries that travels, and its marks in every lane. */
 export interface VoiceBlock {
   voice: number;
   first: number;
   last: number;
-  /**
-   * Whether everything after this block slides with it. **Fixed when the pointer lands**, like the
-   * mode itself: a block ending on the voice's last entry has no following segment to squeeze into,
-   * so it ripples whatever the control says.
-   */
+  // Fixed when the pointer lands: a block ending on the voice's last entry has no following
+  // segment to squeeze into, so it ripples regardless of the control.
   rippling: boolean;
   lanes: LaneAnchors[];
   colour: string;
 }
 
 export interface DragAnchors {
-  /** The lane the pointer grabbed in — the only one whose *value* the drag changes. */
   laneId: LaneId;
-  /** The node under the finger. Its own voice's block leads, but every block moves alike. */
   voice: number;
   entry: number;
   blocks: VoiceBlock[];
   colour: string;
-  /** Committed time and value of the grabbed node, in document units. */
   time: number;
   value: number;
-  /** How far the grabbed node may travel before some voice's neighbour would go negative. */
+  // How far the grabbed node may travel before some voice's neighbour would go negative.
   minTime: number;
   maxTime: number;
-  /** Bounds on the grabbed node's value that keep *every* selected node inside the lane. */
+  // Bounds on the grabbed node's value that keep every selected node inside the lane.
   minValue: number;
   maxValue: number;
 }
@@ -90,22 +66,16 @@ export interface DragAnchorArgs {
   schedule: Schedule;
   layout: ChartLayout;
   laneId: LaneId;
-  /** The node the pointer grabbed. */
   voice: number;
   entry: number;
-  /** Every node that travels with it, the grabbed one included. One node is the ordinary case. */
   selection: readonly EntryLocation[];
   mode: MoveMode;
   colourOf(voice: number): string;
 }
 
-/**
- * Freeze everything a drag needs, at the instant the pointer lands.
- *
- * Returns null for a grab the document cannot place. Entry 0 is not such a case: its start is the
- * sum of no durations and is zero by definition, so it can still be dragged in value — that is
- * handled by `minTime === maxTime`, not by refusing the grab.
- */
+// Freezes everything a drag needs at the instant the pointer lands. Returns null only for a grab
+// the document can't place — entry 0 can still be dragged in value, via minTime === maxTime, since
+// its start is fixed at zero rather than refused.
 export function dragAnchors(args: DragAnchorArgs): DragAnchors | null {
   const { schedule, layout, laneId, voice, entry, mode } = args;
   const grabbed = layout.lanes.find((lane) => lane.model.id === laneId);
@@ -233,23 +203,17 @@ export interface LaneOverlay {
   laneId: LaneId;
   voice: number;
   node: Point;
-  /** From the preceding breakpoint to the block's first node. Null when the block starts the voice. */
+  // From the preceding breakpoint to the block's first node. Null when the block starts the voice.
   incoming: string | null;
-  /** From the block's last node to the following breakpoint, wherever the mode has left it. */
   outgoing: string | null;
-  /** The block itself, and how far to translate it. Null for a block of one node. */
+  // The block itself, and how far to translate it. Null for a block of one node.
   block: { d: string; dx: number; dy: number } | null;
-  /** Pre-built path for everything past `next`, plus how far to translate it. */
+  // Pre-built path for everything past `next`, plus how far to translate it.
   tail: { d: string; dx: number } | null;
 }
 
-/**
- * Where the drag's marks go, given the grabbed node's new time and value.
- *
- * Called once per `pointermove` per lane per affected voice, and does a fixed amount of work in
- * each — two line segments, a marker, and two translation offsets for paths built at pointerdown.
- * Nothing here is proportional to the number of nodes being dragged.
- */
+// Called once per pointermove per lane per affected voice, doing fixed work per call — nothing
+// here is proportional to the number of nodes being dragged.
 export function dragOverlay(
   anchors: DragAnchors,
   layout: ChartLayout,

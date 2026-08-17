@@ -28,9 +28,7 @@ describe('parseHash', () => {
     expect(parseHash('#')).toEqual({ view: 'library' });
     expect(parseHash('#/')).toEqual({ view: 'library' });
     expect(parseHash('#/nonsense')).toEqual({ view: 'library' });
-    // Not base64url, so it cannot be a share payload and must not be treated as one.
     expect(parseHash('#/s/not a payload')).toEqual({ view: 'library' });
-    // The route an opened file used before imports were persisted; now nothing.
     expect(parseHash('#/opened')).toEqual({ view: 'library' });
   });
 

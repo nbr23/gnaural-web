@@ -4,28 +4,20 @@ import type { Entry, EntryLocation, Schedule, Voice } from './types';
 import { VoiceType, isRenderableType, isTonalType } from './types';
 
 /**
- * Everything a file does that the listener should be told about (PLAN.md §3.3, §3.4, §3.7).
+ * Everything a file does that the listener should be told about.
  *
- * Two producers, one type. `parseScheduleWithWarnings` reports what was wrong with the *file* —
- * stale declared counts, values that would not parse, reused voice ids — because that information
- * exists only while the XML does and is gone by the time a `Schedule` object stands in its place.
- * `scheduleWarnings` reports what is wrong with the *program* — voice types this app cannot
- * render, voices of unequal length — which is a property of the model and needs no XML.
+ * Three producers, one type. `parseScheduleWithWarnings` reports what was wrong with the *file* —
+ * stale declared counts, values that would not parse, reused voice ids — since that information is
+ * gone once the XML has become a `Schedule`. `scheduleWarnings` reports what's wrong with the
+ * *program* — unrenderable voice types, unequal voice lengths — a property of the model alone.
+ * `entryWarnings` is the editor's inline validation, and the only one whose warnings carry a
+ * location.
  *
- * **The severity rule.** A `warning` means what you hear will differ from what the file describes:
- * a silent voice, a schedule cut short. A `notice` means the file was unusual and was handled
- * correctly, recorded so that "did it read my file properly?" has an answer. The distinction is
- * load-bearing, not decorative: of the 43 bundled programs exactly two trip anything here at all —
- * `powernap`, with its declared `voicecount=3` against one actual voice, and
- * `academic-performance-enhancement`, which declares 3 entries and has 31 — and it would be absurd
- * for either to wear a warning for a header §3.4 tells the parser to ignore by design.
+ * Severity: a `warning` means what you hear will differ from what the file describes; a `notice`
+ * means the file was unusual and was handled correctly.
  *
- * A third producer, `entryWarnings`, arrived with the editor (§6.1's inline validation). It is the
- * only one whose warnings carry a location, because it is the only one whose reader can go there.
- *
- * Warnings are deliberately **not** stored on `Schedule`. The document is immutable and
- * reference-compared (§4.1), Phase 1's undo/redo depends on that, and anything hanging off it
- * would have to survive the serializer.
+ * Warnings are deliberately not stored on `Schedule` — the document stays immutable and
+ * reference-compared, which undo/redo depends on.
  */
 export type WarningSeverity = 'warning' | 'notice';
 
@@ -37,17 +29,17 @@ export interface ScheduleWarning {
 }
 
 export type WarningKind =
-  // Model-derived (§3.3, §3.7)
+  // Model-derived
   | 'pcm-voice'
   | 'unsupported-voice'
   | 'unequal-durations'
   | 'nothing-to-play'
-  // File-derived (§3.4)
+  // File-derived
   | 'stale-count'
   | 'duplicate-voice-id'
   | 'unparseable-value'
   | 'empty-voice'
-  // Value-derived, and locatable (§6.1)
+  // Value-derived, and locatable
   | 'negative-duration'
   | 'base-too-low'
   | 'base-too-high'
@@ -56,11 +48,7 @@ export type WarningKind =
   | 'volume-out-of-range'
   | 'gnaural-regroup';
 
-/**
- * Names for the types this file has something to say about — which, now that types 5 and 6 are
- * rendered too, is type 2 and no others. A row here for a type the engine plays would be
- * unreachable, and `isRenderableType` is what decides that in one place for both.
- */
+/** Names for the types this file has something to say about — just PCM now that 5 and 6 are rendered too. */
 const TYPE_NAMES: Record<number, string> = {
   [VoiceType.Pcm]: 'external audio',
 };
@@ -81,9 +69,8 @@ function list(labels: string[]): string {
 export function scheduleWarnings(schedule: Schedule): ScheduleWarning[] {
   const warnings: ScheduleWarning[] = [];
 
-  // §3.3 — never silently drop a voice. Type 2 gets its own message: the PCM data lives in an
-  // external file whose path the schedule does not record, so it is not "not yet" supported, it
-  // is unsupportable from a schedule alone and always will be.
+  // PCM gets its own message: the audio lives in an external file whose path the schedule doesn't
+  // record, so it's unsupportable from a schedule alone, not "not yet" supported.
   const pcm = schedule.voices.filter((voice) => voice.type === VoiceType.Pcm);
   if (pcm.length > 0) {
     const subject = describeVoices(schedule, pcm);
@@ -94,9 +81,8 @@ export function scheduleWarnings(schedule: Schedule): ScheduleWarning[] {
     });
   }
 
-  // Every type the format defines is now either rendered or type 2, so what is left here is a
-  // number no version of Gnaural ever wrote — §3.4's dirty files, which the parser keeps verbatim
-  // rather than correcting. The `type N` fallback below is for exactly that voice.
+  // What's left is a type number no version of Gnaural ever wrote — a dirty file the parser kept
+  // verbatim rather than correcting. The `type N` fallback below is for exactly that voice.
   const unsupported = schedule.voices.filter(
     (voice) => !isRenderableType(voice.type) && voice.type !== VoiceType.Pcm,
   );
@@ -111,8 +97,8 @@ export function scheduleWarnings(schedule: Schedule): ScheduleWarning[] {
     });
   }
 
-  // §3.7 — the shortest voice ends the schedule for every voice, so a ragged file loses the tail
-  // of everything longer. The chart draws this; this is the same fact in words.
+  // The shortest voice ends the schedule for every voice, so a ragged file loses the tail of
+  // everything longer.
   const durations = schedule.voices.map(voiceDuration);
   const playback = scheduleDuration(schedule);
   const overrun = schedule.voices.filter((_voice, i) => durations[i] - playback > DURATION_EPSILON);
@@ -144,58 +130,37 @@ export function scheduleWarnings(schedule: Schedule): ScheduleWarning[] {
   return warnings;
 }
 
-/** §6.1's "sensible" carrier range, in Hz. */
+/** The "sensible" carrier range, in Hz. */
 export const BASE_RANGE = { min: 20, max: 1500 };
 
-/** §6.1's "beat frequencies above ~40 Hz where the effect breaks down", in Hz. */
+/** Beat frequencies above this are where the binaural-beat effect breaks down, in Hz. */
 export const BEAT_CEILING = 40;
 
 /** Below a millionth of full scale a volume is zero, whatever sign the file wrote it with. */
 const VOLUME_EPSILON = 1e-6;
 
-/**
- * Where a warning is, addressed the way the document and the editor's selection address a node.
- * Declared in `types.ts` since step 8, so the edit transforms can take the same addresses a warning
- * hands out without either module importing the other.
- */
+/** Where a warning is, addressed the way the document and the editor's selection address a node. */
 export type { EntryLocation };
 
 export interface EntryWarning extends ScheduleWarning {
   /**
-   * Every node this rule flags, in document order — so the editor can offer to go there.
-   *
-   * Empty only for `gnaural-regroup` raised against a voice with no entries, which by definition
-   * has no node to point at.
+   * Every node this rule flags, in document order — so the editor can offer to go there. Empty only
+   * for `gnaural-regroup` raised against a voice with no entries, which has no node to point at.
    */
   nodes: readonly EntryLocation[];
 }
 
 /**
- * §6.1's inline validation: values that are legal in the format and wrong for a person (PLAN.md
- * §6.1), plus the one way a valid document can fail to survive a round trip through Gnaural desktop.
+ * Inline validation: values that are legal in the format and wrong for a person, plus the one way a
+ * valid document can fail to survive a round trip through Gnaural desktop.
  *
- * **Severity is decided against the corpus, not in the abstract.** Measured through the parser over
- * all 43 bundled programs (31,453 entries): base 0–1046 Hz, beat to 493 Hz, volume 0–1, durations
- * down to 0 s. §6.1's thresholds are kept exactly as written, and the split between the two
- * severities is what lets them stay that way over corpora that disagree:
+ * Severity is decided against the bundled corpus, not in the abstract — thresholds are kept exactly
+ * as written, and the warning/notice split is what lets them stay that way even where real presets
+ * disagree (e.g. a cat-purr preset that deliberately gates a 493 Hz tone). A notice says what breaks
+ * down is the *percept*, not a defect in the document.
  *
- * - The Android 19 trip **one rule, as a notice**: beat above 40 Hz, in four presets at 15 entries.
- * - Gnaural's own 21 trip four rules, in seven files. None of it is a defect: `tibetan-bowls`
- *   builds its sound out of carriers below 20 Hz, and `purr` gates a 493 Hz tone because that is
- *   what an isochronic cat purr is.
- * - The Brain Machine's three trip nothing, and one of them sits exactly on a threshold: its gamma
- *   beat is 40 Hz, which `beat-above-band` is deliberately not triggered by (§6.1 says *above* 40).
- *
- * A notice says what breaks down is the *percept*, which is a fact about hearing rather than a
- * defect in the document. Raising the thresholds until the library came out clean would have thrown
- * §6.1's advice away silently; the severity split exists for this.
- *
- * **One warning per rule, not per node.** Fifteen gamma-band entries are one sentence with fifteen
- * locations, not fifteen rows.
- *
- * Cheap enough to be uninteresting: measured at 0.001 ms over the densest corpus document (77
- * entries) and 0.011 ms over a synthetic one where every node trips every rule. It still runs only
- * on the committed document — never inside a drag, where step 5's re-render budget lives.
+ * One warning per rule, not per node — fifteen gamma-band entries are one sentence with fifteen
+ * locations, not fifteen rows. Runs only on the committed document, never inside a drag.
  */
 export function entryWarnings(schedule: Schedule): EntryWarning[] {
   const hits = new Map<WarningKind, { nodes: EntryLocation[]; voices: Set<number>; worst: number }>();
@@ -245,11 +210,9 @@ interface ValueRule {
   kind: WarningKind;
   severity: WarningSeverity;
   /**
-   * The value this rule objects to in one entry, or null when there is nothing to say.
-   *
-   * The voice's `type` is passed rather than a `tonal` flag because the rules do not all divide at
-   * the same place: three of them mean something for any voice whose `basefreq`/`beatfreq` describe
-   * a tone, and `beat-exceeds-base` means something only for a *binaural* one.
+   * The value this rule objects to in one entry, or null when there is nothing to say. The voice's
+   * `type` is passed rather than a `tonal` flag because the rules don't all divide at the same
+   * place: `beat-exceeds-base` means something only for a binaural voice.
    */
   offence(entry: Entry, type: VoiceType): number | null;
   /** How far outside acceptable a value is. The furthest one is what the message quotes. */
@@ -258,18 +221,10 @@ interface ValueRule {
 }
 
 /**
- * §6.1's list, in its order, plus one it does not name.
- *
- * The addition is `beat-exceeds-base`: §3.6 puts the right channel at `basefreq - beatfreq/2`, so a
- * beat wider than its carrier drives that channel to zero and below. Nothing in the corpus comes
- * near it (110 Hz against a 70 Hz beat is the closest, at 75 Hz) and no drag can produce it, but the
- * numeric panel can, and it is the one combination here that is not a matter of taste. **It is the
- * one rule restricted to type 0**, since it describes a channel split only a binaural voice has.
- *
- * **`duration === 0` is deliberately absent.** Step 5's squeeze clamps a node against its neighbour
- * rather than letting it pass, so a zero-length segment is something a person can produce on purpose
- * with a drag; §6.1 says *negative*, which is the case only an import can reach — the parser has no
- * clamp, so `duration="-5"` arrives in the document intact.
+ * The value rules. `beat-exceeds-base` is restricted to type 0 (binaural): the right channel is
+ * `basefreq - beatfreq/2`, a channel split only a binaural voice has. `duration === 0` is
+ * deliberately absent — a drag's squeeze clamps a node against its neighbour rather than letting it
+ * pass, so a zero-length segment can be produced on purpose; only an import can go negative.
  */
 const VALUE_RULES: ValueRule[] = [
   {
@@ -308,8 +263,8 @@ const VALUE_RULES: ValueRule[] = [
     kind: 'beat-exceeds-base',
     severity: 'warning',
     offence: (entry, type) => {
-      // Binaural only: this is §3.6's channel split failing, and an isochronic voice has no split
-      // to fail — both ears get `basefreq`, and `beatfreq` is a rate rather than a width.
+      // Binaural only: an isochronic voice has no channel split to fail — both ears get
+      // `basefreq`, and `beatfreq` is a rate rather than a width.
       const right = entry.baseFreq - entry.beatFreq / 2;
       return type === VoiceType.Binaural && right <= 0 ? right : null;
     },
@@ -321,9 +276,8 @@ const VALUE_RULES: ValueRule[] = [
     kind: 'volume-out-of-range',
     severity: 'warning',
     offence: (entry) => {
-      // Gnaural's own editor writes a silent node as `-2.55352e-19` rather than as zero — its
-      // published presets carry them. Calling that an inverted channel would be a false alarm on a
-      // file the desktop app produced, so the rule tolerates what is zero to any listener.
+      // Gnaural's own editor writes a silent node as `-2.55352e-19` rather than zero; the rule
+      // tolerates what is zero to any listener rather than false-alarming on it.
       const outside = [entry.volumeLeft, entry.volumeRight].filter(
         (value) => value < -VOLUME_EPSILON || value > 1 + VOLUME_EPSILON,
       );
@@ -338,19 +292,13 @@ const VALUE_RULES: ValueRule[] = [
 
 /**
  * The one way a document that plays correctly here does not survive being reopened in Gnaural
- * desktop (§6.3 makes that a definition-of-done item).
+ * desktop. Gnaural does not read `<id>` back at all: it walks the flat list of entries in document
+ * order and starts a new voice whenever an entry's `parent` differs from the previous entry's, then
+ * takes each voice's description, type and flags by position. So `parent` is an opaque
+ * change-detector, not a reference, and three shapes reopen as something other than what was saved.
+ * None can arise from a clean document, but dirty imports and a voice reorder can produce them.
  *
- * **Gnaural does not read `<id>` back at all.** `gxml_XMLParser` has no branch for it;
- * `SG_RestoreBackupData` (ScheduleGUI.c:2213) walks the flat list of entries in document order and
- * starts a new voice **whenever an entry's `parent` differs from the previous entry's**, then takes
- * each voice's description, type and flags from the `<voice>` elements by position. So `parent` is an
- * opaque change-detector, not a reference, and three shapes reopen as something other than what was
- * saved. None can arise from a clean document — all 51 voices in the bundled corpus carry
- * `parent == id` with no voice mixing two values — but §3.4's dirty imports can, and step 6's
- * reorder can move two of them next to each other.
- *
- * Detection only. The repair — renumber the ids and let the serializer derive `parent` — is a
- * command, and commands are step 9, alongside §3.7's "pad to longest".
+ * Detection only — the repair (renumber ids, let the serializer derive `parent`) is `repairVoiceGrouping`.
  */
 function regroupWarnings(schedule: Schedule): EntryWarning[] {
   const warnings: EntryWarning[] = [];
@@ -414,14 +362,9 @@ interface VoiceSubject {
   /** "Voice tone" or "Voices tone and pulse" — the grammatical subject of a warning sentence. */
   text: string;
   /**
-   * The same subject part-way through a sentence: "voice tone", "voices tone and pulse".
-   *
-   * **Only the leading noun is lowercased, and that is the whole point of having this.** The ragged
-   * message used `text.toLowerCase()`, which reads correctly for the noun and mangles the voice
-   * *names* along with it — a browser pass found it rendering "cuts voices every rule and background
-   * noise short" for two voices called "Every rule" and "Background noise", in the same sentence
-   * that had just spelled a third one correctly. Third defect in this helper, and the third found by
-   * reading the output rather than the code: the corpus trips none of these messages.
+   * The same subject part-way through a sentence: "voice tone", "voices tone and pulse". Only the
+   * leading noun is lowercased — a naive `text.toLowerCase()` used to mangle voice *names* too
+   * (e.g. a voice literally named "Every rule").
    */
   midSentence: string;
   plural: boolean;
@@ -442,14 +385,7 @@ function describeVoices(schedule: Schedule, subset: Voice[]): VoiceSubject {
   };
 }
 
-/**
- * Third person singular.
- *
- * A bare `+ s` was enough while the messages said "plays" and "uses", and it silently produces
- * "carrys" and "reachs" for the verbs §6.1's validation wanted. Fixing the helper rather than
- * choosing verbs around it: the point of `describeVoices` is that a message cannot disagree with its
- * own subject, and it should go on being true of whatever the next message says.
- */
+/** Third person singular. A bare `+ s` would produce "carrys" and "reachs" for some verbs. */
 function thirdPerson(base: string): string {
   if (/(s|x|z|ch|sh)$/.test(base)) return `${base}es`;
   if (/[^aeiou]y$/.test(base)) return `${base.slice(0, -1)}ies`;

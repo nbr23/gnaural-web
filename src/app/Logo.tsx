@@ -1,13 +1,7 @@
 /**
- * The app mark: a brain holding the two tones whose difference is the beat.
- *
- * Inline rather than `<img src="/icon.svg">` for two reasons. The icon file carries the dark
- * background every PWA slot needs, which is wrong on a page that already has one; and `--accent`
- * is a different purple in the light scheme, which `currentColor` follows and a file cannot.
- *
- * The outline is one path with `fill-rule="evenodd"` — the outer silhouette and the interior it
- * encloses in the same `d`, so the brain is genuinely hollow rather than filled with the page
- * colour. `aria-hidden`, because the heading beside it is the name.
+ * Inline rather than `<img src="/icon.svg">`: the icon file carries the dark background every PWA
+ * slot needs, which is wrong on a page that already has one, and `currentColor` needs to follow
+ * `--accent` across the light/dark schemes, which a file cannot.
  */
 
 const RING =
@@ -32,7 +26,6 @@ export function Logo({ className }: { className?: string }) {
     >
       <path fillRule="evenodd" d={RING} />
       <path d={UPPER} />
-      {/* Detuned from the tone above it, and dimmer for the same reason it is second. */}
       <path d={LOWER} fillOpacity="0.5" />
     </svg>
   );

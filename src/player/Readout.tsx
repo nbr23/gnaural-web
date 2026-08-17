@@ -12,34 +12,20 @@ import './Readout.css';
 export interface ReadoutProps {
   schedule: Schedule;
   offset: number;
-  /**
-   * Session mute/solo, so a voice the listener has silenced stops being reported as something they
-   * are hearing. Omit where there is no engine to ask — the document's own `voice.muted` is then
-   * the whole answer.
-   */
+  /** Session mute/solo. Omit where there is no engine to ask — `voice.muted` is then the whole
+   *  answer. */
   gates?: VoiceGate[];
 }
 
 /**
  * What the listener is hearing right now: beat frequency, base frequency, and the EEG band the
- * beat falls in (PLAN.md §5.1).
+ * beat falls in.
  *
- * **A band belongs to a voice, not to a program.** Two tonal voices ramping through different
- * frequencies are in two different bands, and one set of figures cannot answer "which band am I
- * in" for both — so every audible tonal voice gets its own line, keyed with the colour the chart
- * and the voice list already draw it in. One voice keeps the large tiles: there is nothing to
- * disambiguate, and those figures are the ones worth reading across a room.
- *
- * "Audible" is the engine's gate rather than `voice.hidden`, which only says whether the chart
- * draws the voice. Reporting a band for a muted voice states the listener is hearing something
- * they silenced.
- *
- * A beat off the ends of the table — under Delta, over Gamma — names no band, and that voice
- * simply goes without one: the frequencies are still true, and there is no band to report.
- *
- * "Tonal" rather than "binaural" because an isochronic voice reads both fields just as literally:
- * its base is the tone and its beat is the rate that tone is pulsed at, which is exactly what these
- * two figures and the band name are for.
+ * A band belongs to a voice, not to a program — two tonal voices ramping through different
+ * frequencies are in different bands, so every audible tonal voice gets its own line, keyed with
+ * the same colour the chart draws it in. "Audible" is the engine's mute/solo gate rather than
+ * `voice.hidden`, which only affects the chart. A beat off the ends of the table (under Delta,
+ * over Gamma) names no band, so that voice goes without one.
  */
 export function Readout({ schedule, offset, gates }: ReadoutProps) {
   const voices = useMemo(() => audibleVoices(schedule, gates), [schedule, gates]);
@@ -66,8 +52,8 @@ export function Readout({ schedule, offset, gates }: ReadoutProps) {
         <li className="readout__voice" key={reading.index}>
           <span className="readout__key" style={{ color: seriesColor(reading.index) }} />
           <span className="readout__name">{reading.label}</span>
-          {/* The empty slot keeps the figures of a bandless voice in the same columns as every
-              other line's, which is the whole reason they are columns. */}
+          {/* The empty slot keeps a bandless voice's figures in the same columns as every other
+              line's. */}
           {reading.band ? (
             <span className="readout__band">
               <span
@@ -107,7 +93,7 @@ function Tile({ label, value, accent }: { label: string; value: string; accent?:
 }
 
 interface AudibleVoice {
-  /** Index into `schedule.voices` — the key both the gates and the palette are addressed by. */
+  /** Index into `schedule.voices` — the key both the gates and the palette use. */
   index: number;
   label: string;
   events: AutomationEvent[];
