@@ -12,6 +12,19 @@
   gap: 8px;
 }
 
+.library__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The mark is drawn in `em`, so its one dimension is a font size. */
+.library__logo {
+  flex: none;
+  font-size: 34px;
+  color: var(--accent);
+}
+
 .library__header h1 {
   font-size: 24px;
 }

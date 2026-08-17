@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { Logo } from '../app/Logo';
 import { LIVE, navigate } from '../app/routing';
 import { GNAURAL_EXTENSION } from '../files/openFile';
 import type { LibraryItem, LibrarySection, NoteSegment } from './catalog';
@@ -99,7 +100,10 @@ export function LibraryView({
     <div className="library">
       <div className="library__body">
         <header className="library__header">
-          <h1>Gnaural Web</h1>
+          <div className="library__title">
+            <Logo className="library__logo" />
+            <h1>Gnaural Web</h1>
+          </div>
           <p className="library__lede">
             Binaural beat programs. Headphones are required — the effect only exists between two
             ears.
