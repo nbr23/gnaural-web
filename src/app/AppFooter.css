@@ -1,11 +1,11 @@
-/* Pushed to the bottom of a short page by the `auto` margin, and out through `#root`'s 16px
-   padding by the negative ones, so scrolling to the end puts it against the edge of the screen
-   rather than 16px short of it. */
+/* Pushed to the bottom of a short page by the `auto` margin, and out through `#root`'s padding by
+   the negative ones, so scrolling to the end puts it against the edge of the screen rather than a
+   padding short of it — and its rule spans the full width rather than stopping inside it. */
 .app-footer {
   margin-top: auto;
-  margin-inline: -16px;
-  margin-bottom: -16px;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  margin-inline: calc(-1 * var(--page-pad-x));
+  margin-bottom: calc(-1 * var(--page-pad-bottom));
+  padding: 10px var(--page-pad-x) calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: center;

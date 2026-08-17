@@ -115,11 +115,20 @@ body {
 
 /* Wide enough for the library's rail beside its list, and for the player and editor to put their
    panels beside the chart instead of below it. Prose inside keeps its own `ch` measures, so a wide
-   window makes more room for controls rather than longer lines. */
+   window makes more room for controls rather than longer lines.
+
+   The padding is held in variables because two things inside have to undo it: `.app` sizes itself
+   against the viewport minus the vertical pair, and `.app-footer` reaches back out through all
+   three to sit against the edge of the screen. Hard-coded copies of these drifted from the
+   breakpoint below and left the footer short of the bottom. */
 #root {
+  --page-pad-x: 16px;
+  --page-pad-top: 16px;
+  --page-pad-bottom: 16px;
+
   max-width: 1280px;
   margin: 0 auto;
-  padding: 16px;
+  padding: var(--page-pad-top) var(--page-pad-x) var(--page-pad-bottom);
 }
 
 h1,
@@ -218,7 +227,9 @@ input[type='range'] {
 
 @media (min-width: 700px) {
   #root {
-    padding: 32px 24px 64px;
+    --page-pad-x: 24px;
+    --page-pad-top: 20px;
+    --page-pad-bottom: 24px;
   }
   h1 {
     font-size: 34px;
