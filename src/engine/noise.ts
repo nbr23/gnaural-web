@@ -2,7 +2,7 @@
  * Noise, for both of §4.5's separate concerns.
  *
  * **(a) The file's own noise voices (type 1)**, replicated from the reference implementation
- * (`reference/gnaural-src-20110606/src/BinauralBeat.c`) — `createNoiseBuffer`.
+ * (Gnaural 20110606, `src/BinauralBeat.c`) — `createNoiseBuffer`.
  *
  * **(b) The app-level noise layer**, a listening preference independent of any file, which offers
  * three further colours and levels them against each other — `createLayerNoiseBuffer`. The

@@ -1,0 +1,29 @@
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  test:
+    profiles: ["test"]
+    build:
+      context: .
+      target: dev
+    command: npm run test
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  preview:
+    profiles: ["preview"]
+    build:
+      context: .
+      target: preview
+    ports:
+      - "8080:80"
