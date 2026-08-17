@@ -280,8 +280,10 @@ describe('the volume lanes (§6.1)', () => {
   /**
    * Volume is bounded and its endpoints mean something, unlike a frequency. Fitted to its data, the
    * 0.50–0.52 curve above would read as a dramatic swing and the 0.2 curve would look identical to
-   * it — and across all 19 bundled programs, all 354 entries, volume left and right are equal, so
-   * two fitted lanes would routinely disagree about a picture of the same numbers.
+   * it. The two lanes also have to be comparable to each other: the Android set is centred
+   * throughout, while seven of Gnaural's own presets pan — `hypnagogic-gale` at 10,049 entries —
+   * and a pair of separately fitted lanes would draw a hard-panned voice and a centred one the
+   * same.
    */
   it('is a fixed 0-1 domain rather than one fitted to the data', () => {
     const { lanes } = buildChartModel(makeSchedule([voice]), ['volumeLeft', 'volumeRight']);

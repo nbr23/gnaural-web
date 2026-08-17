@@ -25,7 +25,7 @@ import {
 } from './edit';
 import { parseSchedule } from './parser';
 import { serializeSchedule } from './serializer';
-import { fixtureNames, loadFixture } from './test-fixtures';
+import { CORPUS_TIMEOUT, fixtureNames, loadFixture } from './test-fixtures';
 import { entryStartTimes, scheduleDuration, voiceDuration } from './timing';
 import type { Entry, Schedule, Voice } from './types';
 import { VoiceType } from './types';
@@ -1178,7 +1178,7 @@ describe('padVoicesToLongest', () => {
     expect(scheduleDuration(before)).toBeLessThan(longest(before));
   });
 
-  it('returns its input for a schedule that is already even — which is all 19 bundled files', () => {
+  it('returns its input for a schedule that is already even — which is every bundled file', { timeout: CORPUS_TIMEOUT }, () => {
     for (const name of fixtureNames()) {
       const schedule = parseSchedule(loadFixture(name));
       expect(padVoicesToLongest(schedule)).toBe(schedule);
@@ -1273,10 +1273,17 @@ describe('repairVoiceGrouping', () => {
   });
 
   /** All 51 corpus voices carry `parent == id`, so this is a no-op across the whole library. */
-  it('returns its input for every bundled file', () => {
+  it('returns its input for every bundled file that reopens as itself', { timeout: CORPUS_TIMEOUT }, () => {
+    // `academic-performance-enhancement` does not: two of its voices carry the same owner, so
+    // Gnaural merges them on reopen. It is the only file in the corpus this repair has to touch.
+    const merges = ['gnaural/academic-performance-enhancement.gnaural'];
+
     for (const name of fixtureNames()) {
       const schedule = parseSchedule(loadFixture(name));
-      expect(repairVoiceGrouping(schedule)).toBe(schedule);
+      const repaired = repairVoiceGrouping(schedule);
+
+      if (merges.includes(name)) expect(repaired).not.toBe(schedule);
+      else expect(repaired).toBe(schedule);
     }
   });
 

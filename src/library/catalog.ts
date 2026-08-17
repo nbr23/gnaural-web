@@ -1,7 +1,7 @@
 import { formatDuration } from '../app/format';
 import type { Route } from '../app/routing';
 import { formatHash } from '../app/routing';
-import type { BundledProgram } from './programs';
+import type { BundledProgram, Collection } from './programs';
 import { PROGRAMS, categoryColor, categoryLabel, programsByCategory } from './programs';
 import type { Draft, ImportedProgram } from './storage';
 
@@ -14,12 +14,13 @@ import type { Draft, ImportedProgram } from './storage';
  */
 
 /** Where a program came from, which is the library's colour key and its top-level grouping. */
-export type Origin = 'draft' | 'mine' | 'imported' | 'android';
+export type Origin = 'draft' | 'mine' | 'imported' | 'gnaural' | 'android';
 
 export const ORIGIN_LABELS: Record<Origin, string> = {
   draft: 'Draft',
   mine: 'Made here',
   imported: 'Imported',
+  gnaural: 'Gnaural',
   android: 'Android',
 };
 
@@ -81,11 +82,13 @@ export interface CatalogInput {
 }
 
 /**
- * What the whole bundled library is: the Android app's built-in programs.
+ * Where the bundled library came from — two collections, credited separately.
  *
  * The attribution used to sit at the bottom of the page, where it described everything above it
- * without saying so. It belongs on the group it is about — and §2's no-medical-claims rule is met
- * by whose words these are, which is only clear if the words and the credit are in the same place.
+ * without saying so, and then described *everything* as the Android app's when two of the programs
+ * predate it by two years. It belongs on the group it is about — and §2's no-medical-claims rule is
+ * met by whose words these are, which is only clear if the words and the credit are in the same
+ * place.
  */
 export const ANDROID_PACKAGE = 'com.ihunda.android.binauralbeat';
 
@@ -108,6 +111,22 @@ const ANDROID_NOTE: NoteSegment[] = [
   },
 ];
 
+const GNAURAL_PRESETS_URL = 'https://sourceforge.net/projects/gnaural/files/Presets/';
+
+const GNAURAL_NOTE: NoteSegment[] = [
+  { text: 'From ' },
+  { text: 'the Gnaural project', href: GNAURAL_PRESETS_URL },
+  { text: ', Bret Logan’s original desktop app, published between 2009 and 2020 and shipped here ' },
+  { text: 'unmodified', strong: true },
+  {
+    text:
+      '. Seven are Gnaural’s own and fourteen were contributed to the project by other people, ' +
+      'each credited as they signed it; the titles and descriptions are their words, not claims ' +
+      'made by this app. Two of these are the originals of files the Android app below ' +
+      'redistributed after editing them.',
+  },
+];
+
 /** `fixtures/presets/README.md`: four presets used a sampled ambient loop that was left behind. */
 const LOST_BED_NOTE = 'Ambient background not carried over — the app’s noise layer stands in for it.';
 
@@ -123,26 +142,31 @@ export function buildCatalog({
   const mine = importedItems.filter((program) => program.origin === 'authored').map(importedItem);
   const brought = importedItems.filter((program) => program.origin !== 'authored').map(importedItem);
 
+  const gnaural: LibrarySection = {
+    id: 'gnaural',
+    label: 'Gnaural presets',
+    railLabel: 'gnaural',
+    note: GNAURAL_NOTE,
+    items: [],
+    children: collectionSections('gnaural', bundled),
+  };
+
   const android: LibrarySection = {
     // The id is persisted in `Settings.collapsed`, so it outlives whatever the label says.
     id: 'android',
-    label: `${ANDROID_PACKAGE} imports`,
+    label: `${ANDROID_PACKAGE} presets`,
     railLabel: 'binauralbeat',
     code: ANDROID_PACKAGE,
     note: ANDROID_NOTE,
     items: [],
-    children: programsByCategory(bundled).map((group) => ({
-      id: `android-${group.category.toLowerCase()}`,
-      label: group.label,
-      accent: categoryColor(group.category),
-      items: group.programs.map(bundledItem),
-    })),
+    children: collectionSections('android', bundled),
   };
 
   const sections: LibrarySection[] = [
     { id: 'drafts', label: 'Drafts', items: draftItems },
     { id: 'mine', label: 'Made here', items: mine },
     { id: 'imported', label: 'Imported', items: brought },
+    gnaural,
     android,
   ];
 
@@ -161,6 +185,24 @@ export function buildCatalog({
   // A heading reading "Drafts 0" is a heading in the way: on a fresh install three of these are
   // empty, which is 150 px of nothing above the first program and three dead entries in the rail.
   return filterSections(sections, query.trim().toLowerCase()).filter(nonEmpty);
+}
+
+/**
+ * One sub-section per category within a collection. The id keeps its collection prefix because
+ * `Settings.collapsed` persists it, and the two collections have categories of their own.
+ */
+function collectionSections(
+  collection: Collection,
+  bundled: readonly BundledProgram[],
+): LibrarySection[] {
+  const programs = bundled.filter((program) => program.collection === collection);
+
+  return programsByCategory(programs).map((group) => ({
+    id: `${collection}-${group.category.toLowerCase()}`,
+    label: group.label,
+    accent: categoryColor(group.category),
+    items: group.programs.map(bundledItem),
+  }));
 }
 
 function nonEmpty(section: LibrarySection): boolean {
@@ -201,8 +243,8 @@ function bundledItem(program: BundledProgram): LibraryItem {
     key: formatHash(route),
     route,
     title: program.title,
-    meta: metaLine(program.durationSeconds, program.author),
-    origin: 'android',
+    meta: metaLine(program.durationSeconds, program.author, program.loops),
+    origin: program.collection,
     // Its category rather than its origin: the section these rows sit in already says where the
     // whole set came from, so the chip can say the thing the row does not otherwise carry.
     badge: categoryLabel(program.category),
@@ -243,8 +285,13 @@ function draftItem(draft: Draft): LibraryItem {
   };
 }
 
-function metaLine(durationSeconds: number, credit: string): string {
+function metaLine(durationSeconds: number, credit: string, loops = 1): string {
+  // "0.8 s" for a schedule that repeats 8000 times is not its length. How many passes actually play
+  // is the engine's answer (`passCount` bounds what a file declares), so the row says only that it
+  // repeats and leaves the count to the player.
+  const length = loops === 1 ? formatDuration(durationSeconds) : `${formatDuration(durationSeconds)} loop`;
+
   // One bundled preset is uncredited upstream; the rest carry a credit that must not be dropped
   // (fixtures/presets/README.md).
-  return credit ? `${formatDuration(durationSeconds)} · ${credit}` : formatDuration(durationSeconds);
+  return credit ? `${length} · ${credit}` : length;
 }

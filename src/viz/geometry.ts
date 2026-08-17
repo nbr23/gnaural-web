@@ -37,9 +37,10 @@ export interface ViewWindow {
 /**
  * The narrowest window, in seconds.
  *
- * A floor rather than a judgement about how far anyone should be able to zoom: 17 of the 19 bundled
- * files carry entries 0.001 s apart, and no reachable window separates those — 0.001 s of a 2331 s
- * programme is a millionth of the axis. Zoom is what makes the *ordinary* clusters addressable
+ * A floor rather than a judgement about how far anyone should be able to zoom: 19 of the 40 bundled
+ * files carry entries 0.001 s apart or closer — Gnaural's own output writes an instantaneous jump as
+ * a zero-length segment — and no reachable window separates those; 0.001 s of a 2331 s programme is
+ * a millionth of the axis. Zoom is what makes the *ordinary* clusters addressable
  * (median gap 1.16 px at 640 px on `airplanetravelaid`, against a 12 px hit radius); the arrow-walk
  * and the numeric panel are what reach the rest, which is why neither is optional.
  */

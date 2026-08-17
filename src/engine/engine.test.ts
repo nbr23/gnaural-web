@@ -1095,6 +1095,38 @@ describe('loops (§3.2)', () => {
     expect(engine.getPassCount()).toBe(1000);
   });
 
+  /**
+   * The same three bounds apply to a count the file states outright, which is not academic: a
+   * schedule may declare thousands of passes, and Gnaural's own download area has them. Every pass
+   * is scheduled up front (§4.2 rules out topping up from a timer), so an unbounded declared count
+   * on a dense schedule is hundreds of thousands of curve points on the main thread before the
+   * first sound.
+   */
+  it('bounds a declared pass count the same way it bounds an endless one', () => {
+    const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
+    const dense = (entries: number, duration: number, loops: number) =>
+      makeSchedule(
+        [makeVoice(Array.from({ length: entries }, () => makeEntry({ duration, baseFreq: 300 })))],
+        { loops },
+      );
+
+    // 90 entries × 8000 passes asked for; the entry budget allows 555 of them.
+    engine.load(dense(90, 0.0088, 8000));
+    expect(engine.getPassCount()).toBe(555);
+
+    // Sparse enough for the budget, so the pass cap is what binds.
+    engine.load(dense(4, 0.25, 8000));
+    expect(engine.getPassCount()).toBe(1000);
+
+    // Long enough that neither binds and the horizon does: 13 hours asked for, 12 allowed.
+    engine.load(dense(1, 60 * 60, 13));
+    expect(engine.getPassCount()).toBe(12);
+
+    // A declared count under every bound is honoured exactly, as it always was.
+    engine.load(dense(4, 0.25, 3));
+    expect(engine.getPassCount()).toBe(3);
+  });
+
   it('seeks within the current pass rather than back to the first', () => {
     const engine = new PlaybackEngine(new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE));
     engine.load(loopingSchedule(4));
@@ -1552,9 +1584,10 @@ describe('update() — live re-scheduling (§6.1)', () => {
  *
  * `rescheduleFrom` schedules every remaining pass up front, which is right for a transport action
  * and ruinous under a finger: a 60-second looping draft with 45 entries costs 132,480 param events
- * and 68 ms of main thread per call, ten times a second. No bundled programme can show this — all
- * 19 are `loops = 1`, so their horizon is one pass either way — which is exactly why it is pinned
- * here against a synthetic short loop.
+ * and 68 ms of main thread per call, ten times a second. The Android 19 cannot show this — all are
+ * `loops = 1`, so their horizon is one pass either way — which is why it is pinned here against a
+ * synthetic short loop. Six of Gnaural's own presets do loop, which is what `MAX_SCHEDULED_ENTRIES`
+ * bounds for the transport path.
  */
 describe('the editing horizon', () => {
   /** Four passes of a half-second envelope: loud for the first half, silent for the second. */

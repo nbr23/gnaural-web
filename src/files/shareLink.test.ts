@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseSchedule } from '../document/parser';
 import { serializeSchedule } from '../document/serializer';
-import { fixtureNames, loadFixture } from '../document/test-fixtures';
+import { CORPUS_TIMEOUT, fixtureNames, loadFixture } from '../document/test-fixtures';
 import type { Schedule, Voice } from '../document/types';
 import {
   MAX_SHARE_PAYLOAD,
@@ -11,14 +11,34 @@ import {
   shareUrl,
 } from './shareLink';
 
+/**
+ * Four of Gnaural's own presets are past §5.1's fragment guard — `hypnagogic-gale` is 10,080
+ * entries — and `useExport` answers that by exporting the file instead of a link. Pinned by name so
+ * that the set can only change deliberately: a program quietly joining it loses its share button.
+ */
+const TOO_LARGE_TO_SHARE = [
+  'gnaural/euphoria.gnaural',
+  'gnaural/full-moon.gnaural',
+  'gnaural/hypnagogic-gale.gnaural',
+  'gnaural/instant-nap.gnaural',
+];
+
 describe('share payloads', () => {
-  it.each(fixtureNames())('round-trips %s to the same document', async (name) => {
+  const shareable = fixtureNames().filter((name) => !TOO_LARGE_TO_SHARE.includes(name));
+
+  it.each(shareable)('round-trips %s to the same document', { timeout: CORPUS_TIMEOUT }, async (name) => {
     const original = parseSchedule(loadFixture(name));
     const shared = await decodeSharePayload(await encodeSharePayload(original));
 
     // Serialization is the fixed point the document layer guarantees, so comparing the XML
     // compares every preserved field too, not just the ones the model names.
     expect(serializeSchedule(shared)).toBe(serializeSchedule(original));
+  });
+
+  it.each(TOO_LARGE_TO_SHARE)('refuses %s rather than truncating it', { timeout: CORPUS_TIMEOUT }, async (name) => {
+    const original = parseSchedule(loadFixture(name));
+
+    await expect(encodeSharePayload(original)).rejects.toBeInstanceOf(ShareTooLargeError);
   });
 
   it('uses only base64url characters, so the fragment needs no escaping', async () => {

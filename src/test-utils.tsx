@@ -208,7 +208,10 @@ export function press(key: string, target: EventTarget = document.body): void {
  * enough, and a chain of them needs one turn each: fake-indexeddb spends a turn per request, and
  * `App` runs its library read, its settings read and a program load concurrently.
  */
-export async function flush(times = 12): Promise<void> {
+// The default was twelve ticks, which stopped being enough when the bundled library grew to 55
+// lazily-imported programs: opening one is a dynamic import through Vite's transform, and a preset
+// with ten thousand entries takes several ticks to parse on top of that.
+export async function flush(times = 30): Promise<void> {
   for (let i = 0; i < times; i++) {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));

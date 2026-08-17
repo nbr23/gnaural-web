@@ -44,12 +44,18 @@ describe('buildCatalog', () => {
       favourites: [],
     });
 
-    expect(sections.map((each) => each.id)).toEqual(['drafts', 'mine', 'imported', 'android']);
+    expect(sections.map((each) => each.id)).toEqual([
+      'drafts',
+      'mine',
+      'imported',
+      'gnaural',
+      'android',
+    ]);
   });
 
   it('shows nothing but the bundled library on a fresh install', () => {
     // Three empty headings are three headings in the way, and three dead entries in the rail.
-    expect(buildCatalog(EMPTY).map((each) => each.id)).toEqual(['android']);
+    expect(buildCatalog(EMPTY).map((each) => each.id)).toEqual(['gnaural', 'android']);
   });
 
   it('separates what was made here from what was brought in', () => {
@@ -73,19 +79,38 @@ describe('buildCatalog', () => {
     ]);
   });
 
-  it('groups the bundled programs under the app they came from, by category', () => {
-    const android = section(buildCatalog(EMPTY), 'android');
+  it('groups the bundled programs under the collection they came from, by category', () => {
+    const sections = buildCatalog(EMPTY);
+    const gnaural = section(sections, 'gnaural');
+    const android = section(sections, 'android');
 
     expect(android?.items).toHaveLength(0);
     // The heading names the app rather than gesturing at it, and the view sets `code` in mono.
-    expect(android?.label).toBe(`${ANDROID_PACKAGE} imports`);
+    expect(android?.label).toBe(`${ANDROID_PACKAGE} presets`);
     expect(android?.code).toBe(ANDROID_PACKAGE);
-    expect(android?.children?.[0].label).toBe('Gnaural originals');
-    expect(android?.children?.flatMap((child) => child.items)).toHaveLength(PROGRAMS.length);
-    // §2 is met by the clause in bold, and the app it credits is a link rather than a description.
-    const note = android?.note ?? [];
-    expect(note.find((segment) => segment.strong)?.text).toContain("original authors' words");
-    expect(note.find((segment) => segment.href)?.href).toContain(ANDROID_PACKAGE);
+    expect(android?.children?.[0].label).toBe('Gnaural edits');
+    expect(gnaural?.children?.map((child) => child.label)).toEqual(['Gnaural', 'Contrib']);
+
+    // Between them the two sections hold the whole bundled library and nothing twice.
+    const rows = [gnaural, android].flatMap(
+      (each) => each?.children?.flatMap((child) => child.items) ?? [],
+    );
+    expect(rows).toHaveLength(PROGRAMS.length);
+    expect(new Set(rows.map((row) => row.key)).size).toBe(PROGRAMS.length);
+  });
+
+  it('credits each collection where its programs are, not once at the foot of the page', () => {
+    const sections = buildCatalog(EMPTY);
+
+    // §2 is met by the clause in bold, and what each note credits is a link rather than prose.
+    const android = section(sections, 'android')?.note ?? [];
+    expect(android.find((segment) => segment.strong)?.text).toContain("original authors' words");
+    expect(android.find((segment) => segment.href)?.href).toContain(ANDROID_PACKAGE);
+
+    const gnaural = section(sections, 'gnaural')?.note ?? [];
+    expect(gnaural.find((segment) => segment.strong)?.text).toBe('unmodified');
+    expect(gnaural.find((segment) => segment.href)?.href).toContain('sourceforge.net/projects/gnaural');
+
   });
 
   it('keys a bundled program to its category and everything else to its origin', () => {
@@ -112,7 +137,7 @@ describe('buildCatalog', () => {
     const noted = items.filter((item) => item.note !== undefined);
     expect(noted).toHaveLength(4);
     expect(noted[0].note).toContain('noise layer');
-    expect(items.find((item) => item.title === 'Power Nap')?.note).toBeUndefined();
+    expect(items.find((item) => item.title === 'Power Nap (Android)')?.note).toBeUndefined();
   });
 
   it('shows favourites first without moving them out of their own section', () => {
@@ -120,10 +145,10 @@ describe('buildCatalog', () => {
     const favourites = section(sections, 'favourites');
 
     expect(sections[0].id).toBe('favourites');
-    expect(favourites?.items.map((item) => item.title)).toEqual(['Power Nap']);
+    expect(favourites?.items.map((item) => item.title)).toEqual(['Power Nap (Android)']);
     expect(
       section(sections, 'android')?.children?.flatMap((child) => child.items),
-    ).toHaveLength(PROGRAMS.length);
+    ).toHaveLength(PROGRAMS.filter((program) => program.collection === 'android').length);
   });
 
   it('ignores a favourite whose program is gone', () => {
@@ -169,7 +194,13 @@ describe('buildCatalog', () => {
   it('says how long each program runs, and who to credit', () => {
     const sections = buildCatalog(EMPTY);
     const powernap = section(sections, 'android')?.children?.[0].items[0];
+    const own = section(sections, 'gnaural')?.children?.[0];
 
     expect(powernap?.meta).toBe('20 min · Gnaural');
+    // A schedule that repeats is not as long as one pass of it, and how many passes actually play
+    // is the engine's answer rather than the file's — so the row says only that it loops.
+    expect(own?.items.find((item) => item.title.startsWith('8-Voice'))?.meta).toBe(
+      '1 s loop · Gnaural',
+    );
   });
 });

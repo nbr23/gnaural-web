@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { parseScheduleWithWarnings } from './parser';
-import { fixtureNames, loadFixture } from './test-fixtures';
+import { CORPUS_TIMEOUT, fixtureNames, loadFixture, namesIn } from './test-fixtures';
 import type { WarningKind } from './warnings';
 import { entryWarnings, scheduleWarnings } from './warnings';
 
 /**
- * The bundled corpus cannot exercise any of this: of the 19 programs, exactly one trips a single
- * notice and none trips a warning (asserted at the bottom of this file). So the cases are built
- * here as XML rather than as fixture files — a file in `fixtures/` would also join the bundled
- * library, which is not what a deliberately broken schedule should do.
+ * The bundled corpus exercises some of this and none of it deliberately: what it trips is pinned at
+ * the bottom of this file, and every one of those is a real property of a published preset rather
+ * than a case built to order. So the cases are built here as XML rather than as fixture files — a
+ * file in `fixtures/` would also join the bundled library, which is not what a deliberately broken
+ * schedule should do.
  */
 function xml(body: string): string {
   return `<?xml version="1.0"?><schedule>${body}</schedule>`;
@@ -428,7 +429,7 @@ describe('entryWarnings — surviving a round trip through Gnaural', () => {
 });
 
 describe('the bundled library', () => {
-  it('trips nothing but powernap’s stale header, so a regression in it would show', () => {
+  it('trips two known header faults and nothing else, so a regression would show', { timeout: CORPUS_TIMEOUT }, () => {
     const offenders = fixtureNames()
       .map((name) => {
         const { schedule, warnings } = parseScheduleWithWarnings(loadFixture(name));
@@ -436,16 +437,21 @@ describe('the bundled library', () => {
       })
       .filter((result) => result.kinds.length > 0);
 
-    expect(offenders).toEqual([{ name: 'powernap.gnaural', kinds: ['stale-count', 'stale-count'] }]);
+    expect(offenders).toEqual([
+      // Android removed two voices from Gnaural's file and left the counts behind.
+      { name: 'powernap.gnaural', kinds: ['stale-count', 'stale-count'] },
+      // Declares 3 entries, has 31.
+      { name: 'gnaural/academic-performance-enhancement.gnaural', kinds: ['stale-count'] },
+    ]);
   });
 
   /**
    * The measurement §6.1's thresholds were chosen against, pinned so a later rule cannot quietly
-   * start alarming the library: across 354 entries the *only* thing validation may say is that four
-   * gamma-band presets exceed 40 Hz, and it must say it as a notice.
+   * start alarming the library: across the Android set's 354 entries the *only* thing validation
+   * may say is that four gamma-band presets exceed 40 Hz, and it must say it as a notice.
    */
   it('raises nothing but a beat notice on four gamma-band presets', () => {
-    const offenders = fixtureNames()
+    const offenders = ['powernap.gnaural', 'airplanetravelaid.gnaural', ...namesIn('presets')]
       .map((name) => ({ name, warnings: entryWarnings(parseScheduleWithWarnings(loadFixture(name)).schedule) }))
       .filter((result) => result.warnings.length > 0);
 
@@ -460,5 +466,41 @@ describe('the bundled library', () => {
       ['presets/stimulation-highest-mental-activity.gnaural', [['beat-above-band', 'notice', 4]]],
       ['presets/stimulation-hiit.gnaural', [['beat-above-band', 'notice', 8]]],
     ]);
+  });
+
+  /**
+   * Gnaural's own collection is the looser case and must stay legible as such: seven files raise
+   * something and none of it is a defect — `tibetan-bowls` builds its sound out of carriers below
+   * 20 Hz, `purr` gates a 493 Hz tone because that is what an isochronic cat purr is, and
+   * `academic-performance-enhancement` carries the merge-on-reopen hazard. Pinned by file and kind
+   * rather than by node count, which would make this a change detector.
+   */
+  it('raises the frequency rules only where a preset means them, and the regroup hazard once', { timeout: CORPUS_TIMEOUT }, () => {
+    const offenders = namesIn('gnaural')
+      .map((name) => ({ name, warnings: entryWarnings(parseScheduleWithWarnings(loadFixture(name)).schedule) }))
+      .filter((result) => result.warnings.length > 0);
+
+    expect(offenders.map((result) => [result.name, kindsOf(result.warnings)])).toEqual([
+      ['gnaural/academic-performance-enhancement.gnaural', ['gnaural-regroup']],
+      ['gnaural/breath-duration-increase.gnaural', ['base-too-low', 'beat-exceeds-base']],
+      ['gnaural/dane-m-theta.gnaural', ['beat-above-band']],
+      ['gnaural/hyperbolic-conciousness-sharpened.gnaural', ['base-too-low', 'beat-above-band', 'beat-exceeds-base']],
+      ['gnaural/hyperbolic-conciousness.gnaural', ['base-too-low', 'beat-above-band', 'beat-exceeds-base']],
+      ['gnaural/purr.gnaural', ['beat-above-band', 'beat-exceeds-base']],
+      ['gnaural/tibetan-bowls.gnaural', ['base-too-low', 'beat-exceeds-base']],
+    ]);
+  });
+
+  /**
+   * Gnaural's own editor writes a silent node as `-2.55352e-19` rather than as zero — its published
+   * presets carry them, and a file imported from the desktop app will too. The rule is a `warning`,
+   * so a false one on a file Gnaural itself produced teaches the reader to ignore the real ones.
+   */
+  it('does not call Gnaural’s own floating-point zero an inverted channel', () => {
+    const { schedule } = parseScheduleWithWarnings(
+      xml(voice({}, entry(10, 'volume_left="-2.55352e-19" volume_right="0"'))),
+    );
+
+    expect(kindsOf(entryWarnings(schedule))).not.toContain('volume-out-of-range');
   });
 });

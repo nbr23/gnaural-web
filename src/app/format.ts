@@ -9,6 +9,10 @@ export function formatClock(seconds: number): string {
 
 /** Rounded, human phrasing for a program's length in a list — not a running clock. */
 export function formatDuration(seconds: number): string {
+  // Gnaural's `8-voice` is a one-second loop, and rounding that to "0 min" tells the reader nothing
+  // about a program they may play for an hour.
+  if (seconds < 60) return seconds < 1 ? `${seconds.toFixed(2)} s` : `${Math.round(seconds)} s`;
+
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes} min`;
 

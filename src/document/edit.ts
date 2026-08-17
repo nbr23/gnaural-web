@@ -97,8 +97,8 @@ export function updateEntry(
  * How a time drag treats the segment that follows the node being moved.
  *
  * **Squeeze is the default and ripple is the modifier**, and the reason is §3.7 rather than taste: a
- * voice's length is the sum of its durations, the *shortest* voice is the schedule's length, and all
- * 19 bundled files have a voice-duration spread of exactly zero. Rippling one voice of a multi-voice
+ * voice's length is the sum of its durations, the *shortest* voice is the schedule's length, and no
+ * bundled file has a voice-duration spread past 0.0036 s. Rippling one voice of a multi-voice
  * schedule therefore changes how long the whole program plays and raises the ragged-schedule warning
  * on the user's own drag.
  */
@@ -182,8 +182,8 @@ export interface InsertEntryArgs {
  * Add a breakpoint by **splitting a segment**, values interpolated off the curve §3.5 defines.
  *
  * The durations either side sum to the one they replace, so the voice's length does not change and
- * §3.7's spread — exactly zero in all 19 bundled files — survives. That is the same argument that
- * made squeeze rather than ripple the default for a time drag.
+ * §3.7's spread — negligible in every bundled file — survives. That is the same argument that made
+ * squeeze rather than ripple the default for a time drag.
  *
  * **The insert is audibly a no-op by construction.** The curve through the new node is the curve
  * that was already there; what the edit adds is a handle on it. Anything else would mean that

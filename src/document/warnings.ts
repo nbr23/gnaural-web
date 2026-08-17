@@ -15,9 +15,10 @@ import { VoiceType, isRenderableType, isTonalType } from './types';
  * **The severity rule.** A `warning` means what you hear will differ from what the file describes:
  * a silent voice, a schedule cut short. A `notice` means the file was unusual and was handled
  * correctly, recorded so that "did it read my file properly?" has an answer. The distinction is
- * load-bearing, not decorative: of the 19 bundled programs exactly one — `powernap`, with its
- * declared `voicecount=3` against one actual voice — trips anything here at all, and it would be
- * absurd for it to wear a warning for a header §3.4 tells the parser to ignore by design.
+ * load-bearing, not decorative: of the 40 bundled programs exactly two trip anything here at all —
+ * `powernap`, with its declared `voicecount=3` against one actual voice, and
+ * `academic-performance-enhancement`, which declares 3 entries and has 31 — and it would be absurd
+ * for either to wear a warning for a header §3.4 tells the parser to ignore by design.
  *
  * A third producer, `entryWarnings`, arrived with the editor (§6.1's inline validation). It is the
  * only one whose warnings carry a location, because it is the only one whose reader can go there.
@@ -149,6 +150,9 @@ export const BASE_RANGE = { min: 20, max: 1500 };
 /** §6.1's "beat frequencies above ~40 Hz where the effect breaks down", in Hz. */
 export const BEAT_CEILING = 40;
 
+/** Below a millionth of full scale a volume is zero, whatever sign the file wrote it with. */
+const VOLUME_EPSILON = 1e-6;
+
 /**
  * Where a warning is, addressed the way the document and the editor's selection address a node.
  * Declared in `types.ts` since step 8, so the edit transforms can take the same addresses a warning
@@ -171,12 +175,18 @@ export interface EntryWarning extends ScheduleWarning {
  * §6.1), plus the one way a valid document can fail to survive a round trip through Gnaural desktop.
  *
  * **Severity is decided against the corpus, not in the abstract.** Measured through the parser over
- * all 19 bundled programs (354 entries): base 100–1046 Hz, volume 0–1, no duration below 0.001 s —
- * so those rules trip nothing at all — but **beat rises to 70 Hz in four shipped presets, at 15
- * entries**. §6.1's 40 Hz threshold is kept exactly as written and carried as a `notice`: a 70 Hz
- * beat is played precisely as authored, and what breaks down is the *percept*, which is a fact about
- * hearing rather than a defect in the document. Raising the threshold until the library came out
- * clean would have thrown away §6.1's advice silently; the severity split exists for this.
+ * all 40 bundled programs (31,239 entries): base 0–1046 Hz, beat to 493 Hz, volume 0–1, durations
+ * down to 0 s. §6.1's thresholds are kept exactly as written, and the split between the two
+ * severities is what lets them stay that way over two corpora that disagree:
+ *
+ * - The Android 19 trip **one rule, as a notice**: beat above 40 Hz, in four presets at 15 entries.
+ * - Gnaural's own 21 trip four rules, in seven files. None of it is a defect: `tibetan-bowls`
+ *   builds its sound out of carriers below 20 Hz, and `purr` gates a 493 Hz tone because that is
+ *   what an isochronic cat purr is.
+ *
+ * A notice says what breaks down is the *percept*, which is a fact about hearing rather than a
+ * defect in the document. Raising the thresholds until the library came out clean would have thrown
+ * §6.1's advice away silently; the severity split exists for this.
  *
  * **One warning per rule, not per node.** Fifteen gamma-band entries are one sentence with fifteen
  * locations, not fifteen rows.
@@ -309,7 +319,12 @@ const VALUE_RULES: ValueRule[] = [
     kind: 'volume-out-of-range',
     severity: 'warning',
     offence: (entry) => {
-      const outside = [entry.volumeLeft, entry.volumeRight].filter((value) => value < 0 || value > 1);
+      // Gnaural's own editor writes a silent node as `-2.55352e-19` rather than as zero — its
+      // published presets carry them. Calling that an inverted channel would be a false alarm on a
+      // file the desktop app produced, so the rule tolerates what is zero to any listener.
+      const outside = [entry.volumeLeft, entry.volumeRight].filter(
+        (value) => value < -VOLUME_EPSILON || value > 1 + VOLUME_EPSILON,
+      );
       if (outside.length === 0) return null;
       return outside.reduce((worst, value) => (Math.abs(value - 0.5) > Math.abs(worst - 0.5) ? value : worst));
     },

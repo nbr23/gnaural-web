@@ -47,6 +47,17 @@ const LOOP_HORIZON_SECONDS = 12 * 60 * 60;
 const MAX_LOOP_PASSES = 1000;
 
 /**
+ * Third bound, and the one that binds on Gnaural's own looping presets: how many entries may be
+ * turned into automation across every pass.
+ *
+ * `scheduleFrom` writes every pass up front — §4.2's price for having no timer-driven look-ahead —
+ * so the cost is `entries × passes × params`, not `passes`. `purr` is 138 entries over 60 s and
+ * loops forever, which at the horizon alone would be 99,000 curve points on the main thread before
+ * the first sound; a file dense enough and short enough can ask for far more than that.
+ */
+const MAX_SCHEDULED_ENTRIES = 50_000;
+
+/**
  * How many passes an `update()` made *during a gesture* schedules: the current one and the next.
  *
  * Two rather than one because a pass boundary can fall inside the throttle interval, and audio that
@@ -57,13 +68,26 @@ const GESTURE_HORIZON_PASSES = 2;
 /**
  * How many times the schedule plays through (§3.2).
  *
- * `loops` counts passes, so 1 plays once. Zero and negatives repeat forever and are bounded here.
+ * `loops` counts passes, so 1 plays once. Zero and negatives repeat forever.
+ *
+ * **The three bounds apply to a declared count too, not only to "forever."** A file may ask for as
+ * many passes as it likes — `academic-performance-enhancement` declares 15, and Gnaural's own
+ * download area has files declaring thousands — and a declared count costs exactly what an endless
+ * one does. Whatever the file says, playback ends at a bound rather than at a stall, and the player
+ * says which pass it is on throughout.
  */
 function passCount(schedule: Schedule, duration: number): number {
   if (duration <= 0) return 1;
+
   const declared = Math.floor(schedule.loops);
-  if (declared > 0) return declared;
-  return Math.max(1, Math.min(MAX_LOOP_PASSES, Math.ceil(LOOP_HORIZON_SECONDS / duration)));
+  const wanted = declared > 0 ? declared : Number.POSITIVE_INFINITY;
+  const entries = schedule.voices.reduce((total, voice) => total + voice.entries.length, 0);
+  const affordable = entries > 0 ? Math.floor(MAX_SCHEDULED_ENTRIES / entries) : MAX_LOOP_PASSES;
+
+  return Math.max(
+    1,
+    Math.min(wanted, MAX_LOOP_PASSES, affordable, Math.ceil(LOOP_HORIZON_SECONDS / duration)),
+  );
 }
 
 /**

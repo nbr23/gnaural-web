@@ -57,7 +57,9 @@ describe('library view', () => {
     root.render(<App />);
 
     expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
-    expect(root.text()).toContain('Gnaural originals');
+    // Both collections, each with its own categories: Gnaural's two and Android's eight.
+    expect(root.text()).toContain('Contrib');
+    expect(root.text()).toContain('Gnaural edits');
     expect(root.text()).toContain('OOBE');
   });
 
@@ -82,14 +84,17 @@ describe('library view', () => {
     // no-medical-claims rule is met by saying whose words they are, not by rewriting them.
     root.render(<App />);
 
-    expect(root.query('.library__note')?.textContent).toContain("original authors' words");
+    const notes = root.queryAll('.library__note').map((note) => note.textContent ?? '');
+    expect(notes.some((note) => note.includes("original authors' words"))).toBe(true);
+    expect(notes.some((note) => note.includes('their words'))).toBe(true);
     // In bold, because it is the sentence the rule is met by and not a footnote to the rest.
-    expect(root.query('.library__note strong')?.textContent).toContain("original authors' words");
+    const bold = root.queryAll('.library__note strong').map((clause) => clause.textContent ?? '');
+    expect(bold.some((clause) => clause.includes("original authors' words"))).toBe(true);
   });
 
   it('credits each program on its card', () => {
     root.render(<App />);
-    const card = root.byText('.program-row__open', 'Power Nap');
+    const card = root.byText('.program-row__open', 'Power Nap (Android)');
 
     expect(card?.textContent).toContain('Gnaural');
     expect(card?.textContent).toContain('20 min');
@@ -154,7 +159,7 @@ describe('library view', () => {
 describe('routing', () => {
   it('opens a program from the library and shows its player', async () => {
     root.render(<App />);
-    root.click(root.byText('.program-row__open', 'Power Nap'));
+    root.click(root.byText('.program-row__open', 'Power Nap (Android)'));
     await flush();
 
     expect(window.location.hash).toBe('#/p/powernap');
@@ -171,7 +176,7 @@ describe('routing', () => {
     Object.defineProperty(window, 'scrollTo', { configurable: true, value: scrollTo });
 
     root.render(<App />);
-    root.click(root.byText('.program-row__open', 'Power Nap'));
+    root.click(root.byText('.program-row__open', 'Power Nap (Android)'));
     await flush();
 
     expect(scrollTo).toHaveBeenCalledWith(0, 0);

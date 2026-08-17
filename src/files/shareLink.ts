@@ -13,10 +13,11 @@ import type { Schedule } from '../document/types';
  * schedule in and out of the app, and `CompressionStream` is a web API the document layer is
  * required to stay free of (§4).
  *
- * `.gnaural` XML is repetitive enough that deflate is dramatic — every one of the 19 bundled
- * programs lands between 716 and 1300 characters, the longest of them a 73-minute, 45-entry
- * schedule. `MAX_SHARE_PAYLOAD` is a guard against a pathological file, not a limit anything
- * realistic approaches.
+ * `.gnaural` XML is repetitive enough that deflate is dramatic — an ordinary program lands between
+ * 716 and 1300 characters, the longest of the Android 19 a 73-minute, 45-entry schedule.
+ * `MAX_SHARE_PAYLOAD` is not only a guard against a pathological file, though: four of Gnaural's own
+ * presets are past it, `hypnagogic-gale` at 10,080 entries being the extreme, and `useExport` falls
+ * back to exporting the file for those.
  */
 
 /** §5.1's "fall back to file export past ~8 KB", measured in fragment characters. */
