@@ -126,6 +126,16 @@ describe('library view', () => {
     expect(root.query('.library__section')?.textContent).not.toContain('Favourites');
   });
 
+  it('opens the top-level sections and folds the groups inside them', () => {
+    root.render(<App />);
+
+    const open = (element: Element) => (element as HTMLDetailsElement).open;
+    expect(root.queryAll('.library__section--top').every(open)).toBe(true);
+    expect(root.queryAll('.library__section--child').some(open)).toBe(false);
+    // Folded is a fold, not a filter: find-in-page and the search still reach the rows.
+    expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
+  });
+
   it('remembers which sections were folded away', async () => {
     root.render(<App />);
     // The summary's click behaviour is the browser's; what the app listens for is `toggle`.

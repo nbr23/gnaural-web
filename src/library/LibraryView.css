@@ -116,11 +116,11 @@
 }
 
 .library__section {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .library__section--child {
-  margin: 8px 0 8px 10px;
+  margin: 6px 0 6px 10px;
   padding-left: 10px;
   border-left: 1px solid var(--border);
 }
@@ -129,9 +129,31 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
+  padding: 6px 0;
   cursor: pointer;
-  list-style-position: outside;
+  list-style: none;
+
+  /* The flex layout above already suppresses the marker in Chrome; Safari needs to be told. */
+  &::-webkit-details-marker {
+    display: none;
+  }
+}
+
+.library__caret {
+  flex: none;
+  font-size: 14px;
+  color: var(--text);
+  transition: transform 120ms ease;
+}
+
+details[open] > .library__summary > .library__caret {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library__caret {
+    transition: none;
+  }
 }
 
 .library__category {
@@ -168,7 +190,7 @@
 /* Full width, because it is a caption for the rows below it: measured any narrower it reads as a
    column beside them rather than as something they belong to. */
 .library__note {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   font-size: 13px;
   color: var(--text);
 
@@ -195,7 +217,7 @@
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 /* One row per program: press the title to open it, star it, remove it. Everything the old card
@@ -315,6 +337,21 @@
   line-height: 1;
 }
 
+/* 44px is the touch target, and it is the row height: at nineteen programs that is generous and at
+   a hundred it is a lot of scrolling. Tightened where the pointer is a mouse, which is the only
+   place the target can safely shrink. */
+@media (pointer: fine) {
+  .program-row__open {
+    padding: 6px;
+    min-height: 34px;
+  }
+
+  .program-row__star,
+  .library__remove {
+    min-height: 34px;
+  }
+}
+
 /* Two words instead of a modal. Deliberately not styled as a danger button: the question is the
    safeguard, and the answer should be readable rather than alarming. */
 .program-row__confirm {
@@ -386,8 +423,14 @@
     background: none;
   }
 
+  .library__rail {
+    gap: 2px;
+  }
+
   .library__rail-link {
     justify-content: space-between;
+    padding: 4px 10px;
+    min-height: 28px;
     border-radius: 8px;
     border-color: transparent;
     background: none;

@@ -78,8 +78,15 @@ export interface Settings {
    * delete: an import that comes back keeps its star.
    */
   favourites: string[];
-  /** Library sections the user has folded away, by `LibrarySection.id`. Open is the default. */
-  collapsedSections: string[];
+  /**
+   * Library sections that are **not** in their default fold state, by `LibrarySection.id`.
+   *
+   * The default is "top level open, nested folded", which is a rule about depth and not a list of
+   * ids — and the catalog grows a Favourites, Drafts or Imported section the moment one of those
+   * exists. Storing the open ids would show every newly appearing section folded; storing only the
+   * departures from the rule leaves each one at whatever its depth says it should be.
+   */
+  sectionOverrides: string[];
 }
 
 /**

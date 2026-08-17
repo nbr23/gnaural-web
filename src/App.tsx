@@ -330,8 +330,8 @@ function App() {
           onDiscardDraft={(id) => void discardDraft(id)}
           favourites={settings.favourites}
           onFavouritesChange={(next) => set('favourites', next)}
-          collapsed={settings.collapsedSections}
-          onCollapsedChange={(next) => set('collapsedSections', next)}
+          overrides={settings.sectionOverrides}
+          onOverridesChange={(next) => set('sectionOverrides', next)}
         />
       )}
       {nowPlaying && (

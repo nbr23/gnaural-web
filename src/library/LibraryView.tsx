@@ -21,8 +21,18 @@ export interface LibraryViewProps {
   /** Route hashes, as `Settings.favourites` stores them. */
   favourites: string[];
   onFavouritesChange: (favourites: string[]) => void;
-  collapsed: string[];
-  onCollapsedChange: (collapsed: string[]) => void;
+  /** Sections folded against the depth rule below, by id. See `Settings.sectionOverrides`. */
+  overrides: string[];
+  onOverridesChange: (overrides: string[]) => void;
+}
+
+/**
+ * A section's fold state before the user touches it: the top level open, everything nested inside
+ * it folded. The bundled programs live one level down in their category groups, so this is the
+ * difference between landing on a page of headings and landing on a page of nineteen rows.
+ */
+function openByDefault(depth: number): boolean {
+  return depth === 0;
 }
 
 /**
@@ -38,7 +48,6 @@ export interface LibraryViewProps {
  * session state a list has: what is typed in the search box, which section is folded, and which row
  * has been asked to confirm a deletion.
  */
-const EXPAND_ALL: string[] = [];
 const IGNORE_TOGGLE = () => {};
 
 export function LibraryView({
@@ -50,8 +59,8 @@ export function LibraryView({
   onDiscardDraft,
   favourites,
   onFavouritesChange,
-  collapsed,
-  onCollapsedChange,
+  overrides,
+  onOverridesChange,
 }: LibraryViewProps) {
   const [query, setQuery] = useState('');
 
@@ -73,19 +82,24 @@ export function LibraryView({
     [favourites, onFavouritesChange],
   );
 
-  const setOpen = useCallback(
-    (id: string, open: boolean) => {
-      onCollapsedChange(open ? collapsed.filter((held) => held !== id) : [...collapsed, id]);
+  const setOverride = useCallback(
+    (id: string, override: boolean) => {
+      // A `toggle` that agrees with what is already stored is not an edit. The stored list arrives
+      // after the first render, so every section the user had moved fires one on hydration.
+      if (override === overrides.includes(id)) return;
+      onOverridesChange(override ? [...overrides, id] : overrides.filter((held) => held !== id));
     },
-    [collapsed, onCollapsedChange],
+    [overrides, onOverridesChange],
   );
 
   const jumpTo = useCallback(
-    (id: string) => {
-      setOpen(id, true);
+    (id: string, depth: number) => {
+      // Jumping to a folded section and leaving it folded shows nothing, so this opens it — which
+      // is an override exactly when the section would not have been open anyway.
+      setOverride(id, !openByDefault(depth));
       anchors.current.get(id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     },
-    [setOpen],
+    [setOverride],
   );
 
   const remove = useCallback(
@@ -159,14 +173,15 @@ export function LibraryView({
               key={section.id}
               section={section}
               depth={0}
+              overrides={overrides}
               // A search that left its results folded inside a collapsed section would look like a
               // search that found nothing. What is folded is remembered, not applied, while one runs.
-              collapsed={query ? EXPAND_ALL : collapsed}
+              forceOpen={query !== ''}
               favourites={favourites}
               anchors={anchors.current}
               // Forcing a section open above fires `toggle` like any other opening would, and that
               // must not be recorded as the user having unfolded it.
-              onToggleOpen={query ? IGNORE_TOGGLE : setOpen}
+              onToggleOpen={query ? IGNORE_TOGGLE : setOverride}
               onToggleFavourite={toggleFavourite}
               onRemove={remove}
             />
@@ -193,7 +208,7 @@ function SectionRail({
   onJump,
 }: {
   sections: LibrarySection[];
-  onJump: (id: string) => void;
+  onJump: (id: string, depth: number) => void;
 }) {
   const entries = sections.flatMap((section) => [
     { section, depth: 0 },
@@ -210,7 +225,7 @@ function SectionRail({
           type="button"
           className={`library__rail-link${depth > 0 ? ' library__rail-link--child' : ''}`}
           style={section.accent ? ({ '--origin': section.accent } as CSSProperties) : undefined}
-          onClick={() => onJump(section.id)}
+          onClick={() => onJump(section.id, depth)}
         >
           {section.accent && <span className="library__dot" aria-hidden="true" />}
           {section.railLabel ?? section.label}
@@ -231,10 +246,13 @@ function count(section: LibrarySection): number {
 interface SectionProps {
   section: LibrarySection;
   depth: number;
-  collapsed: string[];
+  overrides: string[];
+  /** Open whatever the depth rule says, without recording it — what a running search does. */
+  forceOpen: boolean;
   favourites: string[];
   anchors: Map<string, HTMLElement>;
-  onToggleOpen: (id: string, open: boolean) => void;
+  /** Called with whether the section's new state departs from `openByDefault(depth)`. */
+  onToggleOpen: (id: string, override: boolean) => void;
   onToggleFavourite: (key: string) => void;
   onRemove: (item: LibraryItem) => void;
 }
@@ -249,7 +267,8 @@ interface SectionProps {
 function Section({
   section,
   depth,
-  collapsed,
+  overrides,
+  forceOpen,
   favourites,
   anchors,
   onToggleOpen,
@@ -259,15 +278,30 @@ function Section({
   return (
     <details
       className={`library__section library__section--${depth === 0 ? 'top' : 'child'}`}
-      open={!collapsed.includes(section.id)}
+      open={forceOpen || openByDefault(depth) !== overrides.includes(section.id)}
       ref={(element) => {
         if (element) anchors.set(section.id, element);
         else anchors.delete(section.id);
       }}
-      onToggle={(event) => onToggleOpen(section.id, event.currentTarget.open)}
+      onToggle={(event) =>
+        onToggleOpen(section.id, event.currentTarget.open !== openByDefault(depth))
+      }
       style={section.accent ? ({ '--origin': section.accent } as CSSProperties) : undefined}
     >
       <summary className="library__summary">
+        {/* The disclosure cue. `<summary>` loses its own marker to the flex layout here, and a
+            folded-by-default library that shows no way to unfold itself is a dead end. */}
+        <svg
+          className="library__caret"
+          viewBox="0 0 24 24"
+          width="1em"
+          height="1em"
+          fill="currentColor"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M9 5.5 16.5 12 9 18.5z" />
+        </svg>
         {section.accent && <span className="library__dot" aria-hidden="true" />}
         <span className="library__category">
           {section.code ? (
@@ -304,7 +338,8 @@ function Section({
           key={child.id}
           section={child}
           depth={depth + 1}
-          collapsed={collapsed}
+          overrides={overrides}
+          forceOpen={forceOpen}
           favourites={favourites}
           anchors={anchors}
           onToggleOpen={onToggleOpen}

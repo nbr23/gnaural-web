@@ -25,8 +25,12 @@ export const DEFAULT_SETTINGS: Settings = {
   liveBaseFreq: DEFAULT_LIVE_VALUES.baseFreq,
   liveBeatFreq: DEFAULT_LIVE_VALUES.beatFreq,
   favourites: [],
-  /** Every section starts open: a library that hides its contents on first run explains nothing. */
-  collapsedSections: [],
+  /**
+   * Nothing overridden: the top-level sections start open and everything nested inside them starts
+   * folded. Nineteen bundled programs in their category groups is more list than one screen, and
+   * the group headings with their counts are the map to it.
+   */
+  sectionOverrides: [],
 };
 
 export interface SettingsStore {
