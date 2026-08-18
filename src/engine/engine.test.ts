@@ -429,24 +429,24 @@ describe('isochronic voices (types 3 and 4, §3.3)', () => {
    * across a transition during playback — which is what `renderWithEditAt` is for.
    */
   it('crossfades rather than cutting when a voice becomes isochronic mid-playback', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
     const binaural = makeSchedule([
       makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0, volumeLeft: 0.5, volumeRight: 0.5 })]),
     ]);
-    engine.load(binaural);
-    engine.play();
 
-    const buffer = await renderWithEditAt(context, 0.5, () =>
-      engine.update(
-        makeSchedule([
-          makeVoice(
-            [makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0, volumeLeft: 0.5, volumeRight: 0.5 })],
-            { type: VoiceType.IsoPulse },
-          ),
-        ]),
-      ),
-    );
+    const buffer = await renderWithEditAt(0.5, (context) => {
+      const engine = new PlaybackEngine(context);
+      engine.load(binaural);
+      engine.play();
+      return () =>
+        engine.update(
+          makeSchedule([
+            makeVoice(
+              [makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0, volumeLeft: 0.5, volumeRight: 0.5 })],
+              { type: VoiceType.IsoPulse },
+            ),
+          ]),
+        );
+    });
     const left = buffer.getChannelData(0);
 
     // Beat 0 either side, so both documents are a steady 300 Hz tone and the swap is inaudible in
@@ -567,21 +567,21 @@ describe('water voices (types 5 and 6, §3.3)', () => {
    * other, so the change is audible without a hole in the middle of it.
    */
   it('rebuilds and crossfades when the density is edited mid-playback', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
     const sparse = makeSchedule([
       water([makeEntry({ duration: 30, baseFreq: 0.0002, beatFreq: 8, volumeLeft: 0.5, volumeRight: 0.5 })]),
     ]);
-    engine.load(sparse);
-    engine.play();
 
-    const buffer = await renderWithEditAt(context, 0.4, () =>
-      engine.update(
-        makeSchedule([
-          water([makeEntry({ duration: 30, baseFreq: 0.05, beatFreq: 8, volumeLeft: 0.5, volumeRight: 0.5 })]),
-        ]),
-      ),
-    );
+    const buffer = await renderWithEditAt(0.4, (context) => {
+      const engine = new PlaybackEngine(context);
+      engine.load(sparse);
+      engine.play();
+      return () =>
+        engine.update(
+          makeSchedule([
+            water([makeEntry({ duration: 30, baseFreq: 0.05, beatFreq: 8, volumeLeft: 0.5, volumeRight: 0.5 })]),
+          ]),
+        );
+    });
     const left = buffer.getChannelData(0);
 
     // Denser after the edit than before it, which only happens if the buffer was rebuilt.
@@ -1261,28 +1261,47 @@ describe('prepare()', () => {
  * an edit can be applied against a graph that is genuinely mid-flight — the same thing a drag does
  * during playback, at sample resolution and with no browser. This is what makes §6.1's live
  * re-scheduling assertable rather than merely reviewed.
+ *
+ * `setup` builds the graph on a context of the helper's own making, and returns the edit to run:
+ * a suspend that loses its race can only be retried on a context nothing has rendered yet.
  */
 async function renderWithEditAt(
-  context: OfflineAudioContext,
   when: number,
-  edit: () => void,
+  setup: (context: OfflineAudioContext) => () => void,
 ): Promise<AudioBuffer> {
-  const suspended = context.suspend(when).then(() => {
-    edit();
-    void context.resume();
-  });
+  const ATTEMPTS = 5;
 
-  // Yield once before starting the render. `suspend()` hands its request to the audio thread
-  // asynchronously, and node-web-audio-api rejects it with `InvalidStateError` if the render has
-  // already run past the point — which, issued back to back, it does a few percent of the time.
-  // Measured in this container: 2 rejections in 60 without this line, 0 in 120 with it.
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  for (let attempt = 1; ; attempt++) {
+    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+    const edit = setup(context);
 
-  // Awaited together so a rejected suspend fails the test outright. Left unhandled it would render
-  // without ever applying the edit, and the failure would surface as a baffling assertion about
-  // frequency somewhere else entirely.
-  const [buffer] = await Promise.all([context.startRendering(), suspended]);
-  return buffer;
+    // `suspend()` hands its request to the audio thread asynchronously, and node-web-audio-api
+    // rejects it with `InvalidStateError` if the render has already run past the point. Yielding
+    // before the render starts makes that rare — measured in this container, 4 rejections in 40
+    // without the yield and 0 in 280 with it — but a loaded CI box still loses it now and again,
+    // and a lost suspend is a property of the timing rather than of the graph, so it is retried.
+    let lost = false;
+    const suspended = context.suspend(when).then(
+      () => {
+        edit();
+        void context.resume();
+      },
+      () => {
+        lost = true;
+      },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Awaited together so a suspend that never landed cannot pass for a good render. Left alone it
+    // would render without ever applying the edit, and the failure would surface as a baffling
+    // assertion about frequency somewhere else entirely.
+    const [buffer] = await Promise.all([context.startRendering(), suspended]);
+    if (!lost) return buffer;
+    if (attempt === ATTEMPTS) {
+      throw new Error(`suspend(${when}) was rejected on ${ATTEMPTS} consecutive renders`);
+    }
+  }
 }
 
 /** A steady tone, so a frequency measured after an edit is unambiguous. */
@@ -1301,15 +1320,15 @@ describe('update() — live re-scheduling (§6.1)', () => {
     return samples.subarray(Math.round(from * SAMPLE_RATE), Math.round(to * SAMPLE_RATE));
   }
 
-  it('is heard from the edit onwards, and not before it', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
+  function retune300to500(context: OfflineAudioContext): () => void {
     const engine = new PlaybackEngine(context);
     engine.load(steadySchedule(300));
     engine.play();
+    return () => engine.update(steadySchedule(500));
+  }
 
-    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
-      engine.update(steadySchedule(500)),
-    );
+  it('is heard from the edit onwards, and not before it', async () => {
+    const buffer = await renderWithEditAt(EDIT_AT, retune300to500);
     const left = buffer.getChannelData(0);
 
     // Zero-crossing counting resolves to 1/window, so ~3.3 Hz over these 0.3 s windows.
@@ -1318,14 +1337,7 @@ describe('update() — live re-scheduling (§6.1)', () => {
   });
 
   it('does not click at the edit, because the oscillator keeps its phase', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
-    engine.load(steadySchedule(300));
-    engine.play();
-
-    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
-      engine.update(steadySchedule(500)),
-    );
+    const buffer = await renderWithEditAt(EDIT_AT, retune300to500);
 
     // A phase-continuous 500 Hz sine steps ~0.07 per sample at this rate; a restarted oscillator or
     // a stepped gain would jump far further.
@@ -1333,14 +1345,7 @@ describe('update() — live re-scheduling (§6.1)', () => {
   });
 
   it('keeps playing rather than starting over — the graph is not rebuilt', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
-    engine.load(steadySchedule(300));
-    engine.play();
-
-    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
-      engine.update(steadySchedule(500)),
-    );
+    const buffer = await renderWithEditAt(EDIT_AT, retune300to500);
 
     // `load()` would have faded to silence and faded back in. Nothing here dips at all.
     expect(peakAmplitude(windowOf(buffer.getChannelData(0), 0.45, 0.6))).toBeGreaterThan(0.9);
@@ -1363,14 +1368,12 @@ describe('update() — live re-scheduling (§6.1)', () => {
   });
 
   it('crossfades rather than cuts when an edit removes a voice', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
-    engine.load(steadySchedule(300, 0.5, 2));
-    engine.play();
-
-    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
-      engine.update(steadySchedule(300, 0.5, 1)),
-    );
+    const buffer = await renderWithEditAt(EDIT_AT, (context) => {
+      const engine = new PlaybackEngine(context);
+      engine.load(steadySchedule(300, 0.5, 2));
+      engine.play();
+      return () => engine.update(steadySchedule(300, 0.5, 1));
+    });
     const left = buffer.getChannelData(0);
 
     expect(peakAmplitude(windowOf(left, 0.1, 0.4))).toBeGreaterThan(0.7);
@@ -1380,15 +1383,15 @@ describe('update() — live re-scheduling (§6.1)', () => {
   });
 
   it('applies an edit to stereoswap without rewiring the graph (§3.2)', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
     const asymmetric = { masterVolume: { left: 0.5, right: 1 }, stereoSwap: false };
-    engine.load(makeSchedule(steadySchedule(300).voices, asymmetric));
-    engine.play();
 
-    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
-      engine.update(makeSchedule(steadySchedule(300).voices, { ...asymmetric, stereoSwap: true })),
-    );
+    const buffer = await renderWithEditAt(EDIT_AT, (context) => {
+      const engine = new PlaybackEngine(context);
+      engine.load(makeSchedule(steadySchedule(300).voices, asymmetric));
+      engine.play();
+      return () =>
+        engine.update(makeSchedule(steadySchedule(300).voices, { ...asymmetric, stereoSwap: true }));
+    });
 
     expect(peakAmplitude(windowOf(buffer.getChannelData(0), 0.1, 0.4))).toBeCloseTo(0.5, 1);
     expect(peakAmplitude(windowOf(buffer.getChannelData(0), 0.6, 0.9))).toBeCloseTo(1, 1);
@@ -1421,20 +1424,18 @@ describe('update() — live re-scheduling (§6.1)', () => {
    * does not depend on their relative phase.
    */
   it('crossfades a new voice in when an edit adds one', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
     const first = makeVoice([makeEntry({ duration: 30, baseFreq: 300, beatFreq: 0, volumeLeft: 0.5, volumeRight: 0.5 })]);
     const second = makeVoice(
       [makeEntry({ duration: 30, baseFreq: 700, beatFreq: 0, volumeLeft: 0.5, volumeRight: 0.5 })],
       { id: 1 },
     );
 
-    engine.load(makeSchedule([first]));
-    engine.play();
-
-    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
-      engine.update(makeSchedule([first, second]), 'full', [0]),
-    );
+    const buffer = await renderWithEditAt(EDIT_AT, (context) => {
+      const engine = new PlaybackEngine(context);
+      engine.load(makeSchedule([first]));
+      engine.play();
+      return () => engine.update(makeSchedule([first, second]), 'full', [0]);
+    });
     const left = buffer.getChannelData(0);
 
     expect(peakAmplitude(windowOf(left, 0.1, 0.4))).toBeCloseTo(0.5, 1);
@@ -1521,16 +1522,16 @@ describe('update() — live re-scheduling (§6.1)', () => {
 
   /** Deleting the last voice is an allowed state (9a already warns for it), not a crash. */
   it('goes silent without throwing when an edit leaves no voices at all', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
     const before = steadySchedule(300, 1, 1);
-    engine.load(before);
-    engine.play();
-
     const edit = removeVoice(before, 0);
-    const buffer = await renderWithEditAt(context, EDIT_AT, () =>
-      engine.update(edit.schedule, 'full', edit.voiceMap),
-    );
+
+    let engine!: PlaybackEngine;
+    const buffer = await renderWithEditAt(EDIT_AT, (context) => {
+      engine = new PlaybackEngine(context);
+      engine.load(before);
+      engine.play();
+      return () => engine.update(edit.schedule, 'full', edit.voiceMap);
+    });
 
     expect(engine.getDuration()).toBe(0);
     expect(engine.getCurrentOffset()).toBe(0);
@@ -1760,13 +1761,13 @@ describe('the app-level noise layer (§4.5b)', () => {
   });
 
   it('stops with the transport — a bed with nothing under it is just hiss', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
-    engine.load(silentSchedule());
-    engine.setNoiseLayer({ colour: 'gnaural', gain: 0.5 });
-    engine.play();
-
-    const buffer = await renderWithEditAt(context, 0.5, () => engine.pause());
+    const buffer = await renderWithEditAt(0.5, (context) => {
+      const engine = new PlaybackEngine(context);
+      engine.load(silentSchedule());
+      engine.setNoiseLayer({ colour: 'gnaural', gain: 0.5 });
+      engine.play();
+      return () => engine.pause();
+    });
     const left = buffer.getChannelData(0);
 
     expect(rms(left.subarray(Math.round(0.2 * SAMPLE_RATE), Math.round(0.45 * SAMPLE_RATE)))).toBeGreaterThan(0.1);
@@ -1787,15 +1788,13 @@ describe('the app-level noise layer (§4.5b)', () => {
   });
 
   it('crossfades a colour change rather than dropping out', async () => {
-    const context = new OfflineAudioContext(2, SAMPLE_RATE, SAMPLE_RATE);
-    const engine = new PlaybackEngine(context);
-    engine.load(silentSchedule());
-    engine.setNoiseLayer({ colour: 'gnaural', gain: 0.5 });
-    engine.play();
-
-    const buffer = await renderWithEditAt(context, 0.5, () =>
-      engine.setNoiseLayer({ colour: 'white', gain: 0.5 }),
-    );
+    const buffer = await renderWithEditAt(0.5, (context) => {
+      const engine = new PlaybackEngine(context);
+      engine.load(silentSchedule());
+      engine.setNoiseLayer({ colour: 'gnaural', gain: 0.5 });
+      engine.play();
+      return () => engine.setNoiseLayer({ colour: 'white', gain: 0.5 });
+    });
     const left = buffer.getChannelData(0);
 
     // Level holds across the swap — the old sources fade out as the new ones fade in.
