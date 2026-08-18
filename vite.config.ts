@@ -6,6 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './',
   // A build stamp the running app can show. With `registerType: 'prompt'` an installed PWA keeps
   // serving its precached build until it is told otherwise, so "is this actually the code I just
   // deployed?" needs an answer on screen. See `src/app/build.ts`.
@@ -36,8 +37,8 @@ export default defineConfig({
         short_name: 'Gnaural',
         description:
           'Play, export and share Gnaural binaural-beat programs. Works offline; nothing leaves your device.',
-        start_url: '/',
-        scope: '/',
+        start_url: '.',
+        scope: './',
         display: 'standalone',
         // Not locked to portrait: the schedule chart reads well wide.
         orientation: 'any',
