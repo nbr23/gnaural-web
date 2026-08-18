@@ -3,7 +3,7 @@
 <schedule>
 <gnauralfile_version>1.20101006</gnauralfile_version>
 <gnaural_version>1.0.20110606</gnaural_version>
-<title>Sleep Induction</title>
+<title>Sleep induction</title>
 <schedule_description>Sleep induction for use about 15 mn before bedtime to help you fall asleep. It's a one hour programm, with 6mn drop into delta waves followed by 54 mn of relaxing delta plateau</schedule_description>
 <author>@thegreenman</author>
 <totaltime>3600.0010</totaltime>

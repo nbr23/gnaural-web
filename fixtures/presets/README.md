@@ -9,6 +9,14 @@ this is the complete bundled library: 19 programs, about 14 hours of material.
 originating Java method, background loop, and conversion caveats. The program list is built from
 it; playback uses the `.gnaural` files.
 
+**Titles are the app's own display names**, its `program_<method>` string resources
+(`res/values/strings.xml`) — `STIMULATION_HIIT` was "High Intensity Interval Training", not "Hiit".
+`WordUtils.capitalize` on the method name was only that app's *fallback* for a missing string, and
+every one of these 17 has a string. Their capitalisation is inconsistent ("Sleep induction",
+"Wakeful Relaxation") because it was inconsistent there; it is reproduced verbatim rather than
+tidied, so a listener coming from Android finds the name they knew. `powernap` and
+`airplanetravelaid` take their names from the same place, in `src/library/programs.ts`.
+
 ## Conversion
 
 The Android model was `Program → Period → BinauralBeatVoice`, where a period is a block of fixed

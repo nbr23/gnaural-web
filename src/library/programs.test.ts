@@ -38,13 +38,21 @@ describe('bundled library', () => {
 
   it('groups by category, Gnaural’s own collection first', () => {
     const categories = programsByCategory();
-    expect(categories.map((c) => c.label).slice(0, 3)).toEqual([
-      'Gnaural',
-      'Contrib',
-      'Gnaural edits',
-    ]);
-    expect(categories.map((c) => c.label)).toContain('OOBE');
+    expect(categories.map((c) => c.label).slice(0, 3)).toEqual(['Gnaural', 'Contrib', 'Sleep']);
+    expect(categories.map((c) => c.label)).toContain('Out of body experience');
     expect(categories.flatMap((c) => c.programs)).toHaveLength(43);
+  });
+
+  it('files the two redistributed Gnaural files under Sleep, where the app itself had them', () => {
+    // `SLEEP_POWERNAP` and `SLEEP_AIRPLANETRAVELAID`. A category of their own would repeat what the
+    // `(Android)` in the title already says.
+    const sleep = programsIn('android').filter((program) => program.category === 'Sleep');
+    expect(sleep.map((program) => program.id)).toEqual([
+      'powernap',
+      'airplanetravelaid',
+      'sleep-sleep-induction',
+      'sleep-smr',
+    ]);
   });
 
   it('splits Gnaural’s collection by who signed the file', () => {

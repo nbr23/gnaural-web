@@ -2,7 +2,7 @@ import { formatDuration } from '../app/format';
 import type { Route } from '../app/routing';
 import { formatHash } from '../app/routing';
 import type { BundledProgram, Collection } from './programs';
-import { PROGRAMS, categoryColor, categoryLabel, programsByCategory } from './programs';
+import { PROGRAMS, categoryBadge, categoryColor, programsByCategory } from './programs';
 import type { Draft, ImportedProgram } from './storage';
 
 /**
@@ -227,6 +227,7 @@ function collectionSections(
   return programsByCategory(programs).map((group) => ({
     id: `${collection}-${group.category.toLowerCase()}`,
     label: group.label,
+    railLabel: categoryBadge(group.category),
     accent: categoryColor(group.category),
     items: group.programs.map(bundledItem),
   }));
@@ -274,7 +275,7 @@ function bundledItem(program: BundledProgram): LibraryItem {
     origin: program.collection,
     // Its category rather than its origin: the section these rows sit in already says where the
     // whole set came from, so the chip can say the thing the row does not otherwise carry.
-    badge: categoryLabel(program.category),
+    badge: categoryBadge(program.category),
     accent: categoryColor(program.category),
     searchText: `${program.author} ${program.description}`,
     note: program.lostAmbientBed ? LOST_BED_NOTE : undefined,

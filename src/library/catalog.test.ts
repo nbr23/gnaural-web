@@ -93,7 +93,7 @@ describe('buildCatalog', () => {
     // The heading names the app rather than gesturing at it, and the view sets `code` in mono.
     expect(android?.label).toBe(`${ANDROID_PACKAGE} presets`);
     expect(android?.code).toBe(ANDROID_PACKAGE);
-    expect(android?.children?.[0].label).toBe('Gnaural edits');
+    expect(android?.children?.[0].label).toBe('Sleep');
     expect(gnaural?.children?.map((child) => child.label)).toEqual(['Gnaural', 'Contrib']);
 
     // The Brain Machine's three are flat: one row each under Meditation, Sleep and Gamma would be
@@ -109,6 +109,16 @@ describe('buildCatalog', () => {
     ]);
     expect(rows).toHaveLength(PROGRAMS.length);
     expect(new Set(rows.map((row) => row.key)).size).toBe(PROGRAMS.length);
+  });
+
+  it('spells a category out in its heading and abbreviates it on the chip and the rail', () => {
+    const oobe = section(buildCatalog(EMPTY), 'android')?.children?.find(
+      (child) => child.id === 'android-oobe',
+    );
+
+    expect(oobe?.label).toBe('Out of body experience');
+    expect(oobe?.railLabel).toBe('OOBE');
+    expect(new Set(oobe?.items.map((item) => item.badge))).toEqual(new Set(['OOBE']));
   });
 
   it('credits each collection where its programs are, not once at the foot of the page', () => {

@@ -90,15 +90,20 @@ function idFromPath(path: string): string {
  *
  * Kept beside the originals rather than replaced by them: these are the files this app has been
  * playing, and a favourite or a fork pointing at `#/p/powernap` must keep resolving to the same
- * schedule. Both titles say which copy they are, since the originals carry the same ones. Their
- * metadata is transcribed from the files rather than derived, so the library can be listed without
- * parsing every schedule up front.
+ * schedule. Both titles are the app's own — its `program_powernap` and `program_airplanetravelaid`
+ * strings, not the `<title>` inside the file — and both say which copy they are, since Power Nap is
+ * titled identically in either collection. Their metadata is otherwise transcribed from the files
+ * rather than derived, so the library can be listed without parsing every schedule up front.
+ *
+ * They sit under `Sleep` with the rest of the app's sleep programs, which is where its own
+ * `SLEEP_POWERNAP` and `SLEEP_AIRPLANETRAVELAID` put them. A category of their own said "these two
+ * came from Gnaural" a second time, which the `(Android)` in the title already says.
  */
 const ANDROID_REDISTRIBUTED: BundledProgram[] = [
   {
     id: 'powernap',
     title: 'Power Nap (Android)',
-    category: 'Gnaural',
+    category: 'Sleep',
     author: 'Gnaural',
     description: 'Around 20mn of rest to make it through the day. Put on your headphones and relax!',
     collection: 'android',
@@ -109,8 +114,8 @@ const ANDROID_REDISTRIBUTED: BundledProgram[] = [
   },
   {
     id: 'airplanetravelaid',
-    title: 'Meditation schedule for airplane travel (Android)',
-    category: 'Gnaural',
+    title: 'Airplane travel aid (Android)',
+    category: 'Sleep',
     author: '@Gnaural',
     description:
       'Designed to make time go faster on flights. Constant declining base frequency, you can relax or read a book at the same time.',
@@ -198,7 +203,6 @@ export function programsIn(collection: Collection): BundledProgram[] {
 const CATEGORY_ORDER = [
   'Official',
   'Contributed',
-  'Gnaural',
   'Sleep',
   'Meditation',
   'Hypnosis',
@@ -211,20 +215,30 @@ const CATEGORY_ORDER = [
 
 /** The manifest's raw category slug is not always presentable. */
 const CATEGORY_LABELS: Record<string, string> = {
-  Oobe: 'OOBE',
-  // Short because these are also the row chips, in a 210px rail: who signed the file, not a
-  // sentence about it. The section above them already says which collection this is.
+  // Spelled out, as the Android app's own `group_oobe` string had it: the acronym is only obvious
+  // to someone who already knows what it stands for.
+  Oobe: 'Out of body experience',
+  // Short, because the section heading sits above rows that repeat it: who signed the file, not a
+  // sentence about it. The collection heading above them already says which collection this is.
   Official: 'Gnaural',
   Contributed: 'Contrib',
-  // Not "Gnaural originals", which is what these used to be called and what they are not: both are
-  // Android's *edits* of Gnaural files, and the originals sit in the collection above them
-  // (`fixtures/gnaural/README.md`). Not "enhanced" either — Power Nap lost two voices on the way
-  // through.
-  Gnaural: 'Gnaural edits',
+};
+
+/**
+ * What a category is called where there is no room to spell it out — the row chip and the 210px
+ * jump rail, against the section heading `categoryLabel` gives. Only a category whose full label
+ * outgrew a chip needs an entry; everything else is short already and says the same in both places.
+ */
+const CATEGORY_BADGES: Record<string, string> = {
+  Oobe: 'OOBE',
 };
 
 export function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category;
+}
+
+export function categoryBadge(category: string): string {
+  return CATEGORY_BADGES[category] ?? categoryLabel(category);
 }
 
 /**
@@ -232,7 +246,7 @@ export function categoryLabel(category: string): string {
  *
  * The slot is fixed to the category rather than to its position in the list: a search that filters
  * the library must not repaint what is left of it, and a program's colour is a property of the
- * program. There are eleven categories and `SLOT_COUNT` is eight, so the collections share slots —
+ * program. There are ten categories and `SLOT_COUNT` is eight, so the collections share slots —
  * they are never in the same section, and a category only has to differ from its own siblings. The
  * Brain Machine's three reuse `Sleep` and `Meditation`, which is why `Gamma` takes a slot neither
  * of those has.
@@ -240,7 +254,6 @@ export function categoryLabel(category: string): string {
 const CATEGORY_SLOTS: Record<string, number> = {
   Official: 2,
   Contributed: 5,
-  Gnaural: 6,
   Sleep: 0,
   Meditation: 2,
   Gamma: 4,

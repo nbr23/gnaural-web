@@ -1,7 +1,7 @@
 [
   {
     "file": "healing-morphine.gnaural",
-    "title": "Morphine",
+    "title": "Morphine pain killer",
     "category": "Healing",
     "author": "@GiorgioRegni",
     "description": "A relaxing, southing mix of beats that slowly but surely appease any pain point. The brain runs the body as you will discover with this preset.",
@@ -27,7 +27,7 @@
   },
   {
     "file": "learning-learning.gnaural",
-    "title": "Learning",
+    "title": "Study and learning",
     "category": "Learning",
     "author": "@GiorgioRegni",
     "description": "A 2h preset that enhances learning, increases ability to concentrate and think clearly, reduces unwillingness to work.  Students can't get enough of this program! This one is to be listened while studying. ",
@@ -53,7 +53,7 @@
   },
   {
     "file": "meditation-shamanic-rhythm.gnaural",
-    "title": "Shamanic Rhythm",
+    "title": "Shamanic rhythm",
     "category": "Meditation",
     "author": "@thegreenman",
     "description": "Shamanic Drum RhythmBegin at 9hz then glide down to 4.5hz for 50 minutes and back up at the end.",
@@ -79,7 +79,7 @@
   },
   {
     "file": "meditation-wakefulrelax.gnaural",
-    "title": "Wakefulrelax",
+    "title": "Wakeful Relaxation",
     "category": "Meditation",
     "author": "@GiorgioRegni",
     "description": "This presets stimulates a wakeful relaxation state with closed eyes. Zen-trained meditation masters produce noticeably more alpha waves during meditation.To be used in short 10 to 15 minutes doses to calm down and concentrate when needed.",
@@ -92,7 +92,7 @@
   },
   {
     "file": "oobe-astral-01-relax.gnaural",
-    "title": "Astral 01 Relax",
+    "title": "Astral projection - Relaxation",
     "category": "Oobe",
     "author": "@GiorgioRegni",
     "description": "From the book Mastering Astral Projection, Week 1: Relaxation. Use a low to medium sound level, sit in a quiet place, and listen to the preset with eyes closed. A hard-backed chair without neck support is recommended to prevent falling asleep.",
@@ -105,7 +105,7 @@
   },
   {
     "file": "oobe-lucid-dreams.gnaural",
-    "title": "Lucid Dreams",
+    "title": "Lucid dreams",
     "category": "Oobe",
     "author": "@thegreenman",
     "description": "This preset stimulates lucid dreaming. It has to be played while sleeping, it is recommend during a nap, while seated in a chair or sofa to prevent falling fully asleep. 5hz base frequency with 8 hz spikes",
@@ -118,7 +118,7 @@
   },
   {
     "file": "oobe-lucid-dreams-2.gnaural",
-    "title": "Lucid Dreams 2",
+    "title": "Lucid dreams - variant",
     "category": "Oobe",
     "author": "@thegreenman",
     "description": "Sleep Induction and Lucid Dreams 2Sleep Induction into a longer lucid dreaming program",
@@ -132,7 +132,7 @@
   },
   {
     "file": "sleep-sleep-induction.gnaural",
-    "title": "Sleep Induction",
+    "title": "Sleep induction",
     "category": "Sleep",
     "author": "@thegreenman",
     "description": "Sleep induction for use about 15 mn before bedtime to help you fall asleep. It's a one hour programm, with 6mn drop into delta waves followed by 54 mn of relaxing delta plateau",
@@ -145,7 +145,7 @@
   },
   {
     "file": "sleep-smr.gnaural",
-    "title": "Smr",
+    "title": "Insomnia Relief",
     "category": "Sleep",
     "author": "",
     "description": "Insomnia relief through stimulating Sensory Motor Rythm. Don't use it at bedtime, use it only during your insomnia, for example if you wake up in the middle of the night and can't go back to sleep 38 mn of crossing frequencies from 8 to 12 Hz",
@@ -158,7 +158,7 @@
   },
   {
     "file": "stimulation-adhd.gnaural",
-    "title": "Adhd",
+    "title": "ADHD",
     "category": "Stimulation",
     "author": "@thegreenman",
     "description": "This preset is an aid for Attention Deficit Hyperactivity Disorder. It lasts 30mn and alternates between 12 and 20 hz. It can be used whenever needed",
@@ -197,7 +197,7 @@
   },
   {
     "file": "stimulation-highest-mental-activity.gnaural",
-    "title": "Highest Mental Activity",
+    "title": "Highest mental activity",
     "category": "Stimulation",
     "author": "@GiorgioRegni",
     "description": "A quick cafeine boost ! This preset shortly reaches Gamma waves, provides higher mental activity, including perception, problem solving, and consciousness. It can be used whenever needed",
@@ -210,7 +210,7 @@
   },
   {
     "file": "stimulation-hiit.gnaural",
-    "title": "Hiit",
+    "title": "High Intensity Interval Training",
     "category": "Stimulation",
     "author": "@GiorgioRegni",
     "description": "This preset is based on a Tabata HIIT protocol, it helps you give your maximum during work periods and recover quicker during rest periods. Starts with 2 minutes warm up then 8 times 20 secs work, 10 secs rest followed by 2 minutes  of cool down. As always use headphones.",

@@ -58,8 +58,7 @@ describe('library view', () => {
 
     expect(root.queryAll('.program-row')).toHaveLength(PROGRAMS.length);
     expect(root.text()).toContain('Contrib');
-    expect(root.text()).toContain('Gnaural edits');
-    expect(root.text()).toContain('OOBE');
+    expect(root.text()).toContain('Out of body experience');
   });
 
   it('shows which build it is running, on whatever view is open', async () => {
