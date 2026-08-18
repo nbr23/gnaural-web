@@ -1,15 +1,26 @@
 # The upstream Gnaural preset collection
 
-21 presets from the `Mindstates/` folder of
+24 presets from the `Mindstates/` folder of
 <https://sourceforge.net/projects/gnaural/files/Presets/>, the download area of Bret Logan's Gnaural
-project — about 9.3 hours of material per pass. **The files are byte-for-byte as published.** Only
+project — about 10 hours of material per pass. **The files are byte-for-byte as published.** Only
 their names changed, to the kebab-case stems that are this app's program ids
 (`src/library/programs.ts`).
 
-They are split by who signed them: **seven are Gnaural's own** (`<author>Gnaural</author>`, Bret
+They are split by who signed them: **ten are Gnaural's own** (`<author>Gnaural</author>`, Bret
 Logan) and **fourteen were contributed to the project** by other people. That is the only
 categorisation, and it comes from the `<author>` field rather than from a judgement about the
 programs.
+
+Three of the ten — `dream`, `energize` and `problem-resolver` — come from the `Mindstates/android/`
+subfolder rather than from `Mindstates/` itself, which is why `sourceFile` records a path for them.
+That folder is the loose form of `android_presets.zip`, and it holds fourteen files, all signed
+`Gnaural` and none of them carrying a PCM voice. Seven are re-cuts of presets already here — Power
+Nap, the travel aid, the default schedule, Tibetan Bowl, Study Time, Instant Nap and the wakeup
+preset, each a different file from its `Mindstates/` namesake but the same programme. Four more are
+nature beds built out of noise voices — `baa_wind_and_waves`, `caa_spring_rain`, `laa_rain_shower`
+and `maa_babbling_brook`, three of which ship their optional binaural voice muted. They are
+soundscapes by function and stay out for the same reason `Soundscapes/` does, below. That leaves
+these three, which duplicate nothing.
 
 `manifest.json` carries what `.gnaural` has no field for: that split, the original filename, the
 download URL, and the date it was uploaded to SourceForge. Everything else in it — title, author,
@@ -25,8 +36,12 @@ at 1.9 kHz, beats at 57 Hz, entries a tenth of a millisecond long, schedules tha
 times. They were bundled briefly and dropped: this app is a binaural-beat player, and those files
 are something else. They are still upstream if anyone wants them, and they import fine.
 
-The zips upstream (`ForestMeditation.zip`, `*_ISO_BIN.zip`, `woods.zip`) pair a schedule with an
-`.ogg` or `.wav` and stay out for a different reason — PLAN.md §4.6 keeps the app synthetic.
+Nine of the ten zips upstream — `ForestMeditation.zip`, `ForestMeditation_android.zip`,
+`SummerSunshineMeditation.zip`, `ThetaGnauralPresetforSkilledRelaxation.zip`, `*_ISO_BIN.zip` and
+`woods.zip` — pair a schedule with an `.ogg` or `.wav` and stay out for a different reason again:
+each holds type-2 PCM voices, thirty of them in `ForestMeditation`, and PLAN.md §4.6 keeps the app
+synthetic. The tenth, `android_presets.zip`, holds no audio at all; its three unique programs are
+bundled and the rest is accounted for above.
 
 ## These predate the Android app
 
@@ -41,8 +56,8 @@ redistributed after editing, and which this project has been carrying under its 
 
 Both copies are kept, because both are real, and both titles name the collection they come from —
 "Power Nap (Gnaural)" against "Power Nap (Android)" — since otherwise the library would list the
-same title twice. `android_presets.zip` in upstream's own `Mindstates/` folder settles the
-direction: the `.gnaural` files the Android app shipped came from here.
+same title twice. `Mindstates/android/` in upstream's own download area settles the direction: the
+`.gnaural` files the Android app shipped came from here.
 
 ## What this corpus contains that the Android set does not
 
@@ -56,9 +71,9 @@ here rather than rediscovered:
 - **Values outside §6.1's advice, on purpose.** Seven files raise a frequency rule: `tibetan-bowls`
   is built from carriers below 20 Hz, `purr` gates a 493 Hz tone. Thresholds are unchanged and
   these are not defects.
-- **Panning.** Seven files set the two channels differently, `hypnagogic-gale` at 10,049 entries.
+- **Panning.** Nine files set the two channels differently, `hypnagogic-gale` at 10,049 entries.
   The Android set is centred throughout.
-- **Schedules that loop.** Nothing in the Android set repeats; six of these do, `purr` and
+- **Schedules that loop.** Nothing in the Android set repeats; eight of these do, `purr` and
   `study-time` endlessly, which is what the engine's pass bound exists for (`passCount`,
   `src/engine/engine.ts`).
 - **Size.** Four are past the 8 KB share-link guard and fall back to file export;
@@ -72,7 +87,7 @@ by their authors on the project's own download area, which invites submissions f
 to: gnaural [at] users.sourceforge.net" — `Presets/README.txt`). No preset carries a licence of its
 own.
 
-**Attribution is owed independently of the licence.** Thirteen names appear across the 21 `<author>`
+**Attribution is owed independently of the licence.** Thirteen names appear across the 24 `<author>`
 fields — Gnaural (Bret Logan), asymptote, josh k, flexusfly, Dane M, Roisin, Hipponotic, Giridhari,
 Willow Oak, Sleeper, Mihai Dinca and curtismacdonald.com. Every one is preserved in the file and in
 `manifest.json`, and `src/library/programs.test.ts` fails if one goes missing. The titles and

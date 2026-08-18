@@ -3,23 +3,23 @@ import { scheduleDuration } from '../document/timing';
 import { PROGRAMS, findProgram, loadProgram, programsByCategory, programsIn } from './programs';
 
 describe('bundled library', () => {
-  it('lists all 43 programs with unique ids', () => {
-    expect(PROGRAMS).toHaveLength(43);
-    expect(new Set(PROGRAMS.map((p) => p.id)).size).toBe(43);
+  it('lists all 46 programs with unique ids', () => {
+    expect(PROGRAMS).toHaveLength(46);
+    expect(new Set(PROGRAMS.map((p) => p.id)).size).toBe(46);
   });
 
   it('holds three collections, Gnaural’s own, the Android app’s and the Brain Machine’s', () => {
-    // fixtures/gnaural/README.md: 21 presets published by the Gnaural project itself, against the
+    // fixtures/gnaural/README.md: 24 presets published by the Gnaural project itself, against the
     // Android app's 17 conversions and the two Gnaural files it redistributed after editing them.
     // fixtures/brainmachine/README.md: the three brainwave tables of Mitch Altman's kit.
-    expect(programsIn('gnaural')).toHaveLength(21);
+    expect(programsIn('gnaural')).toHaveLength(24);
     expect(programsIn('android')).toHaveLength(19);
     expect(programsIn('brainmachine')).toHaveLength(3);
   });
 
   it('preserves every author credit — attribution is owed regardless of the licence question', () => {
     // fixtures/presets/README.md: 9 Android presets credit @GiorgioRegni, 7 credit @thegreenman,
-    // and exactly one is uncredited upstream. Every one of Gnaural's own 21 carries an <author>,
+    // and exactly one is uncredited upstream. Every one of Gnaural's own 24 carries an <author>,
     // so a second blank here would mean a credit got dropped.
     const uncredited = PROGRAMS.filter((program) => program.author.trim() === '');
     expect(uncredited.map((program) => program.id)).toEqual(['sleep-smr']);
@@ -40,7 +40,7 @@ describe('bundled library', () => {
     const categories = programsByCategory();
     expect(categories.map((c) => c.label).slice(0, 3)).toEqual(['Gnaural', 'Contrib', 'Sleep']);
     expect(categories.map((c) => c.label)).toContain('Out of body experience');
-    expect(categories.flatMap((c) => c.programs)).toHaveLength(43);
+    expect(categories.flatMap((c) => c.programs)).toHaveLength(46);
   });
 
   it('files the two redistributed Gnaural files under Sleep, where the app itself had them', () => {
@@ -56,12 +56,12 @@ describe('bundled library', () => {
   });
 
   it('splits Gnaural’s collection by who signed the file', () => {
-    // The seven Bret Logan signed "Gnaural" against the fourteen other people contributed. Nothing
+    // The ten Bret Logan signed "Gnaural" against the fourteen other people contributed. Nothing
     // curated decides this — the <author> field does.
     const own = programsIn('gnaural').filter((program) => program.category === 'Official');
     const contributed = programsIn('gnaural').filter((program) => program.category === 'Contributed');
 
-    expect(own).toHaveLength(7);
+    expect(own).toHaveLength(10);
     expect(own.every((program) => program.author === 'Gnaural')).toBe(true);
     expect(contributed).toHaveLength(14);
     expect(contributed.some((program) => program.author === 'Gnaural')).toBe(false);
@@ -90,7 +90,7 @@ describe('bundled library', () => {
 describe('every bundled program parses', () => {
   // The whole parser corpus, and two very different shapes of file: the Android 17 were machine
   // generated (many short entries, epsilon-length breakpoints, explicit noise voices), while
-  // Gnaural's own 21 include zero-length entries, nine voices, ten thousand entries and every voice
+  // Gnaural's own 24 include zero-length entries, nine voices, ten thousand entries and every voice
   // type but PCM (fixtures/gnaural/README.md).
   it.each(PROGRAMS.map((program) => [program.id, program] as const))('%s', async (_id, program) => {
     const { schedule } = await loadProgram(program.id);

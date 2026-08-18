@@ -25,7 +25,7 @@ docker compose --profile preview up preview  # production build via nginx on :80
 - **[Gnaural](https://gnaural.sourceforge.net/)** by Bret Logan — the `.gnaural` file format and
   the reference implementation (release 20110606) this project is built against, and the
   [preset collection](https://sourceforge.net/projects/gnaural/files/Presets/) shipped unmodified
-  in `fixtures/gnaural/` — 21 programs, seven of them Gnaural's own and fourteen contributed to the
+  in `fixtures/gnaural/` — 24 programs, ten of them Gnaural's own and fourteen contributed to the
   project by other people. Thirteen authors are credited; see that directory's README.
 - **Binaural Beats Therapy** (`com.ihunda.android.binauralbeat`) by Giorgio Regni — the Android
   app the presets in `fixtures/presets/` are derived from. Two of the files it shipped are edited

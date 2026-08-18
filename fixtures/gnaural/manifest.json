@@ -117,6 +117,32 @@
     "uploaded": "2010-10-11"
   },
   {
+    "file": "dream.gnaural",
+    "title": "Deep Dream state/OBE",
+    "category": "Official",
+    "author": "Gnaural",
+    "description": "Focused at 3.6735",
+    "durationSeconds": 2013,
+    "loops": 1,
+    "voiceCount": 3,
+    "sourceFile": "android/gaa_dream.gnaural",
+    "sourceUrl": "https://sourceforge.net/projects/gnaural/files/Presets/Mindstates/android/gaa_dream.gnaural/download",
+    "uploaded": "2015-10-24"
+  },
+  {
+    "file": "energize.gnaural",
+    "title": "Energize",
+    "category": "Official",
+    "author": "Gnaural",
+    "description": "Sunrise",
+    "durationSeconds": 60,
+    "loops": 0,
+    "voiceCount": 5,
+    "sourceFile": "android/daa_energize.gnaural",
+    "sourceUrl": "https://sourceforge.net/projects/gnaural/files/Presets/Mindstates/android/daa_energize.gnaural/download",
+    "uploaded": "2015-10-24"
+  },
+  {
     "file": "euphoria.gnaural",
     "title": "Euphoria",
     "category": "Contributed",
@@ -206,6 +232,19 @@
     "sourceFile": "PowerNap.gnaural",
     "sourceUrl": "https://sourceforge.net/projects/gnaural/files/Presets/Mindstates/PowerNap.gnaural/download",
     "uploaded": "2011-08-08"
+  },
+  {
+    "file": "problem-resolver.gnaural",
+    "title": "Problem Resolver",
+    "category": "Official",
+    "author": "Gnaural",
+    "description": "Bihemispheric stimulation for working through things mentally",
+    "durationSeconds": 360,
+    "loops": 0,
+    "voiceCount": 4,
+    "sourceFile": "android/faa_problem_resolver.gnaural",
+    "sourceUrl": "https://sourceforge.net/projects/gnaural/files/Presets/Mindstates/android/faa_problem_resolver.gnaural/download",
+    "uploaded": "2015-10-24"
   },
   {
     "file": "purr.gnaural",

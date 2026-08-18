@@ -121,7 +121,7 @@ const GNAURAL_NOTE: NoteSegment[] = [
   { text: 'unmodified', strong: true },
   {
     text:
-      '. Seven are Gnaural’s own and fourteen were contributed to the project by other people, ' +
+      '. Ten are Gnaural’s own and fourteen were contributed to the project by other people, ' +
       'each credited as they signed it; the titles and descriptions are their words, not claims ' +
       'made by this app. Two of these are the originals of files the Android app below ' +
       'redistributed after editing them.',

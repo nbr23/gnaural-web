@@ -9,16 +9,16 @@ import { seriesColor } from '../viz/palette';
  * The bundled program library, from three separate collections that must not be confused for each
  * other (`fixtures/gnaural/README.md`):
  *
- * - **Gnaural's own**, the 21 `Mindstates` presets published at
+ * - **Gnaural's own**, the 24 `Mindstates` presets published at
  *   `sourceforge.net/projects/gnaural/files/Presets/` between 2009 and 2020 and shipped here
- *   unmodified — split into the seven Bret Logan signed himself and the fourteen contributed to the
+ *   unmodified — split into the ten Bret Logan signed himself and the fourteen contributed to the
  *   project by other people.
  * - **The Android app's**, 17 presets converted from `DefaultProgramsBuilder.java` plus the two
  *   Gnaural files it redistributed in edited form.
  * - **The Brain Machine's**, the three `brainwaveTab[]` sequences from Mitch Altman's kit
  *   (`fixtures/brainmachine/README.md`) — the only collection that was hardware first.
  *
- * 43 programs. Each collection's manifest carries the metadata `.gnaural` has no field for —
+ * 46 programs. Each collection's manifest carries the metadata `.gnaural` has no field for —
  * category, attribution and provenance — while the `.gnaural` files themselves remain the source of
  * truth for playback. Programs the user imported are separate, in `storage.ts`: they have no
  * category and their metadata is derived from the file rather than curated.
@@ -133,7 +133,7 @@ const ANDROID_REDISTRIBUTED: BundledProgram[] = [
  * Gnaural's own collection, from `fixtures/gnaural/manifest.json` (see its README).
  *
  * Everything here is read out of the files rather than curated, so nothing needs deciding per
- * preset — including `loops`, which the Android set never uses and six of these do. The split into
+ * preset — including `loops`, which the Android set never uses and eight of these do. The split into
  * `Official` and `Contributed` follows the `<author>` field and nothing else.
  */
 const GNAURAL_PRESETS: BundledProgram[] = gnauralManifest.map((preset) => ({
@@ -242,7 +242,7 @@ export function categoryBadge(category: string): string {
 }
 
 /**
- * A colour per category, so forty-three bundled programs are not forty-three grey rows.
+ * A colour per category, so forty-six bundled programs are not forty-six grey rows.
  *
  * The slot is fixed to the category rather than to its position in the list: a search that filters
  * the library must not repaint what is left of it, and a program's colour is a property of the
