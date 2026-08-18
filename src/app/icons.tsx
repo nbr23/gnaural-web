@@ -60,6 +60,39 @@ export function SeekForwardIcon() {
   );
 }
 
+export function ImportIcon() {
+  return (
+    <Icon>
+      <path d="M11 3h2v7.5h3.5L12 15.5 7.5 10.5H11z" />
+      <path d="M4 14h2v5h12v-5h2v7H4z" />
+    </Icon>
+  );
+}
+
+export function PlusIcon() {
+  return (
+    <Icon>
+      <path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z" />
+    </Icon>
+  );
+}
+
+export function SlidersIcon() {
+  return (
+    <Icon>
+      <path
+        d="M3.5 8.5h17M3.5 15.5h17"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="9" cy="8.5" r="2.8" />
+      <circle cx="15" cy="15.5" r="2.8" />
+    </Icon>
+  );
+}
+
 const SPEAKER_CONE = 'M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z';
 
 export function SpeakerOnIcon() {

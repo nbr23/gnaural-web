@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { PauseIcon, PlayIcon, StopIcon } from '../app/icons';
+import { ImportIcon, PauseIcon, PlayIcon, PlusIcon, SlidersIcon, StopIcon } from '../app/icons';
 import { Logo } from '../app/Logo';
 import type { Route } from '../app/routing';
 import { LIVE, navigate } from '../app/routing';
@@ -141,39 +141,46 @@ export function LibraryView({
               type="search"
               className="library__search"
               value={query}
-              placeholder="Search programs"
+              placeholder="Search"
               aria-label="Search programs"
               onChange={(event) => setQuery(event.target.value)}
             />
             {/* Named for the file it takes, not for the gesture: "Open a file" says nothing about
                 which file, and the one thing a newcomer needs to know is that this app reads
                 Gnaural's own format. The three tooltips carry what the labels cannot — none of
-                these is a program row, so none of them has a description of its own. */}
+                these is a program row, so none of them has a description of its own.
+
+                Below 560px the labels go visually hidden and the glyph carries the button, so the
+                row still fits beside the search field on a phone. Hidden rather than dropped: it
+                stays the button's accessible name. */}
             <button
               type="button"
-              className="button"
+              className="button library__action"
               title={`Open a ${GNAURAL_EXTENSION} schedule from this device. It is kept in your library.`}
               onClick={onOpenFile}
             >
-              Import {GNAURAL_EXTENSION}
+              <ImportIcon />
+              <span className="library__action-label">Import {GNAURAL_EXTENSION}</span>
             </button>
             <button
               type="button"
-              className="button"
+              className="button library__action"
               title="Start an empty program and author it in the editor: voices, frequency curves and timings."
               onClick={onNewProgram}
             >
-              New program
+              <PlusIcon />
+              <span className="library__action-label">New program</span>
             </button>
             {/* Not a program, so not a program row: it has no author, no length and nothing to
                 load. */}
             <button
               type="button"
-              className="button button--primary"
+              className="button button--primary library__action"
               title="Play a steady tone you steer by hand — two sliders for the carrier and beat frequency, no timeline. Keep a session as a program at any point."
               onClick={() => navigate(LIVE)}
             >
-              Live
+              <SlidersIcon />
+              <span className="library__action-label">Live</span>
             </button>
           </div>
         </header>

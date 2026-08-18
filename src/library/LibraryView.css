@@ -42,6 +42,18 @@
   width: 100%;
 }
 
+.library__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: 8px;
+
+  & svg {
+    font-size: 18px;
+  }
+}
+
 .library__search {
   flex: 1 1 220px;
   min-width: 0;
@@ -407,6 +419,37 @@ details[open] > .library__summary > .library__caret {
 }
 
 @media (max-width: 559px) {
+  /* Square, glyph-only, so search plus the three actions hold one line on a 320px phone. The label
+     keeps naming the button for assistive tech; only its pixels go. */
+  .library__action {
+    padding: 10px;
+    min-width: 44px;
+  }
+
+  .library__action-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .library__action.button--primary {
+    min-width: 44px;
+  }
+
+  .library__search {
+    flex: 1 1 90px;
+    padding: 10px;
+  }
+
+  .library__action svg {
+    font-size: 20px;
+  }
+
   .program-row__badge {
     display: none;
   }
