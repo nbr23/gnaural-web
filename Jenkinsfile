@@ -36,7 +36,7 @@ pipeline {
             when { branch 'master' }
             steps {
                 sh """
-                    docker buildx build --pull --builder \$BUILDX_BUILDER --platform linux/arm64,linux/amd64 --target preview --build-arg GIT_SHA=`git rev-parse --short HEAD` -t nbr23/gnaural-web:latest -t nbr23/gnaural-web:`git rev-parse --short HEAD` --push .
+                    docker buildx build --pull --builder \$BUILDX_BUILDER --platform linux/arm64,linux/amd64 --target prod --build-arg GIT_SHA=`git rev-parse --short HEAD` -t nbr23/gnaural-web:latest -t nbr23/gnaural-web:`git rev-parse --short HEAD` --push .
                     """
             }
         }

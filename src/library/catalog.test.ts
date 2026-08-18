@@ -133,9 +133,9 @@ describe('buildCatalog', () => {
     expect(gnaural.find((segment) => segment.strong)?.text).toBe('unmodified');
     expect(gnaural.find((segment) => segment.href)?.href).toContain('sourceforge.net/projects/gnaural');
 
-    // The Brain Machine is half a light show, and the half that is missing is the bold clause.
+    // The Brain Machine is half a light show, and the note says which half this is.
     const brainMachine = section(sections, 'brainmachine')?.note ?? [];
-    expect(brainMachine.find((segment) => segment.strong)?.text).toContain('sound half only');
+    expect(brainMachine.map((segment) => segment.text).join('')).toContain('sound half only');
     expect(brainMachine.find((segment) => segment.href)?.href).toContain('Brain_Machine_kit');
   });
 

@@ -24,6 +24,6 @@ services:
     profiles: ["preview"]
     build:
       context: .
-      target: preview
+      target: prod
     ports:
       - "8080:80"
