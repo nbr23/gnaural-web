@@ -559,6 +559,32 @@ export function reverseVoice(schedule: Schedule, index: number): Schedule {
   return replaceEntries(schedule, index, () => reversed);
 }
 
+export interface TransposeVoiceArgs {
+  voice: number;
+  /** Added to every node's base frequency. Negative shifts the voice down. */
+  delta: number;
+}
+
+/**
+ * Retune a whole voice, keeping the shape of its base curve: every node moves by the same delta, so
+ * a glide from 438 to 434 Hz stays a 4 Hz glide wherever it lands.
+ *
+ * The delta itself is clamped so the lowest node stops at 0 Hz, rather than clamping each node —
+ * a per-node floor would flatten the curve against it. Values outside the audible range are not
+ * refused: `warnings.ts` already reports a carrier too low or too high, on the node it happened on.
+ */
+export function transposeVoice(schedule: Schedule, args: TransposeVoiceArgs): Schedule {
+  const voice = schedule.voices[args.voice];
+  if (!voice || voice.entries.length === 0 || !Number.isFinite(args.delta)) return schedule;
+
+  const lowest = Math.min(...voice.entries.map((entry) => entry.baseFreq));
+  const delta = Math.max(args.delta, -lowest);
+  if (delta === 0) return schedule;
+
+  const nodes = voice.entries.map((_entry, entry) => ({ voice: args.voice, entry }));
+  return adjustEntries(schedule, { nodes, field: 'baseFreq', delta });
+}
+
 export interface OffsetVoiceArgs {
   voice: number;
   /** Seconds to move the voice later. Negative moves it earlier. */

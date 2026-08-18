@@ -40,9 +40,6 @@ export interface EditSurfaceProps {
   onCommit(schedule: Schedule, label: string): void;
   onCommitAt(schedule: Schedule, label: string, selection: Selection): void;
   onPreview(schedule: Schedule): void;
-  // Omitted on touch (see useCoarsePointer): a tap on empty space clears the selection and stops
-  // there, rather than also throwing the playhead somewhere nobody asked for.
-  onSeek?(time: number): void;
 }
 
 interface Drag {
@@ -66,7 +63,6 @@ interface Marquee {
   origin: { x: number; y: number };
   rect: PixelRect;
   additive: boolean;
-  time: number;
   moved: boolean;
 }
 
@@ -93,7 +89,6 @@ export function EditSurface({
   onCommit,
   onCommitAt,
   onPreview,
-  onSeek,
 }: EditSurfaceProps) {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
@@ -174,14 +169,13 @@ export function EditSurface({
     (pointer: ChartPointer) => {
       const { hit, lane, layout } = pointer;
       if (!hit || !lane || hit.entry === null) {
-        // A pointer on empty space is not yet a decision: it arms a marquee, and becomes a seek on
-        // pointerup only if it never moved. Step 5 reserved exactly this gesture.
+        // A pointer on empty space is not yet a decision: it arms a marquee, and clears the
+        // selection on pointerup only if it never moved.
         setBox({
           pointerId: pointer.event.pointerId,
           origin: { x: pointer.x, y: pointer.y },
           rect: { x0: pointer.x, y0: pointer.y, x1: pointer.x, y1: pointer.y },
           additive: pointer.event.shiftKey,
-          time: pointer.time,
           moved: false,
         });
         return;
@@ -286,9 +280,9 @@ export function EditSurface({
       if (box && pointer.event.pointerId === box.pointerId) {
         setBox(null);
         if (!box.moved) {
-          // A tap on empty space is transport, exactly as it was before the marquee existed.
+          // A tap on empty space means "nothing", and nothing else — the playhead belongs to the
+          // timeline, not to a plot a finger can brush past.
           onSelect([]);
-          onSeek?.(box.time);
           return;
         }
         const found = nodesInRect(pointer.layout, box.rect);
@@ -305,7 +299,7 @@ export function EditSurface({
       // back to full, because it goes through the ordinary `player.update`.
       onCommit(documentFor(current), labelFor(current.anchors.laneId, current.nodes.length));
     },
-    [documentFor, onCommit, onSeek, onSelect, selected, setBox, setGesture],
+    [documentFor, onCommit, onSelect, selected, setBox, setGesture],
   );
 
   const cancelGesture = useCallback(() => {

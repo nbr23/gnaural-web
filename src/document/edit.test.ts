@@ -19,6 +19,7 @@ import {
   reverseVoice,
   scaleEntries,
   setScheduleLength,
+  transposeVoice,
   updateEntry,
   updateSchedule,
   updateVoice,
@@ -978,6 +979,37 @@ describe('reverseVoice', () => {
     const symmetric = ramp([20, 20]);
     expect(reverseVoice(single, 0)).toBe(single);
     expect(reverseVoice(symmetric, 0)).toBe(symmetric);
+  });
+});
+
+describe('transposeVoice', () => {
+  it('moves every node by the same amount, so the curve keeps its shape', () => {
+    const before = ramp([10, 20, 30]);
+    const after = transposeVoice(before, { voice: 0, delta: -38 });
+
+    expect(after.voices[0].entries.map((entry) => entry.baseFreq)).toEqual([162, 152, 142]);
+    // Beat, volume and duration are none of a transpose's business.
+    expect(after.voices[0].entries.map((entry) => entry.beatFreq)).toEqual(
+      before.voices[0].entries.map((entry) => entry.beatFreq),
+    );
+    expect(voiceDuration(after.voices[0])).toBe(voiceDuration(before.voices[0]));
+    expect(after.voices[1]).toBe(before.voices[1]);
+  });
+
+  it('clamps the shift rather than each node, so a floor cannot flatten the curve', () => {
+    const before = ramp([10, 20, 30]);
+    const after = transposeVoice(before, { voice: 0, delta: -1000 });
+
+    // The lowest node was 180, so the whole voice stops 180 Hz down and the 10 Hz steps survive.
+    expect(after.voices[0].entries.map((entry) => entry.baseFreq)).toEqual([20, 10, 0]);
+  });
+
+  it('returns its input where there is nothing to shift', () => {
+    const before = ramp([10, 20]);
+
+    expect(transposeVoice(before, { voice: 0, delta: 0 })).toBe(before);
+    expect(transposeVoice(before, { voice: 0, delta: Number.NaN })).toBe(before);
+    expect(transposeVoice(before, { voice: 9, delta: 10 })).toBe(before);
   });
 });
 

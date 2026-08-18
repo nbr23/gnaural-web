@@ -21,14 +21,6 @@ export function useMediaQuery(query: string): boolean {
 }
 
 /**
- * Whether the primary pointer is a finger rather than a mouse — used to disable scrubbing the
- * chart on touch, where a stray brush would jump the playhead instead of scrolling the page.
- */
-export function useCoarsePointer(): boolean {
-  return useMediaQuery('(pointer: coarse)');
-}
-
-/**
  * Whether there is room to put the panels beside the chart instead of below it. Matches the
  * breakpoint the stylesheet switches the two-column grid at — the chart's height is a prop, not a
  * rule, so the two must agree.

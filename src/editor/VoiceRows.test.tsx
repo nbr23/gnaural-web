@@ -127,6 +127,40 @@ describe('VoiceRows', () => {
     expect(harness.commits[0].schedule.voices[1].description).toBe('Carrier');
   });
 
+  /** Retuning a voice is one edit, not one per node: the first node is the reference and the rest of
+   *  the curve follows it. */
+  it('shifts every node in a voice when the base field is committed', () => {
+    const schedule: Schedule = {
+      ...twoVoices(),
+      voices: [
+        makeVoice({ entries: [makeEntry({ baseFreq: 200 }), makeEntry({ baseFreq: 190 })] }),
+        makeVoice({ id: 1, description: 'Second' }),
+      ],
+    };
+    const harness = mount(schedule);
+    const input = rows()[0].querySelector('.voice-rows__tune input') as HTMLInputElement;
+
+    expect(input.value).toBe('200');
+    setInputValue(input, '150');
+    testRoot.blur(input);
+
+    expect(harness.commits[0].label).toBe('Shift base frequency');
+    expect(harness.commits[0].schedule.voices[0].entries.map((entry) => entry.baseFreq)).toEqual([
+      150, 140,
+    ]);
+    expect(harness.commits[0].schedule.voices[1]).toBe(schedule.voices[1]);
+  });
+
+  it('offers no base field where basefreq is not a carrier', () => {
+    mount({
+      ...twoVoices(),
+      voices: [makeVoice(), makeVoice({ id: 1, type: VoiceType.PinkNoise })],
+    });
+
+    expect(rows()[0].querySelector('.voice-rows__tune')).not.toBeNull();
+    expect(rows()[1].querySelector('.voice-rows__tune')).toBeNull();
+  });
+
   it('reorders with buttons, disabled at the ends of the list', () => {
     const harness = mount(twoVoices());
 

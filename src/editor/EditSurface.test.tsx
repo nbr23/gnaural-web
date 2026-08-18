@@ -69,7 +69,6 @@ interface Harness {
   commitsAt: { schedule: Schedule; label: string; selection: Selection }[];
   previews: Schedule[];
   selections: Selection[];
-  seeks: number[];
 }
 
 function mount(
@@ -78,7 +77,7 @@ function mount(
   lanes: LaneId[] = ['beat', 'base'],
   marks: ChartMark[] = [],
 ) {
-  const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
+  const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [] };
 
   testRoot.render(
     <EditSurface
@@ -93,7 +92,6 @@ function mount(
       onCommit={(next, label) => harness.commits.push({ schedule: next, label })}
       onCommitAt={(next, label, selection) => harness.commitsAt.push({ schedule: next, label, selection })}
       onPreview={(next) => harness.previews.push(next)}
-      onSeek={(time) => harness.seeks.push(time)}
     />,
   );
 
@@ -248,22 +246,21 @@ describe('EditSurface', () => {
   });
 
   /**
-   * Step 5's rule refined rather than reversed: the *hit* still decides once, at pointerdown, and a
-   * miss is still transport rather than editing — but what a miss means now waits for the pointer to
-   * say whether it moved, because a move that begins on empty space is the marquee. A tap therefore
-   * seeks on pointerup instead of on pointerdown, so starting a marquee no longer jumps the playhead.
+   * The *hit* decides once, at pointerdown, but what a miss means waits for the pointer to say
+   * whether it moved, because a move that begins on empty space is the marquee. A tap clears the
+   * selection and stops there — the playhead is the timeline's business, not the plot's.
    */
-  it('seeks and deselects on a tap that hits no node', () => {
+  it('deselects on a tap that hits no node, and does nothing else', () => {
     const { harness, svg } = mount(fourNodes(), [{ voice: 0, entry: 2 }]);
     const node = beatNodes()[1];
 
     pointer(svg, 'pointerdown', { x: node.x, y: node.y - 60 });
-    expect(harness.seeks).toHaveLength(0);
+    expect(harness.selections).toHaveLength(0);
 
     pointer(svg, 'pointerup', { x: node.x, y: node.y - 60 });
     expect(harness.selections).toEqual([[]]);
-    expect(harness.seeks).toHaveLength(1);
     expect(harness.commits).toHaveLength(0);
+    expect(harness.previews).toHaveLength(0);
   });
 
   it('does not commit for a tap that never moved', () => {
@@ -420,7 +417,7 @@ describe('EditSurface by keyboard', () => {
 
   it('clamps at the ends rather than wrapping to another voice', () => {
     const schedule = fourNodes();
-    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
+    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [] };
     testRoot.render(surfaceWith(schedule, [{ voice: 0, entry: 0 }], harness));
 
     key(testRoot.query('svg')!, 'ArrowLeft');
@@ -430,7 +427,7 @@ describe('EditSurface by keyboard', () => {
   /** §6.1's "select and delete". Backspace too, since that is the key half the world reaches for. */
   it('deletes the selected node and leaves the neighbour selected, so a second press repeats', () => {
     const schedule = fourNodes();
-    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
+    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [] };
     testRoot.render(surfaceWith(schedule, [{ voice: 0, entry: 2 }], harness));
 
     key(testRoot.query('svg')!, 'Delete');
@@ -449,7 +446,7 @@ describe('EditSurface by keyboard', () => {
   it('does nothing when the selected node is the only one in its voice', () => {
     const schedule = fourNodes();
     schedule.voices = [makeVoice([makeEntry({})], 0)];
-    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
+    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [] };
     testRoot.render(surfaceWith(schedule, [{ voice: 0, entry: 0 }], harness));
 
     key(testRoot.query('svg')!, 'Delete');
@@ -477,7 +474,6 @@ function surfaceWith(schedule: Schedule, selected: Selection, harness: Harness) 
       onCommit={(next, label) => harness.commits.push({ schedule: next, label })}
       onCommitAt={(next, label, selection) => harness.commitsAt.push({ schedule: next, label, selection })}
       onPreview={(next) => harness.previews.push(next)}
-      onSeek={(time) => harness.seeks.push(time)}
     />
   );
 }
@@ -558,7 +554,7 @@ describe('EditSurface marquee', () => {
     sweep(svg, { x: nodes[0].x - 20, y: 2 }, { x: nodes[2].x, y: HEIGHT - 40 });
 
     expect(harness.commits).toHaveLength(0);
-    expect(harness.seeks).toHaveLength(0);
+    expect(harness.previews).toHaveLength(0);
   });
 });
 
@@ -644,7 +640,7 @@ describe('EditSurface group drag', () => {
   });
 
   it('deletes a whole group from the keyboard, leaving the node before it selected', () => {
-    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
+    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [] };
     testRoot.render(surfaceWith(fourNodes(), group, harness));
 
     testRoot.act(() => {
@@ -661,7 +657,7 @@ describe('EditSurface group drag', () => {
 
   /** The marquee's keyboard equivalent, without which a group is pointer-only. */
   it('extends the selection with Shift and an arrow', () => {
-    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
+    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [] };
     testRoot.render(surfaceWith(fourNodes(), [{ voice: 0, entry: 1 }], harness));
 
     testRoot.act(() => {
@@ -770,7 +766,7 @@ describe('EditSurface zoom and pan', () => {
 /** §6.1's snap-to-grid, with the grid following the zoom and Shift inverting the control. */
 describe('EditSurface snapping', () => {
   function mountSnapped(snap: boolean, selected: Selection = []) {
-    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [], seeks: [] };
+    const harness: Harness = { commits: [], commitsAt: [], previews: [], selections: [] };
     testRoot.render(
       <EditSurface
         schedule={fourNodes()}
@@ -783,7 +779,6 @@ describe('EditSurface snapping', () => {
         onCommit={(next, label) => harness.commits.push({ schedule: next, label })}
         onCommitAt={(next, label, selection) => harness.commitsAt.push({ schedule: next, label, selection })}
         onPreview={(next) => harness.previews.push(next)}
-        onSeek={(time) => harness.seeks.push(time)}
       />,
     );
     const svg = testRoot.query('svg') as SVGSVGElement;

@@ -367,6 +367,16 @@
   margin-inline-end: 8px;
 }
 
+/* Aligned with the meta line rather than the name field: it acts on the whole voice, not on the
+   node the chart happens to have selected. */
+.voice-rows__tune {
+  padding-inline-start: 24px;
+
+  & .editor__field {
+    max-width: 140px;
+  }
+}
+
 .voice-rows__controls {
   display: flex;
   flex-wrap: wrap;

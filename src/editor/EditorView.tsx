@@ -3,7 +3,7 @@ import { Panel } from '../app/Panel';
 import { numberOr } from '../app/format';
 import { LIBRARY, navigate } from '../app/routing';
 import { isTypingTarget } from '../app/useKeyboardShortcuts';
-import { useCoarsePointer, useWideLayout } from '../app/useMediaQuery';
+import { useWideLayout } from '../app/useMediaQuery';
 import { useThrottled } from '../app/useThrottled';
 import type { MoveMode, VoiceEdit } from '../document/edit';
 import { padVoicesToLongest, repairVoiceGrouping, updateSchedule } from '../document/edit';
@@ -156,7 +156,6 @@ export function EditorView({
   }, [lanes, schedule]);
 
   const title = schedule.title.trim() || 'Untitled program';
-  const coarse = useCoarsePointer();
   const wide = useWideLayout();
   const laneHeight = wide
     ? clampLaneHeight(lanes.length, window.innerHeight - STAGE_CHROME_PX)
@@ -256,8 +255,8 @@ export function EditorView({
           />
         </details>
 
-        {/* No seek on a miss on touch, for the reason the player drops it there: a tap that lands
-            on nothing should clear the selection, not move the playhead. */}
+        {/* The pointer here only ever selects and drags: a tap that lands on nothing clears the
+            selection, and the timeline below is what moves the playhead. */}
         <EditSurface
           schedule={schedule}
           lanes={lanes}
@@ -272,7 +271,6 @@ export function EditorView({
           onCommit={commitEdit}
           onCommitAt={commitEditAt}
           onPreview={preview}
-          onSeek={coarse ? undefined : player.seek}
         />
 
         <Timeline offset={player.offset} duration={player.duration} onSeek={player.seek} />

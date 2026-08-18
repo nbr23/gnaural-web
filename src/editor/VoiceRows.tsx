@@ -1,10 +1,17 @@
-import { formatClock } from '../app/format';
+import { formatClock, formatHz, numberOr } from '../app/format';
 import { SpeakerOffIcon, SpeakerOnIcon } from '../app/icons';
 import type { VoiceEdit, VoiceKind } from '../document/edit';
-import { insertEntry, insertVoice, moveVoice, removeVoice, updateVoice } from '../document/edit';
+import {
+  insertEntry,
+  insertVoice,
+  moveVoice,
+  removeVoice,
+  transposeVoice,
+  updateVoice,
+} from '../document/edit';
 import { DURATION_EPSILON, scheduleDuration, voiceDuration } from '../document/timing';
 import type { Schedule } from '../document/types';
-import { VoiceType } from '../document/types';
+import { VoiceType, isTonalType } from '../document/types';
 import { seriesColor } from '../viz/palette';
 import { CommittedField } from './CommittedField';
 import type { NodeRef } from './history';
@@ -52,6 +59,9 @@ export function VoiceRows({ schedule, onCommit, onStructural }: VoiceRowsProps) 
 
           const name = voice.description.trim() || `Voice ${voice.id}`;
           const muteLabel = `${voice.muted ? 'Unmute' : 'Mute'} ${name}`;
+          // Only where `basefreq` is a carrier: the engine never reads it on a noise voice, and on
+          // water and rain it is a per-sample probability, so a field in Hz would be untrue there.
+          const first = isTonalType(voice.type) ? voice.entries[0] : undefined;
 
           return (
             <li
@@ -77,6 +87,26 @@ export function VoiceRows({ schedule, onCommit, onStructural }: VoiceRowsProps) 
                   <span className="voice-rows__badge"> cut short at {formatClock(playback)}</span>
                 )}
               </p>
+
+              {/* The first node is the reference: retuning a voice means moving the whole curve, so
+                  typing a new carrier here shifts every node by the same amount. */}
+              {first && (
+                <div className="voice-rows__tune">
+                  <CommittedField
+                    label="Base (Hz)"
+                    value={formatHz(first.baseFreq)}
+                    numeric
+                    hint={`Shifts all ${nodes} ${nodes === 1 ? 'node' : 'nodes'} by the same amount`}
+                    onCommit={(value) => {
+                      const next = transposeVoice(schedule, {
+                        voice: index,
+                        delta: numberOr(value, first.baseFreq) - first.baseFreq,
+                      });
+                      if (next !== schedule) onCommit(next, 'Shift base frequency');
+                    }}
+                  />
+                </div>
+              )}
 
               <div className="voice-rows__controls">
                 <button

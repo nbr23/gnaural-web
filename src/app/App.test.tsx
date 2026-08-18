@@ -7,7 +7,7 @@ import { encodeSharePayload } from '../files/shareLink';
 import { ANDROID_PACKAGE } from '../library/catalog';
 import { PROGRAMS } from '../library/programs';
 import { listDrafts, listImported } from '../library/storage';
-import { TEST_WIDTH, media, mediaSession, resetDatabase, resetPlatform, wakeLocks } from '../test-setup';
+import { TEST_WIDTH, mediaSession, resetDatabase, resetPlatform, wakeLocks } from '../test-setup';
 import {
   flush,
   pointer,
@@ -236,7 +236,9 @@ describe('player view', () => {
     expect(root.query('.timeline__times')?.textContent).toContain('10:00');
   });
 
-  it('scrubs from the chart with a mouse', async () => {
+  /** The plot is a picture, not a control: the timeline above is what moves the playhead, and a
+   *  pointer anywhere on the chart leaves it exactly where it was. */
+  it('does not move the playhead from the chart', async () => {
     window.location.hash = '#/p/powernap';
     root.render(<App />);
     await flush();
@@ -244,19 +246,8 @@ describe('player view', () => {
     const svg = root.query('.player__chart svg') as SVGSVGElement;
     stubRect(svg, TEST_WIDTH, 200);
     pointer(svg, 'pointerdown', { x: TEST_WIDTH / 2, y: 100 });
-
-    expect(elapsedSeconds()).toBeGreaterThan(8 * 60);
-  });
-
-  it('does not scrub from the chart on touch', async () => {
-    media.coarsePointer = true;
-    window.location.hash = '#/p/powernap';
-    root.render(<App />);
-    await flush();
-
-    const svg = root.query('.player__chart svg') as SVGSVGElement;
-    stubRect(svg, TEST_WIDTH, 200);
-    pointer(svg, 'pointerdown', { x: TEST_WIDTH / 2, y: 100 });
+    pointer(svg, 'pointermove', { x: TEST_WIDTH / 2 + 60, y: 100 });
+    pointer(svg, 'pointerup', { x: TEST_WIDTH / 2 + 60, y: 100 });
 
     expect(elapsedSeconds()).toBe(0);
   });
@@ -1078,8 +1069,7 @@ describe('the editor', () => {
     expect(root.text()).toContain('Node 3 of 12');
   });
 
-  it('does not move the playhead when a touch lands on empty plot', async () => {
-    media.coarsePointer = true;
+  it('deselects without moving the playhead when a tap lands on empty plot', async () => {
     await openDraftOf();
 
     const svg = root.query('.editor__chart svg') as SVGSVGElement;
@@ -1318,6 +1308,34 @@ describe('the app-level noise layer', () => {
     window.location.hash = '#/p/powernap';
     await flush();
     expect(root.query('.noise')?.textContent).not.toContain('originally had an ambient background');
+  });
+
+  /** Several bundled programs carry a noise voice of their own, named "Background noise" just like
+   *  the app's layer. The panel has to say which is which, and be able to silence theirs. */
+  it('names the program’s own bed of noise, and mutes it on request', async () => {
+    window.location.hash = '#/p/hypnosis-self-hypnosis';
+    root.render(<App />);
+    await flush();
+
+    const panel = root.query('.noise__own-bed');
+    expect(panel?.textContent).toContain('has a bed of its own');
+    expect(panel?.textContent).toContain('Background noise');
+
+    const mute = root.byText('.noise__own-bed .button', 'Mute the program’s own') as HTMLElement;
+    root.act(() => mute.click());
+    await flush();
+
+    expect(root.query('.noise__own-bed')?.textContent).toContain('Unmute the program’s own');
+    // The same session gate the voice list draws, so the voice reads as silent there too.
+    expect(root.queryAll('.voice-list__row--silent')).toHaveLength(1);
+  });
+
+  it('says nothing about an own bed for a program without one', async () => {
+    window.location.hash = '#/p/powernap';
+    root.render(<App />);
+    await flush();
+
+    expect(root.query('.noise__own-bed')).toBeNull();
   });
 });
 

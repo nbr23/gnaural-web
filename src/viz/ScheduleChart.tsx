@@ -12,12 +12,12 @@ import type {
   BreakpointHit,
   ChartLayout,
   ChartMark,
+  ChartModel,
   LaneDomains,
   LaneId,
   LaneLayout,
   SeriesPoint,
   ViewWindow,
-  VoiceIdentity,
   VoiceSeries,
 } from './geometry';
 import {
@@ -25,6 +25,7 @@ import {
   DEFAULT_METRICS,
   DOMAIN_PADDING,
   buildChartModel,
+  isVoicePlotted,
   layoutChart,
   nearestBreakpoint,
   polylinePath,
@@ -104,13 +105,6 @@ export interface ScheduleChartProps {
   lanes?: readonly LaneId[];
   /** Total height in px, including the time-axis band. Width is measured from the container. */
   height?: number;
-  /**
-   * Seek handler. When supplied the plot becomes draggable to scrub — transport, not document
-   * editing. Ignored when `interaction` is supplied, since there the same pointer has to select
-   * and drag and a gesture can't be both; see `EditSurface`, which seeks on a miss and reserves
-   * the drag.
-   */
-  onSeek?: (time: number) => void;
   /** Supply this and the plot becomes editable. Absent, the component is exactly what it was. */
   interaction?: ChartInteraction;
   /**
@@ -222,6 +216,10 @@ interface HoverState {
  * Read-only plot of a schedule's beat and base frequency curves against time, with a live
  * playhead.
  *
+ * The pointer is never transport: hovering reads values out and, with `interaction`, edits the
+ * document. Moving the playhead belongs to `Timeline`, which is a control rather than a plot nobody
+ * can brush past by accident.
+ *
  * Beat and base get their own lanes on a shared time axis rather than two y-scales on one plot —
  * a dual-axis chart implies a correlation that isn't in the data.
  *
@@ -234,7 +232,6 @@ export function ScheduleChart({
   currentTime,
   lanes = DEFAULT_LANES,
   height = DEFAULT_HEIGHT,
-  onSeek,
   interaction,
   view,
   domains,
@@ -276,8 +273,6 @@ export function ScheduleChart({
     const step = timeGridStep(layout.view.end - layout.view.start, plot);
     return gridLines(layout.view.start, layout.view.end, step);
   }, [interaction?.grid, layout]);
-
-  const scrubbing = useRef(false);
 
   const pointerPosition = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -345,12 +340,9 @@ export function ScheduleChart({
       }
 
       if (!position || !layout) return;
-
-      const time = timeAtPixel(layout, position.x);
-      setHover({ time, pixelY: position.y });
-      if (scrubbing.current) onSeek?.(time);
+      setHover({ time: timeAtPixel(layout, position.x), pixelY: position.y });
     },
-    [interaction, layout, onSeek, pointerPosition, resolvePointer],
+    [interaction, layout, pointerPosition, resolvePointer],
   );
 
   const handlePointerDown = useCallback(
@@ -372,34 +364,24 @@ export function ScheduleChart({
         // gesture, and a miss releases it on the pointerup that follows.
         event.currentTarget.setPointerCapture(event.pointerId);
         interaction.onPointerDown?.(pointer);
-        return;
       }
-
-      const position = pointerPosition(event);
-      if (!onSeek || !position || !layout) return;
-
-      scrubbing.current = true;
-      event.currentTarget.setPointerCapture(event.pointerId);
-      onSeek(timeAtPixel(layout, position.x));
     },
-    [interaction, layout, onSeek, pointerPosition, resolvePointer],
+    [interaction, resolvePointer],
   );
 
   const handlePointerUp = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
-      if (interaction) {
-        const pinching = touches.current.size >= 2;
-        touches.current.delete(event.pointerId);
-        pinch.current = null;
-        // The finger that ends a pinch must not also end a drag: there is no drag, the second
-        // finger cancelled it, and a pointerup the caller acted on would commit an edit nobody made.
-        if (pinching) return;
+      if (!interaction) return;
 
-        const pointer = resolvePointer(event);
-        if (pointer) interaction.onPointerUp?.(pointer);
-        return;
-      }
-      scrubbing.current = false;
+      const pinching = touches.current.size >= 2;
+      touches.current.delete(event.pointerId);
+      pinch.current = null;
+      // The finger that ends a pinch must not also end a drag: there is no drag, the second
+      // finger cancelled it, and a pointerup the caller acted on would commit an edit nobody made.
+      if (pinching) return;
+
+      const pointer = resolvePointer(event);
+      if (pointer) interaction.onPointerUp?.(pointer);
     },
     [interaction, resolvePointer],
   );
@@ -444,10 +426,6 @@ export function ScheduleChart({
     svg.addEventListener('wheel', onWheel, { passive: false });
     return () => svg.removeEventListener('wheel', onWheel);
   }, [editing, layout]);
-
-  const endScrub = useCallback(() => {
-    scrubbing.current = false;
-  }, []);
 
   const stepHover = useCallback(
     (event: ReactKeyboardEvent<SVGSVGElement>) => {
@@ -518,7 +496,7 @@ export function ScheduleChart({
 
   return (
     <div className={containerClass(className, editing, dragging)} ref={containerRef}>
-      {model.voices.length > 1 && <Legend voices={model.voices} />}
+      {model.voices.length > 1 && <Legend model={model} />}
 
       <svg
         ref={svgRef}
@@ -528,16 +506,11 @@ export function ScheduleChart({
         role="img"
         aria-label={chartLabel(schedule, model.voices.length, model.duration)}
         tabIndex={0}
-        style={onSeek && !editing ? { cursor: 'pointer' } : undefined}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        onLostPointerCapture={endScrub}
-        onPointerLeave={() => {
-          endScrub();
-          setHover(null);
-        }}
+        onPointerLeave={() => setHover(null)}
         onKeyDown={stepHover}
         onBlur={() => setHover(null)}
       >
@@ -682,16 +655,31 @@ const LaneClips = memo(function LaneClips({ layout, id }: { layout: ChartLayout;
   );
 });
 
-const Legend = memo(function Legend({ voices }: { voices: VoiceIdentity[] }) {
+/**
+ * The keys, one per drawn voice. A voice whose values fall outside every lane's axis says so: the
+ * domains are fitted to the tone voices, so a noise or water voice holds a key with no curve behind
+ * it, and a legend that doesn't admit that is promising a line nobody can find.
+ */
+const Legend = memo(function Legend({ model }: { model: ChartModel }) {
   return (
     <ul className="schedule-chart__legend">
-      {voices.map((voice) => {
+      {model.voices.map((voice) => {
         const type = VOICE_TYPE_LABELS[voice.type];
+        const plotted = isVoicePlotted(model, voice.slot);
         return (
-          <li key={voice.voiceId}>
+          <li
+            key={voice.voiceId}
+            className={plotted ? undefined : 'schedule-chart__legend-item--unplotted'}
+            title={
+              plotted
+                ? undefined
+                : 'Values fall outside the axes, which are fitted to the tone voices.'
+            }
+          >
             <span className="schedule-chart__key" style={{ color: seriesColor(voice.slot) }} />
             {voice.label}
             {type && <span className="schedule-chart__type">({type})</span>}
+            {!plotted && <span className="schedule-chart__type">· not plotted</span>}
           </li>
         );
       })}

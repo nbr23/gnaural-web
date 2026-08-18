@@ -46,3 +46,10 @@
   color: var(--text-h);
   max-width: 52ch;
 }
+
+.noise__own-bed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}

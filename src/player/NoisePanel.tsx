@@ -18,6 +18,16 @@ export interface NoisePanelProps {
   /** Set for the four presets whose ambient bed did not survive conversion — points at this
    *  control as the remedy rather than enabling anything on the listener's behalf. */
   lostAmbientBed?: boolean;
+  /**
+   * The program's own noise bed, when it carries one. Naming it is the point: the layer below mixes
+   * on top of it, and several bundled programs call their own voice "Background noise" too. Muting
+   * is session state, exactly like the voice list's — it never edits the program.
+   */
+  ownBed?: {
+    label: string;
+    muted: boolean;
+    onToggleMute(): void;
+  };
 }
 
 /**
@@ -25,14 +35,16 @@ export interface NoisePanelProps {
  * persisted across programs as a listening preference rather than a property of a schedule. Never
  * carried by a share link or `.gnaural` file; `ExportPanel` offers to mix it into a WAV.
  */
-export function NoisePanel({ noise, onChange, lostAmbientBed }: NoisePanelProps) {
+export function NoisePanel({ noise, onChange, lostAmbientBed, ownBed }: NoisePanelProps) {
   const on = noise.gain > 0;
 
   return (
     <section className="noise">
       <div className="noise__controls">
         <label className="noise__level">
-          <span>Background noise</span>
+          {/* Named for whose it is: a program that carries its own bed usually calls that voice
+              "Background noise" as well, which is the whole confusion. */}
+          <span>App background noise</span>
           <input
             type="range"
             min={0}
@@ -63,6 +75,18 @@ export function NoisePanel({ noise, onChange, lostAmbientBed }: NoisePanelProps)
         program, so the share link and the .gnaural file never carry it. A WAV export can, if you
         ask it to.
       </p>
+
+      {ownBed && (
+        <div className="noise__own-bed">
+          <p className="noise__note">
+            This program has a bed of its own ({ownBed.label}), so the layer above plays on top of
+            it.
+          </p>
+          <button type="button" className="button" onClick={ownBed.onToggleMute}>
+            {ownBed.muted ? 'Unmute the program’s own' : 'Mute the program’s own'}
+          </button>
+        </div>
+      )}
 
       {lostAmbientBed && (
         <p className="noise__note">

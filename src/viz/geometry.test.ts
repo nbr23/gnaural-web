@@ -8,6 +8,7 @@ import {
   buildChartModel,
   clampView,
   drawnDuration,
+  isVoicePlotted,
   layoutChart,
   nearestBreakpoint,
   nodesInRect,
@@ -119,6 +120,44 @@ describe('buildChartModel', () => {
     const model = buildChartModel(makeSchedule([twoEntryVoice, noise]));
 
     expect(model.voices.map((v) => v.type)).toEqual([VoiceType.Binaural, VoiceType.PinkNoise]);
+  });
+
+  /**
+   * The lanes are fitted to the tone voices, so a noise voice holds a key with no curve behind it —
+   * which is the legend's problem, and this is how the legend knows. The carrier here is 434–438 Hz,
+   * as `presets/hypnosis-self-hypnosis` has it, which is what leaves the noise voice's 100 Hz and
+   * 0 Hz outside both axes.
+   */
+  const carrier = makeVoice({
+    id: 0,
+    description: 'Carrier',
+    entries: [
+      makeEntry({ duration: 10, baseFreq: 438, beatFreq: 12 }),
+      makeEntry({ duration: 10, baseFreq: 434, beatFreq: 4 }),
+    ],
+  });
+  const bed = makeVoice({
+    id: 1,
+    description: 'Background noise',
+    type: VoiceType.PinkNoise,
+    entries: [makeEntry({ duration: 20, baseFreq: 100, beatFreq: 0 })],
+  });
+
+  it('says which voices land outside every fitted axis', () => {
+    const model = buildChartModel(makeSchedule([carrier, bed]));
+
+    expect(isVoicePlotted(model, 0)).toBe(true);
+    expect(isVoicePlotted(model, 1)).toBe(false);
+    // A voice that isn't in the model at all is not plotted either.
+    expect(isVoicePlotted(model, 9)).toBe(false);
+  });
+
+  it('counts a voice as plotted when a manual axis brings it back into range', () => {
+    const model = buildChartModel(makeSchedule([carrier, bed]), ['beat', 'base'], 0.1, {
+      base: [0, 500],
+    });
+
+    expect(isVoicePlotted(model, 1)).toBe(true);
   });
 
   it('skips voices with no entries', () => {

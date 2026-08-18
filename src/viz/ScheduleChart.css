@@ -52,6 +52,17 @@
   flex: none;
 }
 
+/* Dimmed, and its key broken into a dashed rule: there is no line in the plot for this key to
+   mirror, so it must not look like the ones that have one. */
+.schedule-chart__legend-item--unplotted {
+  opacity: 0.6;
+
+  & .schedule-chart__key {
+    background: none;
+    border-top: 2px dashed currentcolor;
+  }
+}
+
 
 .schedule-chart__plot {
   display: block;

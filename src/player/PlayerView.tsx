@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { Panel } from '../app/Panel';
 import { LIBRARY, navigate } from '../app/routing';
-import { useCoarsePointer, useWideLayout } from '../app/useMediaQuery';
+import { useWideLayout } from '../app/useMediaQuery';
 import type { Schedule } from '../document/types';
+import { isAmbientType } from '../document/types';
 import type { ScheduleWarning } from '../document/warnings';
 import { scheduleWarnings } from '../document/warnings';
 import type { NoiseLayerSettings } from '../engine/engine';
@@ -73,8 +74,36 @@ export function PlayerView({
   const all = useMemo(() => [...warnings, ...scheduleWarnings(schedule)], [warnings, schedule]);
   const silent = all.some((warning) => warning.kind === 'nothing-to-play');
 
-  const coarse = useCoarsePointer();
   const wide = useWideLayout();
+
+  // The program's own bed of noise, if it carries one. A hidden voice counts — `hidden` is editor
+  // presentation state and the engine plays it regardless — but one muted in the document doesn't
+  // sound at all, so it is not a bed anybody is hearing.
+  const bedVoices = useMemo(
+    () =>
+      schedule.voices
+        .map((voice, index) => ({ voice, index }))
+        .filter(({ voice }) => isAmbientType(voice.type) && !voice.muted),
+    [schedule],
+  );
+
+  const { voiceGates, toggleMute } = player;
+  const ownBed = useMemo(() => {
+    if (bedVoices.length === 0) return undefined;
+
+    const muted = bedVoices.every(({ index }) => voiceGates[index]?.muted ?? false);
+    return {
+      label: bedLabel(bedVoices.map(({ voice, index }) => voiceName(voice.description, index))),
+      muted,
+      // Session mute, one voice at a time, through the same gate the voice list uses. Only the
+      // voices not already in the target state are touched.
+      onToggleMute: () => {
+        for (const { index } of bedVoices) {
+          if ((voiceGates[index]?.muted ?? false) === muted) toggleMute(index);
+        }
+      },
+    };
+  }, [bedVoices, toggleMute, voiceGates]);
 
   return (
     <div className="player">
@@ -95,13 +124,12 @@ export function PlayerView({
             Play button is. */}
         <WarningList warnings={all} />
 
-        {/* No seek on touch: a plot wide enough to read is wide enough to brush past, so the
-            timeline below is the deliberate way to move the playhead. */}
+        {/* The plot reads values out; it never moves the playhead. A picture wide enough to read is
+            wide enough to brush past, so the timeline below is the only way to seek. */}
         <ScheduleChart
           schedule={schedule}
           currentTime={player.offset}
           height={wide ? CHART_HEIGHT.wide : CHART_HEIGHT.narrow}
-          onSeek={coarse ? undefined : player.seek}
           className="player__chart"
         />
 
@@ -177,7 +205,12 @@ export function PlayerView({
         )}
 
         <Panel title="Sound" badge={noise.gain > 0 ? 'noise on' : undefined} defaultOpen={wide}>
-          <NoisePanel noise={noise} onChange={onNoiseChange} lostAmbientBed={lostAmbientBed} />
+          <NoisePanel
+            noise={noise}
+            onChange={onNoiseChange}
+            lostAmbientBed={lostAmbientBed}
+            ownBed={ownBed}
+          />
           <WakeLockToggle enabled={wakeLock} onChange={onWakeLockChange} />
         </Panel>
 
@@ -194,4 +227,15 @@ export function PlayerView({
       </div>
     </div>
   );
+}
+
+function voiceName(description: string, index: number): string {
+  return description.trim() || `Voice ${index + 1}`;
+}
+
+/** The bed's voices, quoted, so the panel's sentence names what it is talking about. */
+function bedLabel(names: readonly string[]): string {
+  const quoted = names.map((name) => `“${name}”`);
+  if (quoted.length <= 1) return quoted[0] ?? '';
+  return `${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
 }

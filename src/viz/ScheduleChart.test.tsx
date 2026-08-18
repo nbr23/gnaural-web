@@ -1,5 +1,5 @@
 import { act } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parseSchedule } from '../document/parser';
 import { loadFixture } from '../document/test-fixtures';
 import type { Entry, Schedule, Voice } from '../document/types';
@@ -74,6 +74,36 @@ describe('ScheduleChart', () => {
     expect(legend?.textContent).toContain('Carrier');
     expect(legend?.textContent).toContain('Hiss');
     expect(legend?.textContent).toContain('noise');
+  });
+
+  /** A key with no curve behind it is a promise the chart can't keep: the lanes are fitted to the
+   *  tone voices, so the noise voice's 100 Hz base and 0 Hz beat are clipped away in both. */
+  it('marks a legend entry whose curve falls outside the axes', () => {
+    render(
+      <ScheduleChart
+        schedule={makeSchedule([
+          makeVoice({
+            id: 0,
+            description: 'Carrier',
+            entries: [
+              makeEntry({ duration: 10, baseFreq: 438, beatFreq: 12 }),
+              makeEntry({ duration: 10, baseFreq: 434, beatFreq: 4 }),
+            ],
+          }),
+          makeVoice({
+            id: 1,
+            description: 'Hiss',
+            type: VoiceType.PinkNoise,
+            entries: [makeEntry({ duration: 20, baseFreq: 100, beatFreq: 0 })],
+          }),
+        ])}
+      />,
+    );
+
+    const unplotted = testRoot.queryAll('.schedule-chart__legend-item--unplotted');
+    expect(unplotted).toHaveLength(1);
+    expect(unplotted[0].textContent).toContain('Hiss');
+    expect(unplotted[0].textContent).toContain('not plotted');
   });
 
   it('moves the playhead with currentTime and hides it when absent', () => {
@@ -151,11 +181,10 @@ describe('ScheduleChart', () => {
     expect(testRoot.text()).toContain('20:00');
   });
 
-  /** The editing surface is opt-in: no node markers, and a drag still scrubs rather than being
-   *  reserved for a gesture. */
+  /** The editing surface is opt-in: no node markers, and a pointer only reads values out — the
+   *  playhead belongs to the timeline, so nothing here moves it. */
   it('stays read-only without an interaction prop', () => {
-    const onSeek = vi.fn();
-    render(<ScheduleChart schedule={makeSchedule([makeVoice({ id: 0 })])} onSeek={onSeek} />);
+    render(<ScheduleChart schedule={makeSchedule([makeVoice({ id: 0 })])} />);
 
     const svg = testRoot.query('svg')!;
     stubRect(svg, TEST_WIDTH, 280);
@@ -166,8 +195,7 @@ describe('ScheduleChart', () => {
 
     pointer(svg, 'pointerdown', { x: 200, y: 60 });
     pointer(svg, 'pointermove', { x: 320, y: 60 });
-    expect(onSeek).toHaveBeenCalledTimes(2);
-    expect(onSeek.mock.calls[1][0]).toBeGreaterThan(onSeek.mock.calls[0][0]);
+    expect(testRoot.query('.schedule-chart__crosshair')).not.toBeNull();
   });
 });
 

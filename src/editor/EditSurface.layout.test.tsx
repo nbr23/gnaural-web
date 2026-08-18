@@ -74,7 +74,6 @@ function mount() {
       onCommit={() => {}}
       onCommitAt={() => {}}
       onPreview={() => {}}
-      onSeek={() => {}}
     />,
   );
   const svg = testRoot.query('svg') as SVGSVGElement;

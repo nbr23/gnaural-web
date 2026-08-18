@@ -75,19 +75,17 @@ export function resetPlatform(): void {
   mediaSession.position = null;
   mediaSession.handlers.clear();
   wakeLocks.length = 0;
-  media.coarsePointer = false;
 }
 
 /**
- * What `matchMedia` answers, since happy-dom lays nothing out and evaluates no queries. Only
- * `(pointer: coarse)` is wired up, since it's the one that changes behaviour rather than styling.
+ * What `matchMedia` answers, since happy-dom lays nothing out and evaluates no queries. Every query
+ * is a miss: the layout queries only change styling and the chart's height prop, and nothing else
+ * asks.
  */
-export const media = { coarsePointer: false };
-
 Object.defineProperty(window, 'matchMedia', {
   configurable: true,
   value: (query: string) => ({
-    matches: query.includes('pointer: coarse') ? media.coarsePointer : false,
+    matches: false,
     media: query,
     addEventListener() {},
     removeEventListener() {},

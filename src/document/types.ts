@@ -85,3 +85,18 @@ const TONAL_TYPES = new Set<VoiceType>([
 export function isTonalType(type: VoiceType): boolean {
   return TONAL_TYPES.has(type);
 }
+
+/**
+ * Voice types heard as a bed of sound rather than as a tone. The player needs to know, because the
+ * app mixes a noise layer of its own under whatever is playing: a program carrying one of these has
+ * a bed already, and nothing in the interface would otherwise say which of the two is which.
+ */
+const AMBIENT_TYPES = new Set<VoiceType>([
+  VoiceType.PinkNoise,
+  VoiceType.WaterDrops,
+  VoiceType.Rain,
+]);
+
+export function isAmbientType(type: VoiceType): boolean {
+  return AMBIENT_TYPES.has(type);
+}

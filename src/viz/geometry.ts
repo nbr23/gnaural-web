@@ -340,6 +340,23 @@ export function buildChartModel(
   };
 }
 
+/**
+ * Whether any of this voice's values land inside a drawn lane's axis.
+ *
+ * False for a voice the fitted domains exclude — a noise voice's `basefreq` of 100 and `beatfreq` of
+ * 0 are not a carrier and a rate, so `fittedValues` leaves them out and both lanes clip the curve
+ * away. The legend is what needs to know: a key with no curve behind it promises a line that isn't
+ * there. Domain-only, never the view window, which the model deliberately doesn't know about — the
+ * answer must not change as somebody pans.
+ */
+export function isVoicePlotted(model: ChartModel, slot: number): boolean {
+  return model.lanes.some((lane) => {
+    const series = lane.series.find((candidate) => candidate.slot === slot);
+    const [min, max] = lane.domain;
+    return series?.points.some((point) => point.value >= min && point.value <= max) ?? false;
+  });
+}
+
 /** Interpolated value of a series at `time`, or null once the voice has ended. */
 export function seriesValueAt(series: VoiceSeries, time: number): number | null {
   const { points } = series;
