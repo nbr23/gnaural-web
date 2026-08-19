@@ -5,13 +5,8 @@ import { serializeSchedule } from './serializer';
 import { entryWarnings, scheduleWarnings } from './warnings';
 
 /**
- * A way to run the app's own validation over a `.gnaural` file that isn't in the repo — so an
- * externally authored program is checked against the code that will actually import it, rather
- * than against a second implementation of the rules.
- *
+ * Validates `.gnaural` files that are not in the repo, against the code that will import them:
  * `GNAURAL_VERIFY=/path/a.gnaural,/path/b.gnaural npx vitest run src/document/verify.cli.test.ts`
- *
- * Unset, there is nothing to verify and the suite skips — so `npm test` is unaffected.
  */
 const paths = (process.env.GNAURAL_VERIFY ?? '')
   .split(',')
