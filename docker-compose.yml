@@ -20,6 +20,14 @@ services:
       - .:/app
       - /app/node_modules
 
+  cli:
+    profiles: ["cli"]
+    build:
+      context: .
+      target: cli
+    volumes:
+      - .:/programs
+
   preview:
     profiles: ["preview"]
     build:

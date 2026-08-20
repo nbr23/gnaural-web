@@ -41,6 +41,14 @@ pipeline {
                     """
             }
         }
+        stage('Build CLI Docker Image') {
+            when { branch 'master' }
+            steps {
+                sh """
+                    docker buildx build --pull --builder \$BUILDX_BUILDER --platform linux/arm64,linux/amd64 --target cli -t nbr23/gnaural-web:cli -t nbr23/gnaural-web:cli-`git rev-parse --short HEAD` --push .
+                    """
+            }
+        }
         stage('Sync github repo') {
             when { branch 'master' }
             steps {

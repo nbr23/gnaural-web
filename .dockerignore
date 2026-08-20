@@ -1,6 +1,7 @@
 .git
 node_modules
 dist
+dist-cli
 dist-ssr
 coverage
 *.log

@@ -31,3 +31,19 @@ FROM nginx:1.27-alpine AS prod
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
+
+FROM deps AS build-cli
+COPY . .
+RUN npm run build:cli
+
+FROM ${NODE_IMAGE} AS cli
+WORKDIR /app
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libasound2 ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY --from=build-cli /app/dist-cli ./dist-cli
+WORKDIR /programs
+ENTRYPOINT ["node", "/app/dist-cli/render.js"]
+CMD ["--help"]

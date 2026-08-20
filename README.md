@@ -8,6 +8,18 @@ A browser-based player for Gnaural binaural-beat schedules — 100% client-side,
 docker run -p 8080:80 nbr23/gnaural-web:latest   # http://localhost:8080
 ```
 
+## Render from the command line
+
+Same engine as the app, offline and faster than realtime:
+
+```sh
+docker run --rm -v "$PWD:/programs" nbr23/gnaural-web:cli powernap.gnaural -o powernap.mp3
+docker run --rm nbr23/gnaural-web:cli --help
+```
+
+WAV or MP3, `--rate`, `--quality`, and `--noise <colour>[:<gain>]` for the app's noise bed. From a
+checkout it is `npm run render -- fixtures/powernap.gnaural -o /tmp/nap.wav`.
+
 ## Develop
 
 ```sh
