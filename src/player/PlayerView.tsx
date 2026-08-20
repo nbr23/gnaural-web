@@ -220,6 +220,7 @@ export function PlayerView({
             sampleRate={exportSampleRate}
             onSampleRateChange={onExportSampleRateChange}
             noise={noise}
+            gates={player.voiceGates}
           />
         </Panel>
 

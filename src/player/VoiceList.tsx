@@ -13,7 +13,8 @@ export interface VoiceListProps {
 
 /**
  * Per-voice mute and solo. Runtime state only — silencing a voice to hear another never edits the
- * document.
+ * document, though it does decide what a WAV export contains, since that is a recording of what is
+ * being heard.
  *
  * Solo mutes the others and nothing more: the engine holds no separate solo state, a voice is
  * soloed when it's the only renderable one left unmuted (`PlaybackEngine.isVoiceSoloed`), so a

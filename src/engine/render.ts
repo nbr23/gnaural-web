@@ -11,12 +11,11 @@ import { CLICK_FREE_RAMP, playSchedule } from './engine';
  * `voice_mono`, `voice_mute` and the end-of-schedule fade all come along for free, and an export
  * can be null-tested against live playback (§5.3).
  *
- * What is rendered is the **document as authored** — never the session's master-volume slider or
- * its runtime mute/solo. The same program always exports the same bytes.
- *
- * The one thing that can be added to it is the app-level noise bed (§4.5b), and only because the
- * caller passed it in: `noise` is a parameter of the export, taken from a checkbox next to the
- * button, not read from the player. Leave it out and the render is the document and nothing else.
+ * Nothing here reads the player. What is rendered is the schedule the caller passed and the options
+ * it passed with it, so the same arguments always produce the same bytes — the app-level noise bed
+ * (§4.5b) arrives as `noise` because someone ticked a checkbox next to the button, and the session's
+ * mute and solo arrive already written onto the voices (`silenceMutedVoices`) because a WAV is what
+ * the listener is hearing. The session's master-volume slider reaches neither.
  */
 
 export const DEFAULT_EXPORT_SAMPLE_RATE = 44100;

@@ -786,7 +786,9 @@ interface VoiceState {
  *
  * Mute is **session** state, deliberately separate from the document's own `voice.muted` flag
  * (which the editor changes): the document seeds the initial state and runtime toggles override it,
- * so silencing a voice to hear another never edits the file. Muting changes no timing — a muted
+ * so silencing a voice to hear another never edits the file. A WAV export does follow it — the panel
+ * writes the gates onto a copy of the document (`silenceMutedVoices`) — because a recording is what
+ * you were hearing; the document it was made from is unchanged. Muting changes no timing — a muted
  * voice still advances through its entries and can still end the schedule (§3.2).
  *
  * **Solo is not state.** It is the operation "mute every other voice", and a voice *is* soloed

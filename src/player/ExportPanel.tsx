@@ -3,6 +3,7 @@ import { formatBytes } from '../app/format';
 import type { Schedule } from '../document/types';
 import type { NoiseLayerSettings } from '../engine/engine';
 import { useExport } from './useExport';
+import type { VoiceGate } from './usePlayer';
 
 /** Half rate loses nothing audible — everything here is synthesised well below 1 kHz. */
 const SAMPLE_RATES = [
@@ -16,6 +17,7 @@ export interface ExportPanelProps {
   onSampleRateChange(rate: number): void;
   /** The app's noise layer as it is set right now — offered to the WAV when it is audible. */
   noise?: NoiseLayerSettings;
+  gates: VoiceGate[];
 }
 
 /**
@@ -27,8 +29,18 @@ export interface ExportPanelProps {
  *
  * The noise bed checkbox defaults unticked: a WAV export can carry the app's ambient bed, but the
  * default export stays exactly the program as authored.
+ *
+ * The WAV follows the player's mute and solo, since it is audio and the point of muting a voice is
+ * to decide what should be heard. A link and a `.gnaural` are the program rather than a recording of
+ * it, so they carry every voice the document has, muted or not.
  */
-export function ExportPanel({ schedule, sampleRate, onSampleRateChange, noise }: ExportPanelProps) {
+export function ExportPanel({
+  schedule,
+  sampleRate,
+  onSampleRateChange,
+  noise,
+  gates,
+}: ExportPanelProps) {
   const [includeNoise, setIncludeNoise] = useState(false);
   const colour = noise?.colour;
   const gain = noise?.gain ?? 0;
@@ -41,7 +53,7 @@ export function ExportPanel({ schedule, sampleRate, onSampleRateChange, noise }:
     [colour, gain, includeNoise],
   );
 
-  const exporter = useExport(schedule, sampleRate, bed);
+  const exporter = useExport(schedule, sampleRate, bed, gates);
   const busy = exporter.status !== 'idle';
 
   return (
@@ -59,7 +71,12 @@ export function ExportPanel({ schedule, sampleRate, onSampleRateChange, noise }:
       </div>
 
       <div className="export__row">
-        <button type="button" className="button" onClick={exporter.exportWav} disabled={busy}>
+        <button
+          type="button"
+          className="button"
+          onClick={exporter.exportWav}
+          disabled={busy || exporter.nothingAudible}
+        >
           Export WAV
         </button>
 
@@ -80,6 +97,13 @@ export function ExportPanel({ schedule, sampleRate, onSampleRateChange, noise }:
 
         <span className="export__estimate">≈ {formatBytes(exporter.estimatedBytes)}</span>
       </div>
+
+      {exporter.nothingAudible && (
+        <p className="export__notice">
+          Nothing is audible right now, so the WAV would be silence. Unmute a voice to export one —
+          the link and the .gnaural file still carry the whole program.
+        </p>
+      )}
 
       {/* A WAV covers one pass — repetition isn't part of the program's audio, and a schedule
           that repeats forever isn't a file anyone can write. */}
